@@ -4,8 +4,13 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 
-/** Teto de bundle gzipado. Elevar exige commit deliberado. */
-export const LIMIT_BYTES = 25 * 1024;
+/**
+ * Teto de bundle gzipado.
+ * Calibrado ~2x acima do baseline atual para que regressao real dispare.
+ * Elevar exige commit deliberado 2014 features legitimas (Dexie, Tailwind, router)
+ * vao exigir subidas revisadas ate o alvo de ~140kb do README.
+ */
+export const LIMIT_BYTES = 10 * 1024;
 
 const MEASURED = /\.(js|css)$/;
 
