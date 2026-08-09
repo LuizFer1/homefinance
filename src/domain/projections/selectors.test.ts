@@ -67,4 +67,17 @@ describe("totals", () => {
   it("devolve zeros para lista vazia", () => {
     expect(totals([])).toEqual({ incomeMinor: 0, expenseMinor: 0, balanceMinor: 0 });
   });
+
+  it("devolve saldo negativo quando a despesa supera a receita", () => {
+    const records = [
+      record({ id: "a", amountMinor: 9000 }),
+      record({ id: "b", kind: "income", amountMinor: 2000 }),
+    ];
+
+    expect(totals(records)).toEqual({
+      incomeMinor: 2000,
+      expenseMinor: 9000,
+      balanceMinor: -7000,
+    });
+  });
 });
