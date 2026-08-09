@@ -13,9 +13,13 @@ import { gzipSync } from "node:zlib";
  *   52kb  — camada visual: Tailwind e daisyUI entram (48.50kb medidos, sendo
  *           5.00kb de CSS; o daisyUI entra restrito a tema e raios, sem os
  *           componentes — os 61 componentes custariam ~4kb gzip a mais)
+ *   60kb  — entidades de referencia: lucide-preact com 34 icones literais e a
+ *           UI de cadastro (57.32kb medidos, sendo 6.11kb de CSS; os icones
+ *           custam 4.88kb dos 7.94kb de aumento, medidos por sonda antes de
+ *           qualquer arquivo depender da biblioteca)
  * Alvo de projeto: ~140kb gzip, conforme o README.
  */
-export const LIMIT_BYTES = 52 * 1024;
+export const LIMIT_BYTES = 60 * 1024;
 
 const MEASURED = /\.(js|css)$/;
 
