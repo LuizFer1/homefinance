@@ -36,6 +36,20 @@ function buildStore(events: EventStore): TransactionsStore {
   });
 }
 
+/** O tema escreve num documento à parte para não sujar o do testing-library. */
+function fakeTheme() {
+  const map = new Map<string, string>();
+  return {
+    storage: {
+      getItem: (key: string) => map.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        map.set(key, value);
+      },
+    },
+    doc: document.implementation.createHTMLDocument("tema"),
+  };
+}
+
 async function addTransaction(description: string, amount: string) {
   fireEvent.input(screen.getByLabelText("Descrição"), { target: { value: description } });
   fireEvent.input(screen.getByLabelText("Valor"), { target: { value: amount } });
@@ -45,13 +59,13 @@ async function addTransaction(description: string, amount: string) {
 
 describe("App", () => {
   it("mostra o nome do app como cabeçalho", async () => {
-    render(<App store={buildStore(fakeEventStore())} today="2026-08-08" />);
+    render(<App store={buildStore(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "HomeFinance" })).toBeDefined());
   });
 
   it("adiciona um lançamento e atualiza os totais", async () => {
-    render(<App store={buildStore(fakeEventStore())} today="2026-08-08" />);
+    render(<App store={buildStore(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
 
     await addTransaction("Mercado", "12,34");
@@ -61,7 +75,7 @@ describe("App", () => {
 
   it("edita emitindo patch apenas do campo alterado", async () => {
     const events = fakeEventStore();
-    render(<App store={buildStore(events)} today="2026-08-08" />);
+    render(<App store={buildStore(events)} today="2026-08-08" theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
@@ -78,7 +92,7 @@ describe("App", () => {
 
   it("não emite evento quando nada mudou na edição", async () => {
     const events = fakeEventStore();
-    render(<App store={buildStore(events)} today="2026-08-08" />);
+    render(<App store={buildStore(events)} today="2026-08-08" theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
@@ -90,7 +104,7 @@ describe("App", () => {
   });
 
   it("remove o lançamento da lista", async () => {
-    render(<App store={buildStore(fakeEventStore())} today="2026-08-08" />);
+    render(<App store={buildStore(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
@@ -104,7 +118,7 @@ describe("App", () => {
     broken.readAll = async () => {
       throw new Error("IndexedDB indisponível");
     };
-    render(<App store={buildStore(broken)} today="2026-08-08" />);
+    render(<App store={buildStore(broken)} today="2026-08-08" theme={fakeTheme()} />);
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain("IndexedDB indisponível"),
