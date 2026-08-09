@@ -42,6 +42,26 @@ export interface PaymentMethod extends Category {
   kind: PaymentKind;
 }
 
+/**
+ * Forma alargada do agregado, para leitura.
+ *
+ * A projecao guarda `icon`, `color` e `kind` como `string` de proposito: o log
+ * e eterno e sincroniza com aparelhos de versao mais nova, entao um token
+ * desconhecido precisa sobreviver ao fold em vez de ser apagado. O `diff` so
+ * compara valores, entao ele aceita a forma alargada — estreitar aqui obrigaria
+ * um cast em toda leitura da projecao, que e o oposto do que os buckets tipados
+ * existem para dar.
+ */
+export interface CategoryLike {
+  name: string;
+  icon: string;
+  color: string;
+}
+
+export interface PaymentMethodLike extends CategoryLike {
+  kind: string;
+}
+
 export type CategoryDraft = Omit<Category, "id">;
 export type CategoryPatch = Partial<CategoryDraft>;
 export type PaymentMethodDraft = Omit<PaymentMethod, "id">;
@@ -116,7 +136,7 @@ export function paymentMethodDeleted(args: Envelope): DomainEvent {
  * perder edições concorrentes sem nenhum sintoma visível: duas pessoas editando
  * campos diferentes offline, e uma das edições some no merge.
  */
-export function diffCategory(current: Category, next: CategoryDraft): CategoryPatch {
+export function diffCategory(current: CategoryLike, next: CategoryDraft): CategoryPatch {
   const patch: CategoryPatch = {};
   if (current.name !== next.name) patch.name = next.name;
   if (current.icon !== next.icon) patch.icon = next.icon;
@@ -125,7 +145,7 @@ export function diffCategory(current: Category, next: CategoryDraft): CategoryPa
 }
 
 export function diffPaymentMethod(
-  current: PaymentMethod,
+  current: PaymentMethodLike,
   next: PaymentMethodDraft,
 ): PaymentMethodPatch {
   const patch: PaymentMethodPatch = { ...diffCategory(current, next) };
