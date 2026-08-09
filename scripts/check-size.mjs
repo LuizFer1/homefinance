@@ -10,9 +10,12 @@ import { gzipSync } from "node:zlib";
  * Historico:
  *   10kb  — baseline de tooling (Preact apenas, 4.76kb medidos)
  *   45kb  — nucleo de transacoes: Dexie e @preact/signals entram (42.25kb medidos)
+ *   52kb  — camada visual: Tailwind e daisyUI entram (48.50kb medidos, sendo
+ *           5.00kb de CSS; o daisyUI entra restrito a tema e raios, sem os
+ *           componentes — os 61 componentes custariam ~4kb gzip a mais)
  * Alvo de projeto: ~140kb gzip, conforme o README.
  */
-export const LIMIT_BYTES = 45 * 1024;
+export const LIMIT_BYTES = 52 * 1024;
 
 const MEASURED = /\.(js|css)$/;
 
