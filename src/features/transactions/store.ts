@@ -1,6 +1,6 @@
 import { batch, type Signal, signal } from "@preact/signals";
 import type { EventStore } from "../../data/event-store";
-import { createHlcClock, type HlcClock } from "../../domain/clock/hlc";
+import { compareHlc, createHlcClock, type HlcClock } from "../../domain/clock/hlc";
 import {
   type TransactionDraft,
   type TransactionPatch,
@@ -65,7 +65,7 @@ export function createTransactionsStore(deps: StoreDeps): TransactionsStore {
 
       // O relógio é recuperado do próprio log: um estado persistido a menos para dessincronizar.
       const latest = log.reduce<string | null>(
-        (max, event) => (max === null || event.hlc > max ? event.hlc : max),
+        (max, event) => (max === null || compareHlc(event.hlc, max) > 0 ? event.hlc : max),
         null,
       );
       clock = createHlcClock(deviceId, latest);
@@ -107,7 +107,7 @@ export function createTransactionsStore(deps: StoreDeps): TransactionsStore {
     log = [...log, event];
 
     const current = state.value;
-    const outOfOrder = current.lastHlc !== null && event.hlc <= current.lastHlc;
+    const outOfOrder = current.lastHlc !== null && compareHlc(event.hlc, current.lastHlc) <= 0;
     const next = outOfOrder ? fold(log) : apply(current, event);
 
     batch(() => {
