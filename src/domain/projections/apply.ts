@@ -87,7 +87,15 @@ function shell(entityId: Ulid): TransactionRecord {
   };
 }
 
-/** LWW por campo: só sobrescreve o campo se este evento for mais novo que o último que o tocou. */
+/**
+ * LWW por campo: só sobrescreve o campo se este evento for mais novo que o último
+ * que o tocou.
+ *
+ * O `>=` importa. Quando dois eventos distintos têm HLC idêntico — o que acontece
+ * ao restaurar o mesmo backup em dois aparelhos — `compareEvents` já os colocou em
+ * ordem total pelo `id`, e aqui o **primeiro aplicado vence**, ou seja, o de menor
+ * `id`. Qual dos dois vence é arbitrário; o que não pode variar é a resposta.
+ */
 function mergeFields(
   record: TransactionRecord,
   data: Record<string, unknown>,
