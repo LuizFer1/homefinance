@@ -63,6 +63,7 @@ describe("TransactionForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
 
     expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("descrição");
   });
 
   it("limpa os campos depois de adicionar", () => {
