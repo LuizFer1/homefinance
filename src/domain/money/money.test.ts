@@ -3,7 +3,7 @@ import { formatBRL, parseBRL } from "./money";
 
 /** Intl usa espaço não-quebrável entre símbolo e número. */
 function normalize(value: string): string {
-  return value.replace(/ /g, " ");
+  return value.replace(/\u00a0/g, " ");
 }
 
 describe("parseBRL", () => {
