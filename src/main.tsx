@@ -4,6 +4,7 @@ import { App } from "./app";
 import { HomeFinanceDb } from "./data/db";
 import { createEventStore } from "./data/event-store";
 import { cryptoRandomChunk } from "./domain/ids/ulid";
+import { createRegistryStore } from "./features/registry/store";
 import { createSession } from "./features/session/session";
 import type { ThemeStorage } from "./features/theme/theme";
 import { createTransactionsStore } from "./features/transactions/store";
@@ -56,8 +57,14 @@ const session = createSession({
 });
 
 const store = createTransactionsStore(session);
+const registry = createRegistryStore(session);
 
 render(
-  <App store={store} today={todayISO()} theme={{ storage: safeStorage(), doc: document }} />,
+  <App
+    store={store}
+    registry={registry}
+    today={todayISO()}
+    theme={{ storage: safeStorage(), doc: document }}
+  />,
   root,
 );

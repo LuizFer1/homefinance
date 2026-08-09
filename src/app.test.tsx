@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { App } from "./app";
 import type { EventStore } from "./data/event-store";
 import type { DomainEvent } from "./domain/events/types";
+import { createRegistryStore, type RegistryStore } from "./features/registry/store";
 import { createSession } from "./features/session/session";
 import { createTransactionsStore, type TransactionsStore } from "./features/transactions/store";
 
@@ -25,18 +26,18 @@ function fakeEventStore() {
   return store;
 }
 
-function buildStore(events: EventStore): TransactionsStore {
+/** As duas stores partilham a mesma sessao, como em producao. */
+function buildStores(events: EventStore): { store: TransactionsStore; registry: RegistryStore } {
   let millis = 1_754_697_600_000;
-  return createTransactionsStore(
-    createSession({
-      events,
-      now: () => {
-        millis += 1;
-        return millis;
-      },
-      randomChunk: (count: number) => Array.from({ length: count }, (_, index) => index % 32),
-    }),
-  );
+  const session = createSession({
+    events,
+    now: () => {
+      millis += 1;
+      return millis;
+    },
+    randomChunk: (count: number) => Array.from({ length: count }, (_, index) => index % 32),
+  });
+  return { store: createTransactionsStore(session), registry: createRegistryStore(session) };
 }
 
 /** O tema escreve num documento à parte para não sujar o do testing-library. */
@@ -62,13 +63,13 @@ async function addTransaction(description: string, amount: string) {
 
 describe("App", () => {
   it("mostra o nome do app como cabeçalho", async () => {
-    render(<App store={buildStore(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "HomeFinance" })).toBeDefined());
   });
 
   it("adiciona um lançamento e atualiza os totais", async () => {
-    render(<App store={buildStore(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
 
     await addTransaction("Mercado", "12,34");
@@ -78,7 +79,7 @@ describe("App", () => {
 
   it("edita emitindo patch apenas do campo alterado", async () => {
     const events = fakeEventStore();
-    render(<App store={buildStore(events)} today="2026-08-08" theme={fakeTheme()} />);
+    render(<App {...buildStores(events)} today="2026-08-08" theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
@@ -95,7 +96,7 @@ describe("App", () => {
 
   it("não emite evento quando nada mudou na edição", async () => {
     const events = fakeEventStore();
-    render(<App store={buildStore(events)} today="2026-08-08" theme={fakeTheme()} />);
+    render(<App {...buildStores(events)} today="2026-08-08" theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
@@ -107,7 +108,7 @@ describe("App", () => {
   });
 
   it("remove o lançamento da lista", async () => {
-    render(<App store={buildStore(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
@@ -121,10 +122,56 @@ describe("App", () => {
     broken.readAll = async () => {
       throw new Error("IndexedDB indisponível");
     };
-    render(<App store={buildStore(broken)} today="2026-08-08" theme={fakeTheme()} />);
+    render(<App {...buildStores(broken)} today="2026-08-08" theme={fakeTheme()} />);
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain("IndexedDB indisponível"),
     );
+  });
+});
+
+describe("navegacao", () => {
+  it("troca para categorias e volta para lancamentos", async () => {
+    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Categorias" }));
+    expect(screen.getByRole("region", { name: "Categorias" })).toBeDefined();
+    expect(screen.queryByTestId("total-expense")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Lancamentos" }));
+    expect(screen.getByTestId("total-expense")).toBeDefined();
+    expect(screen.queryByRole("region", { name: "Categorias" })).toBeNull();
+  });
+
+  it("cadastra categoria e volta com o lancamento intacto", async () => {
+    // O ciclo que a fatia inteira existe para permitir: sair da tela de
+    // lancamentos, cadastrar, e voltar sem perder nada — as duas telas leem a
+    // mesma projecao.
+    const events = fakeEventStore();
+    render(<App {...buildStores(events)} today="2026-08-08" theme={fakeTheme()} />);
+    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    await addTransaction("Mercado", "12,34");
+
+    fireEvent.click(screen.getByRole("button", { name: "Categorias" }));
+    fireEvent.input(screen.getByLabelText(/nome/i), { target: { value: "Alimentacao" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+    await waitFor(() => expect(screen.getByText("Alimentacao")).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Lancamentos" }));
+
+    expect(screen.getByTestId("total-expense").textContent).toContain("12,34");
+    expect(events.events.map((e) => e.entity).sort()).toEqual(["category", "transaction"]);
+  });
+
+  it("a tela de pagamentos oferece o tipo e a de categorias nao", async () => {
+    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Categorias" }));
+    expect(screen.queryByLabelText(/tipo de pagamento/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Pagamentos" }));
+    expect(screen.getByLabelText(/tipo de pagamento/i)).toBeDefined();
   });
 });

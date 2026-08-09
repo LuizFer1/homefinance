@@ -5,6 +5,8 @@ import type { Ulid } from "./domain/ids/ulid";
 import { formatBRL } from "./domain/money/money";
 import type { TransactionRecord } from "./domain/projections/apply";
 import { listTransactions, totals } from "./domain/projections/selectors";
+import { RegistryPage } from "./features/registry/registry-page";
+import type { RegistryStore } from "./features/registry/store";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
 import { ThemeToggle } from "./features/theme/theme-toggle";
 import type { TransactionsStore } from "./features/transactions/store";
@@ -13,6 +15,7 @@ import { TransactionList } from "./features/transactions/transaction-list";
 
 export interface AppProps {
   store: TransactionsStore;
+  registry: RegistryStore;
   /** Data de hoje em 'YYYY-MM-DD'. Vem de fora para o teste não depender do relógio. */
   today: string;
   /** `localStorage` e `document` vêm de fora pelo mesmo motivo que o relógio. */
@@ -20,6 +23,25 @@ export interface AppProps {
 }
 
 const SHELL = "min-h-dvh bg-base-200 text-base-content";
+
+/**
+ * Navegacao sem router.
+ *
+ * Uma dependencia de roteamento para tres destinos nao se paga contra um teto de
+ * 52kb, e nao ha URL a preservar: o app e local-first e abre sempre no mesmo
+ * lugar. A fatia 4 acrescenta a quarta entrada aqui.
+ */
+const SCREENS = [
+  { id: "lancamentos", label: "Lancamentos" },
+  { id: "categorias", label: "Categorias" },
+  { id: "pagamentos", label: "Pagamentos" },
+] as const;
+
+type ScreenId = (typeof SCREENS)[number]["id"];
+
+const TAB =
+  "hf-press rounded-field flex-1 cursor-pointer py-1.5 text-center text-[0.8125rem] font-medium " +
+  "transition-colors duration-150";
 const CAPTION = "hf-caption text-[0.6875rem] font-semibold uppercase text-base-content/45";
 
 function Shell({ children }: { children: ComponentChildren }) {
@@ -30,8 +52,9 @@ function Shell({ children }: { children: ComponentChildren }) {
   );
 }
 
-export function App({ store, today, theme }: AppProps) {
+export function App({ store, registry, today, theme }: AppProps) {
   const [editing, setEditing] = useState<TransactionRecord | null>(null);
+  const [screen, setScreen] = useState<ScreenId>("lancamentos");
 
   useEffect(() => {
     void store.init();
@@ -100,6 +123,22 @@ export function App({ store, today, theme }: AppProps) {
             </div>
             <ThemeToggle storage={theme.storage} doc={theme.doc} />
           </div>
+
+          <nav aria-label="Secoes" class="rounded-field mt-3 flex gap-1 bg-base-200/70 p-1">
+            {SCREENS.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                aria-current={screen === id ? "page" : undefined}
+                onClick={() => setScreen(id)}
+                class={`${TAB} ${
+                  screen === id ? "bg-base-100 text-base-content shadow-sm" : "text-base-content/55"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
         </div>
       </header>
 
@@ -110,35 +149,47 @@ export function App({ store, today, theme }: AppProps) {
           </p>
         )}
 
-        {/*
+        {screen !== "lancamentos" && (
+          <RegistryPage
+            entity={screen === "categorias" ? "category" : "paymentMethod"}
+            state={store.state.value}
+            store={registry}
+          />
+        )}
+
+        {screen === "lancamentos" && (
+          <>
+            {/*
           Os rotulos ja dizem o que cada numero e, entao cor aqui seria
           decorativa. Ela fica reservada para onde e o unico portador de
           significado: o saldo negativo e o sinal de receita na lista.
         */}
-        <section aria-label="Totais" class="mt-4 grid grid-cols-2 gap-3">
-          <div class="rounded-box bg-base-100 px-4 py-3">
-            <p class={CAPTION}>Receitas</p>
-            <p data-testid="total-income" class="hf-num mt-0.5 font-semibold">
-              {formatBRL(summary.incomeMinor)}
-            </p>
-          </div>
-          <div class="rounded-box bg-base-100 px-4 py-3">
-            <p class={CAPTION}>Despesas</p>
-            <p data-testid="total-expense" class="hf-num mt-0.5 font-semibold">
-              {formatBRL(summary.expenseMinor)}
-            </p>
-          </div>
-        </section>
+            <section aria-label="Totais" class="mt-4 grid grid-cols-2 gap-3">
+              <div class="rounded-box bg-base-100 px-4 py-3">
+                <p class={CAPTION}>Receitas</p>
+                <p data-testid="total-income" class="hf-num mt-0.5 font-semibold">
+                  {formatBRL(summary.incomeMinor)}
+                </p>
+              </div>
+              <div class="rounded-box bg-base-100 px-4 py-3">
+                <p class={CAPTION}>Despesas</p>
+                <p data-testid="total-expense" class="hf-num mt-0.5 font-semibold">
+                  {formatBRL(summary.expenseMinor)}
+                </p>
+              </div>
+            </section>
 
-        <TransactionForm
-          key={editing?.id ?? "novo"}
-          editing={editing}
-          onSubmit={handleSubmit}
-          onCancel={() => setEditing(null)}
-          today={today}
-        />
+            <TransactionForm
+              key={editing?.id ?? "novo"}
+              editing={editing}
+              onSubmit={handleSubmit}
+              onCancel={() => setEditing(null)}
+              today={today}
+            />
 
-        <TransactionList items={items} onEdit={setEditing} onDelete={handleDelete} />
+            <TransactionList items={items} onEdit={setEditing} onDelete={handleDelete} />
+          </>
+        )}
       </main>
     </div>
   );
