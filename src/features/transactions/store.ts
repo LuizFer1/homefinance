@@ -53,7 +53,15 @@ export function createTransactionsStore(deps: StoreDeps): TransactionsStore {
       deviceId = stored ?? nextUlid(deps.now());
       if (stored === null) await deps.events.setMeta(DEVICE_ID_KEY, deviceId);
 
-      log = (await deps.events.readAll()).filter(isValidEvent);
+      const bruto = await deps.events.readAll();
+      log = bruto.filter(isValidEvent);
+
+      const descartados = bruto.length - log.length;
+      if (descartados > 0) {
+        // Descartar em silêncio faz um evento corrompido sumir do estado do usuário
+        // sem deixar rastro. O log append-only é eterno: isso vai acontecer um dia.
+        console.warn(`HomeFinance: ${descartados} evento(s) invalido(s) descartado(s) do log.`);
+      }
 
       // O relógio é recuperado do próprio log: um estado persistido a menos para dessincronizar.
       const latest = log.reduce<string | null>(
