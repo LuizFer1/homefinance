@@ -55,6 +55,20 @@ describe("EventStore", () => {
     expect(await store.readAll()).toHaveLength(1);
   });
 
+  it("sobrescreve quando o mesmo id chega com conteúdo diferente", async () => {
+    const original = event(1_754_697_600_010);
+    const impostor: DomainEvent = { ...original, data: { description: "Outro" } };
+
+    await store.append(original);
+    await store.append(impostor);
+    const all = await store.readAll();
+
+    // Comportamento declarado, não desejado: `put` não distingue. A unicidade do
+    // `id` é garantida em `domain/ids/ulid.ts`, não aqui.
+    expect(all).toHaveLength(1);
+    expect(all[0]?.data).toEqual({ description: "Outro" });
+  });
+
   it("devolve lista vazia num banco novo", async () => {
     expect(await store.readAll()).toEqual([]);
   });

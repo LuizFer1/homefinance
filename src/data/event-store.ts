@@ -2,7 +2,17 @@ import type { DomainEvent } from "../domain/events/types";
 import type { HomeFinanceDb } from "./db";
 
 export interface EventStore {
-  /** Idempotente por `id`: o mesmo evento duas vezes não duplica nem lança. */
+  /**
+   * Idempotente por `id`: o mesmo evento duas vezes não duplica nem lança — é
+   * exatamente o que o handshake de sync faz ao reenviar o que o par já tem.
+   *
+   * A segurança disso depende inteiramente de o `id` ser único, garantia que vive
+   * fora desta camada (`domain/ids/ulid.ts`, 80 bits de `crypto.getRandomValues`).
+   * Dois eventos **diferentes** com o mesmo `id` fariam o segundo sobrescrever o
+   * primeiro em silêncio. Não confundir com colisão de `hlc`, essa sim real quando
+   * dois aparelhos restauram o mesmo backup: `hlc` igual com `id` diferente grava
+   * dois registros distintos, como deve.
+   */
   append: (event: DomainEvent) => Promise<void>;
   readAll: () => Promise<DomainEvent[]>;
   getMeta: (key: string) => Promise<string | null>;
