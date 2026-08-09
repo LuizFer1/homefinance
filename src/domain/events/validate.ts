@@ -10,6 +10,7 @@ import type { Action, DomainEvent, EntityKind } from "./types";
 const ENTITIES: Record<EntityKind, true> = {
   user: true,
   category: true,
+  paymentMethod: true,
   transaction: true,
   investment: true,
   reserve: true,

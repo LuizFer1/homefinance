@@ -1,6 +1,12 @@
 import type { Ulid } from "../ids/ulid";
 
-export type EntityKind = "user" | "category" | "transaction" | "investment" | "reserve";
+export type EntityKind =
+  | "user"
+  | "category"
+  | "paymentMethod"
+  | "transaction"
+  | "investment"
+  | "reserve";
 
 export type Action = "create" | "update" | "delete";
 
