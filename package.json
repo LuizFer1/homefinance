@@ -25,10 +25,13 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",
     "@preact/preset-vite": "^2.10.6",
+    "@tailwindcss/vite": "^4.3.3",
     "@testing-library/preact": "^3.2.4",
     "@types/node": "^26.2.0",
+    "daisyui": "^5.7.16",
     "fake-indexeddb": "^6.2.5",
     "happy-dom": "^20.11.2",
+    "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
     "vitest": "^4.1.10"
