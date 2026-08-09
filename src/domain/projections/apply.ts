@@ -14,7 +14,11 @@ export interface TransactionRecord extends Transaction {
 
 export interface ProjectionState {
   transactions: Record<Ulid, TransactionRecord>;
-  /** Maior HLC já aplicado. É o que decide entre aplicar incremental e refoldar. */
+  /**
+   * Maior HLC já aplicado, inclusive de eventos ignorados. É o que decide entre
+   * aplicar incremental e refoldar. Avançar demais só força refold — que é sempre
+   * correto, só mais lento. Avançar de menos aplicaria um evento fora de ordem.
+   */
   lastHlc: string | null;
 }
 
@@ -29,6 +33,26 @@ const TRANSACTION_FIELDS = [
   "occurredOn",
 ] as const;
 
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/** Data real, não só formato: mês 13 e 31 de fevereiro viram mês fantasma no histórico. */
+function isRealDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (match === null) return false;
+
+  const [, yearText, monthText, dayText] = match;
+  if (yearText === undefined || monthText === undefined || dayText === undefined) return false;
+
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (month < 1 || month > 12 || day < 1) return false;
+
+  const leapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const limit = month === 2 && leapYear ? 29 : (DAYS_IN_MONTH[month - 1] ?? 0);
+  return day <= limit;
+}
+
 function isValidFieldValue(field: string, value: unknown): boolean {
   switch (field) {
     case "kind":
@@ -42,7 +66,7 @@ function isValidFieldValue(field: string, value: unknown): boolean {
     case "categoryId":
       return value === null || typeof value === "string";
     case "occurredOn":
-      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+      return typeof value === "string" && isRealDate(value);
     default:
       return false;
   }
@@ -88,7 +112,8 @@ function mergeFields(
 }
 
 export function apply(state: ProjectionState, event: DomainEvent): ProjectionState {
-  const lastHlc = state.lastHlc === null || event.hlc > state.lastHlc ? event.hlc : state.lastHlc;
+  const lastHlc =
+    state.lastHlc === null || compareHlc(event.hlc, state.lastHlc) > 0 ? event.hlc : state.lastHlc;
   const unchanged: ProjectionState = { transactions: state.transactions, lastHlc };
 
   if (event.schemaVersion > CURRENT_SCHEMA_VERSION) return unchanged;
@@ -112,7 +137,23 @@ export function apply(state: ProjectionState, event: DomainEvent): ProjectionSta
   return { transactions: { ...state.transactions, [event.entityId]: next }, lastHlc };
 }
 
+/**
+ * Ordem total sobre eventos. O HLC decide quase sempre; o `id` desempata.
+ *
+ * Sem o desempate, `sort` estável devolve a ordem de chegada quando dois HLCs
+ * empatam, e dois aparelhos que receberam os mesmos eventos em ordens diferentes
+ * divergem em silêncio. HLC empatado não é hipótese remota: restaurar o mesmo
+ * backup em dois aparelhos faz os dois herdarem o mesmo `deviceId` e o mesmo
+ * relógio, e o próximo evento de cada um nasce com HLC idêntico.
+ */
+function compareEvents(a: DomainEvent, b: DomainEvent): number {
+  const byHlc = compareHlc(a.hlc, b.hlc);
+  if (byHlc !== 0) return byHlc;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? -1 : 1;
+}
+
 /** Ordem total por HLC antes de reduzir. É o que torna o fold determinístico. */
 export function fold(events: DomainEvent[]): ProjectionState {
-  return [...events].sort((a, b) => compareHlc(a.hlc, b.hlc)).reduce(apply, EMPTY_STATE);
+  return [...events].sort(compareEvents).reduce(apply, EMPTY_STATE);
 }

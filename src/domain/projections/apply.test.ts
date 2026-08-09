@@ -18,6 +18,19 @@ function event(overrides: Partial<DomainEvent> & { hlc: string }): DomainEvent {
   };
 }
 
+function permutations<T>(items: T[]): T[][] {
+  if (items.length <= 1) return [items];
+
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += 1) {
+    const head = items[i];
+    if (head === undefined) continue;
+    const rest = [...items.slice(0, i), ...items.slice(i + 1)];
+    for (const tail of permutations(rest)) out.push([head, ...tail]);
+  }
+  return out;
+}
+
 const CREATE = event({
   hlc: `1754697600000-0000-${DEVICE_A}`,
   action: "create",
@@ -130,6 +143,25 @@ describe("apply", () => {
 
     expect(state.transactions[ENTITY]?.description).toBe("Mercado");
   });
+
+  it("ignora occurredOn que não é data real", () => {
+    const state = fold([
+      CREATE,
+      event({ hlc: `1754697600010-0000-${DEVICE_A}`, data: { occurredOn: "2026-13-45" } }),
+      event({ hlc: `1754697600011-0000-${DEVICE_A}`, data: { occurredOn: "2026-02-30" } }),
+    ]);
+
+    expect(state.transactions[ENTITY]?.occurredOn).toBe("2026-08-07");
+  });
+
+  it("aceita 29 de fevereiro em ano bissexto", () => {
+    const state = fold([
+      CREATE,
+      event({ hlc: `1754697600010-0000-${DEVICE_A}`, data: { occurredOn: "2028-02-29" } }),
+    ]);
+
+    expect(state.transactions[ENTITY]?.occurredOn).toBe("2028-02-29");
+  });
 });
 
 describe("fold", () => {
@@ -139,5 +171,20 @@ describe("fold", () => {
 
     expect(fold([b, a, CREATE])).toEqual(fold([CREATE, a, b]));
     expect(fold([b, a, CREATE]).transactions[ENTITY]?.description).toBe("B");
+  });
+
+  it("converge em qualquer ordem, inclusive com HLC empatado", () => {
+    const empatado = `1754697600010-0000-${DEVICE_A}`;
+    const eventos = [
+      CREATE,
+      event({ id: "evt-a", hlc: empatado, data: { description: "PRIMEIRO" } }),
+      event({ id: "evt-b", hlc: empatado, data: { description: "SEGUNDO" } }),
+      event({ hlc: `1754697600020-0000-${DEVICE_A}`, action: "delete" }),
+    ];
+    const canonico = fold(eventos);
+
+    for (const ordem of permutations(eventos)) {
+      expect(fold(ordem)).toEqual(canonico);
+    }
   });
 });
