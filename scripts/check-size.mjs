@@ -6,11 +6,13 @@ import { gzipSync } from "node:zlib";
 
 /**
  * Teto de bundle gzipado.
- * Calibrado ~2x acima do baseline atual para que regressao real dispare.
- * Elevar exige commit deliberado 2014 features legitimas (Dexie, Tailwind, router)
- * vao exigir subidas revisadas ate o alvo de ~140kb do README.
+ * Elevar exige commit deliberado e revisavel — nunca de raspao junto com uma feature.
+ * Historico:
+ *   10kb  — baseline de tooling (Preact apenas, 4.76kb medidos)
+ *   45kb  — nucleo de transacoes: Dexie e @preact/signals entram (42.25kb medidos)
+ * Alvo de projeto: ~140kb gzip, conforme o README.
  */
-export const LIMIT_BYTES = 10 * 1024;
+export const LIMIT_BYTES = 45 * 1024;
 
 const MEASURED = /\.(js|css)$/;
 

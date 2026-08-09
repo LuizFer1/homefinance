@@ -89,12 +89,11 @@ The computer only syncs when it's on. If you turn it off, the phones continue wo
 **Mobile (PWA)**
 - Preact + TypeScript (ultra-lightweight)
 - Vite
-- Pinia (state management)
+- `@preact/signals` (state management)
 - Dexie (IndexedDB wrapper)
-- TanStack Query (data fetching)
-- Automerge (sync & CRDT)
 - TailwindCSS + daisyUI
 - Workbox (Service Workers)
+- Biome (lint + format), Vitest (tests)
 
 **Desktop (Sync Hub)**
 - Tauri
@@ -102,7 +101,20 @@ The computer only syncs when it's on. If you turn it off, the phones continue wo
 - SQLite
 - TailwindCSS + daisyUI
 
-**Bundle Size**: ~140kb gzipped
+**Bundle Size**: ~140kb gzipped — this is a product requirement, enforced in CI.
+
+### Data model
+
+Your data is an **append-only event log**, stored locally. Every change — creating a
+transaction, editing a category — is a new immutable event. The app's state is rebuilt
+by replaying that log.
+
+This is what makes offline sync work without a coordinating server: an append-only log
+is itself a CRDT. Two phones that edited for days while apart converge simply by
+exchanging the events the other hasn't seen. No merge prompts, no server arbitrating.
+
+It is also why there is no Automerge here despite the CRDT requirement — it ships ~1MB
+of WASM, which alone would blow the entire bundle budget.
 
 ---
 
@@ -121,4 +133,7 @@ The computer only syncs when it's on. If you turn it off, the phones continue wo
 ## Links
 
 - 📱 [Repository](https://github.com/LuizFer1/HomeFinance_Mobile)
-- 📄 [Detailed Architecture](docs/ARCHITECTURE.md)
+
+Detailed design documents (architecture, event model, implementation plans) are kept in
+the surrounding workspace under `docs/`, deliberately outside this repository — they are
+working notes, not part of the shipped app.
