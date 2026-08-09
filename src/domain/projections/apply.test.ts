@@ -237,3 +237,121 @@ describe("fold", () => {
     }
   });
 });
+
+const CAT = "01J9F3K2M7QX8YB4TVWZ0DCEC1";
+
+function categoryEvent(overrides: Partial<DomainEvent> & { hlc: string }): DomainEvent {
+  return event({ entity: "category", entityId: CAT, ...overrides });
+}
+
+const CAT_CREATE = categoryEvent({
+  hlc: `1754697600000-0000-${DEVICE_A}`,
+  action: "create",
+  data: { name: "Mercado", icon: "utensils", color: "emerald" },
+});
+
+describe("apply com múltiplas entidades", () => {
+  it("projeta categoria no bucket de categorias", () => {
+    const state = apply(EMPTY_STATE, CAT_CREATE);
+
+    expect(state.categories[CAT]?.name).toBe("Mercado");
+    expect(state.categories[CAT]?.materialized).toBe(true);
+    expect(Object.keys(state.transactions)).toHaveLength(0);
+  });
+
+  it("não deixa evento de uma entidade sujar o bucket de outra", () => {
+    // Mesmo entityId nas duas entidades: se os buckets se cruzassem, este é o
+    // caso em que o dano apareceria.
+    const mesmoId = categoryEvent({
+      hlc: `1754697600010-0000-${DEVICE_A}`,
+      entityId: ENTITY,
+      action: "create",
+      data: { name: "Mercado", icon: "utensils", color: "emerald" },
+    });
+    const state = fold([CREATE, mesmoId]);
+
+    expect(state.transactions[ENTITY]?.description).toBe("Mercado");
+    expect(state.transactions[ENTITY]).not.toHaveProperty("icon");
+    expect(state.categories[ENTITY]?.name).toBe("Mercado");
+    expect(state.categories[ENTITY]).not.toHaveProperty("amountMinor");
+  });
+
+  it("aplica LWW por campo em categoria, igual a transação", () => {
+    const state = fold([
+      CAT_CREATE,
+      categoryEvent({ hlc: `1754697600020-0000-${DEVICE_A}`, data: { color: "rose" } }),
+      categoryEvent({ hlc: `1754697600010-0000-${DEVICE_A}`, data: { color: "sky" } }),
+    ]);
+
+    expect(state.categories[CAT]?.color).toBe("rose");
+    expect(state.categories[CAT]?.name).toBe("Mercado");
+  });
+
+  it("projeta forma de pagamento com o kind validado", () => {
+    const state = fold([
+      categoryEvent({
+        entity: "paymentMethod",
+        hlc: `1754697600000-0000-${DEVICE_A}`,
+        action: "create",
+        data: { name: "Nubank", icon: "credit-card", color: "violet", kind: "credit" },
+      }),
+      categoryEvent({
+        entity: "paymentMethod",
+        hlc: `1754697600010-0000-${DEVICE_A}`,
+        data: { kind: "cripto" },
+      }),
+    ]);
+
+    expect(state.paymentMethods[CAT]?.kind).toBe("credit");
+  });
+
+  it("ignora entidade fora do registro sem sujar bucket nenhum", () => {
+    const hlc = `1754697600010-0000-${DEVICE_A}`;
+    const state = apply(
+      apply(EMPTY_STATE, CREATE),
+      event({ hlc, entity: "investment", action: "create", data: { foo: 1 } }),
+    );
+
+    expect(Object.keys(state.transactions)).toHaveLength(1);
+    expect(Object.keys(state.categories)).toHaveLength(0);
+    expect(Object.keys(state.paymentMethods)).toHaveLength(0);
+    expect(Object.keys(state.users)).toHaveLength(0);
+    // lastHlc avança mesmo para evento ignorado: errar para o lado do refold.
+    expect(state.lastHlc).toBe(hlc);
+  });
+
+  it("delete de categoria não apaga a transação que a referencia", () => {
+    const state = fold([
+      event({
+        hlc: `1754697600000-0000-${DEVICE_A}`,
+        action: "create",
+        data: { ...CREATE.data, categoryId: CAT },
+      }),
+      CAT_CREATE,
+      categoryEvent({ hlc: `1754697600020-0000-${DEVICE_A}`, action: "delete" }),
+    ]);
+
+    expect(state.categories[CAT]?.deleted).toBe(true);
+    expect(state.transactions[ENTITY]?.deleted).toBe(false);
+    expect(state.transactions[ENTITY]?.categoryId).toBe(CAT);
+  });
+
+  it("converge em qualquer ordem com as quatro entidades misturadas", () => {
+    const eventos = [
+      CREATE,
+      CAT_CREATE,
+      categoryEvent({
+        entity: "user",
+        hlc: `1754697600005-0000-${DEVICE_A}`,
+        action: "create",
+        data: { name: "Luiz", color: "sky" },
+      }),
+      categoryEvent({ hlc: `1754697600030-0000-${DEVICE_A}`, data: { color: "amber" } }),
+    ];
+    const canonico = fold(eventos);
+
+    for (const ordem of permutations(eventos)) {
+      expect(fold(ordem)).toEqual(canonico);
+    }
+  });
+});

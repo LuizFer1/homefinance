@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { ProjectionState, TransactionRecord } from "./apply";
+import { EMPTY_STATE, type ProjectionState, type TransactionRecord } from "./apply";
 import { listTransactions, totals } from "./selectors";
+
+/** Parte de EMPTY_STATE: bucket novo na projeção não obriga a tocar cada literal daqui. */
+function stateWith(transactions: Record<string, TransactionRecord>): ProjectionState {
+  return { ...EMPTY_STATE, transactions };
+}
 
 function record(overrides: Partial<TransactionRecord> & { id: string }): TransactionRecord {
   return {
@@ -17,15 +22,12 @@ function record(overrides: Partial<TransactionRecord> & { id: string }): Transac
   };
 }
 
-const STATE: ProjectionState = {
-  lastHlc: null,
-  transactions: {
-    a: record({ id: "a", occurredOn: "2026-08-05", amountMinor: 1000 }),
-    b: record({ id: "b", occurredOn: "2026-08-09", kind: "income", amountMinor: 5000 }),
-    c: record({ id: "c", occurredOn: "2026-08-10", deleted: true }),
-    d: record({ id: "d", occurredOn: "2026-08-11", materialized: false }),
-  },
-};
+const STATE: ProjectionState = stateWith({
+  a: record({ id: "a", occurredOn: "2026-08-05", amountMinor: 1000 }),
+  b: record({ id: "b", occurredOn: "2026-08-09", kind: "income", amountMinor: 5000 }),
+  c: record({ id: "c", occurredOn: "2026-08-10", deleted: true }),
+  d: record({ id: "d", occurredOn: "2026-08-11", materialized: false }),
+});
 
 describe("listTransactions", () => {
   it("esconde tombstones e registros não materializados", () => {
@@ -40,14 +42,14 @@ describe("listTransactions", () => {
 
   it("desempata por id quando a data é igual, sem depender da ordem de inserção", () => {
     const base = { occurredOn: "2026-08-05" };
-    const umaOrdem: ProjectionState = {
-      lastHlc: null,
-      transactions: { x: record({ id: "x", ...base }), y: record({ id: "y", ...base }) },
-    };
-    const outraOrdem: ProjectionState = {
-      lastHlc: null,
-      transactions: { y: record({ id: "y", ...base }), x: record({ id: "x", ...base }) },
-    };
+    const umaOrdem = stateWith({
+      x: record({ id: "x", ...base }),
+      y: record({ id: "y", ...base }),
+    });
+    const outraOrdem = stateWith({
+      y: record({ id: "y", ...base }),
+      x: record({ id: "x", ...base }),
+    });
 
     expect(listTransactions(umaOrdem).map((item) => item.id)).toEqual(
       listTransactions(outraOrdem).map((item) => item.id),
