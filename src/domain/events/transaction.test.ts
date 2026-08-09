@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   diffTransaction,
   type Transaction,
+  type TransactionDraft,
   transactionCreated,
   transactionDeleted,
   transactionUpdated,
@@ -14,8 +15,7 @@ const ENVELOPE = {
   hlc: "1754697600000-0000-01J9F3K2M7QX8YB4TVWZ0DCEHR",
 };
 
-const CURRENT: Transaction = {
-  id: ENVELOPE.entityId,
+const DRAFT: TransactionDraft = {
   kind: "expense",
   description: "Mercado",
   amountMinor: 12_345,
@@ -23,6 +23,8 @@ const CURRENT: Transaction = {
   categoryId: null,
   occurredOn: "2026-08-07",
 };
+
+const CURRENT: Transaction = { id: ENVELOPE.entityId, ...DRAFT };
 
 describe("construtores de evento", () => {
   it("create carrega o agregado inteiro", () => {
@@ -82,15 +84,33 @@ describe("diffTransaction", () => {
   });
 
   it("devolve patch vazio quando nada mudou", () => {
-    const patch = diffTransaction(CURRENT, {
-      kind: "expense",
-      description: "Mercado",
-      amountMinor: 12_345,
-      currency: "BRL",
-      categoryId: null,
-      occurredOn: "2026-08-07",
-    });
+    const patch = diffTransaction(CURRENT, DRAFT);
 
     expect(patch).toEqual({});
+  });
+
+  it("detecta mudança de categoryId nos dois sentidos", () => {
+    const categoryId = "01J9F3K2M7QX8YB4TVWZ0DCEC1";
+    const comCategoria: Transaction = { ...CURRENT, categoryId };
+
+    expect(diffTransaction(CURRENT, { ...DRAFT, categoryId })).toEqual({ categoryId });
+    expect(diffTransaction(comCategoria, DRAFT)).toEqual({ categoryId: null });
+  });
+
+  it("devolve todos os campos alterados, não só o primeiro", () => {
+    const patch = diffTransaction(CURRENT, {
+      ...DRAFT,
+      kind: "income",
+      description: "Salário",
+      amountMinor: 500,
+      occurredOn: "2026-08-09",
+    });
+
+    expect(patch).toEqual({
+      kind: "income",
+      description: "Salário",
+      amountMinor: 500,
+      occurredOn: "2026-08-09",
+    });
   });
 });
