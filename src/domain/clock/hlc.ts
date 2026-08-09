@@ -11,6 +11,15 @@ export interface Hlc {
   deviceId: Ulid;
 }
 
+/**
+ * Serializa em largura fixa — é isso que faz comparação lexicográfica de string
+ * coincidir com comparação semântica.
+ *
+ * Invariantes que o chamador deve respeitar, porque `padStart` não trunca:
+ * `millis` cabe em 13 dígitos (vale até o ano 2286) e `counter` em `0..0xFFFF`.
+ * Violar qualquer um dos dois produz um segmento mais longo, que ordena como
+ * MENOR que um valor legítimo. `tick` e `observe` nunca violam nenhum dos dois.
+ */
 export function formatHlc(hlc: Hlc): string {
   const millis = String(hlc.millis).padStart(MILLIS_LEN, "0");
   const counter = hlc.counter.toString(16).toUpperCase().padStart(COUNTER_LEN, "0");
@@ -48,6 +57,10 @@ export function createHlcClock(deviceId: Ulid, initial?: string | null): HlcCloc
   let millis = 0;
   let counter = 0;
 
+  // `initial` inválido é ignorado e o relógio nasce em zero. Silêncio deliberado:
+  // a store deriva `initial` do maior HLC do log, e todo evento do log já passou
+  // por `isValidEvent`, que rejeita HLC que não parseia. Lançar aqui transformaria
+  // um `meta` corrompido em app que não abre, o que é pior que um relógio atrasado.
   if (initial !== undefined && initial !== null) {
     const parsed = parseHlc(initial);
     if (parsed !== null) {
@@ -58,6 +71,9 @@ export function createHlcClock(deviceId: Ulid, initial?: string | null): HlcCloc
 
   return {
     tick(wall: number): string {
+      if (!Number.isInteger(wall) || wall < 0) {
+        throw new Error(`HLC exige wall inteiro e não-negativo, recebeu ${wall}`);
+      }
       if (wall > millis) {
         millis = wall;
         counter = 0;

@@ -83,4 +83,50 @@ describe("createHlcClock", () => {
 
     expect(parseHlc(next)).toEqual({ millis: WALL, counter: 4, deviceId: DEVICE_A });
   });
+
+  it("empurra o milissegundo quando o counter estoura", () => {
+    const clock = createHlcClock(DEVICE_A);
+
+    // 0x10000 ticks no mesmo milissegundo: um para cada valor de counter, mais o que estoura.
+    for (let i = 0; i <= 0xffff; i += 1) clock.tick(WALL);
+    const overflowed = clock.tick(WALL);
+
+    expect(parseHlc(overflowed)).toEqual({ millis: WALL + 1, counter: 0, deviceId: DEVICE_A });
+  });
+
+  it("não regride ao observar HLC remoto menor", () => {
+    const clock = createHlcClock(DEVICE_A);
+    const antes = clock.tick(WALL);
+
+    clock.observe(formatHlc({ millis: WALL - 10_000, counter: 0, deviceId: DEVICE_B }));
+
+    expect(compareHlc(antes, clock.tick(WALL))).toBe(-1);
+    expect(parseHlc(clock.current())?.millis).toBe(WALL);
+  });
+
+  it("adota o counter maior quando o millis remoto é igual", () => {
+    const clock = createHlcClock(DEVICE_A);
+    clock.tick(WALL);
+
+    clock.observe(formatHlc({ millis: WALL, counter: 9, deviceId: DEVICE_B }));
+
+    expect(parseHlc(clock.tick(WALL))).toEqual({ millis: WALL, counter: 10, deviceId: DEVICE_A });
+  });
+
+  it("ignora HLC remoto inválido sem alterar o relógio", () => {
+    const clock = createHlcClock(DEVICE_A);
+    const antes = clock.tick(WALL);
+
+    clock.observe("não é um hlc");
+
+    expect(clock.current()).toBe(antes);
+  });
+
+  it("rejeita wall negativo, fracionário ou NaN", () => {
+    const clock = createHlcClock(DEVICE_A);
+
+    expect(() => clock.tick(-1)).toThrow(/inteiro e não-negativo/);
+    expect(() => clock.tick(1.5)).toThrow(/inteiro e não-negativo/);
+    expect(() => clock.tick(Number.NaN)).toThrow(/inteiro e não-negativo/);
+  });
 });
