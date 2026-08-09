@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createUlidFactory } from "./ulid";
+import { createUlidFactory, cryptoRandomChunk } from "./ulid";
 
 /** Fonte determinística: sempre o mesmo bloco de valores. */
 function fixedRandom(count: number): number[] {
@@ -44,5 +44,55 @@ describe("createUlidFactory", () => {
     const afterRegression = nextUlid(1_754_697_500_000);
 
     expect(first < afterRegression).toBe(true);
+  });
+
+  it("propaga o carry entre dígitos do bloco aleatório", () => {
+    // Último dígito começa em 31: o próximo incremento tem que estourar para o dígito à esquerda.
+    const nextUlid = createUlidFactory((count) =>
+      Array.from({ length: count }, (_, index) => (index === count - 1 ? 31 : 0)),
+    );
+    const millis = 1_754_697_600_000;
+
+    const first = nextUlid(millis);
+    const second = nextUlid(millis);
+
+    expect(first.endsWith("Z")).toBe(true);
+    expect(second.endsWith("0")).toBe(true);
+    expect(first < second).toBe(true);
+  });
+
+  it("lança quando o bloco aleatório estoura no mesmo milissegundo", () => {
+    const nextUlid = createUlidFactory((count) => Array.from({ length: count }, () => 31));
+    const millis = 1_754_697_600_000;
+
+    nextUlid(millis);
+
+    expect(() => nextUlid(millis)).toThrow(/esgotou/);
+  });
+
+  it("aceita millis zero", () => {
+    const nextUlid = createUlidFactory(fixedRandom);
+
+    expect(nextUlid(0)).toHaveLength(26);
+  });
+
+  it("rejeita millis negativo ou fracionário", () => {
+    const nextUlid = createUlidFactory(fixedRandom);
+
+    expect(() => nextUlid(-1)).toThrow(/inteiro e não-negativo/);
+    expect(() => nextUlid(1.5)).toThrow(/inteiro e não-negativo/);
+  });
+});
+
+describe("cryptoRandomChunk", () => {
+  it("devolve a quantidade pedida, toda dentro de [0, 31]", () => {
+    const values = cryptoRandomChunk(16);
+
+    expect(values).toHaveLength(16);
+    for (const value of values) {
+      expect(Number.isInteger(value)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(31);
+    }
   });
 });

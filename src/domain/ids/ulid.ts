@@ -50,6 +50,9 @@ export function createUlidFactory(randomChunk: RandomChunk): (millis: number) =>
   let lastRandom: number[] = [];
 
   return (millis: number): Ulid => {
+    if (!Number.isInteger(millis) || millis < 0) {
+      throw new Error(`ULID exige millis inteiro e não-negativo, recebeu ${millis}`);
+    }
     if (millis > lastMillis) {
       lastMillis = millis;
       lastRandom = randomChunk(RANDOM_LEN);
