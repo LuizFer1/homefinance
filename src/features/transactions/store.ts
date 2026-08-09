@@ -1,4 +1,4 @@
-import { type Signal, signal } from "@preact/signals";
+import { batch, type Signal, signal } from "@preact/signals";
 import type { EventStore } from "../../data/event-store";
 import { createHlcClock, type HlcClock } from "../../domain/clock/hlc";
 import {
@@ -62,11 +62,17 @@ export function createTransactionsStore(deps: StoreDeps): TransactionsStore {
       );
       clock = createHlcClock(deviceId, latest);
 
-      state.value = fold(log);
-      status.value = "ready";
+      // Uma atualização só: um render com `status` pronto e `state` ainda vazio
+      // faria a tela piscar "Nenhum lançamento ainda" antes dos dados do disco.
+      batch(() => {
+        state.value = fold(log);
+        status.value = "ready";
+      });
     } catch (cause) {
-      status.value = "error";
-      error.value = describeError(cause);
+      batch(() => {
+        status.value = "error";
+        error.value = describeError(cause);
+      });
     }
   }
 
@@ -90,12 +96,16 @@ export function createTransactionsStore(deps: StoreDeps): TransactionsStore {
       return;
     }
 
-    error.value = null;
     log = [...log, event];
 
     const current = state.value;
     const outOfOrder = current.lastHlc !== null && event.hlc <= current.lastHlc;
-    state.value = outOfOrder ? fold(log) : apply(current, event);
+    const next = outOfOrder ? fold(log) : apply(current, event);
+
+    batch(() => {
+      error.value = null;
+      state.value = next;
+    });
   }
 
   return {
