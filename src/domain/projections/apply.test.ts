@@ -162,6 +162,55 @@ describe("apply", () => {
 
     expect(state.transactions[ENTITY]?.occurredOn).toBe("2028-02-29");
   });
+
+  it("resolve create duplicado por LWW por campo, independente da ordem", () => {
+    const antigo = event({
+      hlc: `1754697600000-0000-${DEVICE_A}`,
+      id: "create-antigo",
+      action: "create",
+      data: { ...CREATE.data, description: "Antigo", amountMinor: 100 },
+    });
+    // Create que carrega só parte dos campos: modela evento de outra versão de
+    // schema, ou de um dispositivo que ainda não conhecia o campo.
+    const parcial = event({
+      hlc: `1754697600010-0000-${DEVICE_A}`,
+      id: "create-parcial",
+      action: "create",
+      data: { description: "Novo" },
+    });
+
+    const canonico = fold([antigo, parcial]);
+
+    // Campo tocado pelos dois: vence o de maior HLC.
+    expect(canonico.transactions[ENTITY]?.description).toBe("Novo");
+    // Campo que só o mais antigo tocou: sobrevive. Um create mais novo não apaga
+    // o que ele não menciona — é o que faz `create` ser LWW por campo, e não
+    // substituição de documento inteiro.
+    expect(canonico.transactions[ENTITY]?.amountMinor).toBe(100);
+    expect(canonico.transactions[ENTITY]?.materialized).toBe(true);
+    expect(fold([parcial, antigo])).toEqual(canonico);
+  });
+
+  it("faz o create mais novo vencer todos os campos que ele tambem carrega", () => {
+    const antigo = event({
+      hlc: `1754697600000-0000-${DEVICE_A}`,
+      id: "create-antigo",
+      action: "create",
+      data: { ...CREATE.data, description: "Antigo", amountMinor: 100 },
+    });
+    const novo = event({
+      hlc: `1754697600010-0000-${DEVICE_A}`,
+      id: "create-novo",
+      action: "create",
+      data: { ...CREATE.data, description: "Novo" },
+    });
+
+    const canonico = fold([antigo, novo]);
+
+    expect(canonico.transactions[ENTITY]?.description).toBe("Novo");
+    expect(canonico.transactions[ENTITY]?.amountMinor).toBe(12_345);
+    expect(fold([novo, antigo])).toEqual(canonico);
+  });
 });
 
 describe("fold", () => {
