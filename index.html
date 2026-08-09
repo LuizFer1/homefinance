@@ -2,8 +2,24 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f3f3" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0c0e" />
     <title>HomeFinance</title>
+    <script>
+      // Aplica o tema antes do primeiro paint. Ler isto so no JS do app daria
+      // um quadro com o tema errado — uma tela branca piscando em quem
+      // escolheu escuro. A chave e o prefixo estao repetidos de
+      // src/features/theme/theme.ts porque um script pre-paint nao pode
+      // importar modulo; theme.test.ts falha se os dois divergirem.
+      try {
+        const pref = localStorage.getItem("hf:theme");
+        if (pref === "light" || pref === "dark") {
+          document.documentElement.setAttribute("data-theme", `hf-${pref}`);
+        }
+      } catch {}
+    </script>
   </head>
   <body>
     <div id="app"></div>
