@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { App } from "./app";
 import type { EventStore } from "./data/event-store";
 import type { DomainEvent } from "./domain/events/types";
+import { createSession } from "./features/session/session";
 import { createTransactionsStore, type TransactionsStore } from "./features/transactions/store";
 
 afterEach(cleanup);
@@ -26,14 +27,16 @@ function fakeEventStore() {
 
 function buildStore(events: EventStore): TransactionsStore {
   let millis = 1_754_697_600_000;
-  return createTransactionsStore({
-    events,
-    now: () => {
-      millis += 1;
-      return millis;
-    },
-    randomChunk: (count) => Array.from({ length: count }, (_, index) => index % 32),
-  });
+  return createTransactionsStore(
+    createSession({
+      events,
+      now: () => {
+        millis += 1;
+        return millis;
+      },
+      randomChunk: (count: number) => Array.from({ length: count }, (_, index) => index % 32),
+    }),
+  );
 }
 
 /** O tema escreve num documento à parte para não sujar o do testing-library. */
