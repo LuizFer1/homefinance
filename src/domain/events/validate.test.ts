@@ -29,6 +29,10 @@ describe("isValidEvent", () => {
     expect(isValidEvent({ ...VALID, action: "patch" })).toBe(false);
   });
 
+  it("aceita paymentMethod como entidade conhecida", () => {
+    expect(isValidEvent({ ...VALID, entity: "paymentMethod" })).toBe(true);
+  });
+
   it("rejeita hlc fora do formato", () => {
     expect(isValidEvent({ ...VALID, hlc: "ontem" })).toBe(false);
   });

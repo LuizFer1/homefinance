@@ -98,6 +98,70 @@
   --noise: 0;
 }
 
+/*
+ * Paleta de tags: cor de categoria, forma de pagamento e autor.
+ *
+ * Fora do bloco `@plugin` de proposito — o daisyUI so emite as variaveis cujos
+ * nomes ele conhece, entao um `--color-tag-*` la dentro seria descartado em
+ * silencio.
+ *
+ * Os valores moram no CSS, e nao num objeto TypeScript, para o tema escuro
+ * funcionar sem JavaScript e sem um segundo lugar para esquecer de atualizar.
+ *
+ * Sao tres estados de tema, nao dois: `data-theme` ausente devolve a decisao ao
+ * `prefers-color-scheme`, que e o padrao "sistema" do alternador. Por isso o
+ * bloco de media existe alem do seletor explicito.
+ *
+ * O escuro nao repete os valores do claro: sobre `base-100` escuro a mesma cor
+ * fica ilegivel. Ele sobe a luminosidade e baixa um pouco o croma.
+ */
+:root {
+  --color-tag-slate: oklch(55% 0.02 260);
+  --color-tag-rose: oklch(58% 0.16 15);
+  --color-tag-red: oklch(55% 0.19 27);
+  --color-tag-orange: oklch(60% 0.16 55);
+  --color-tag-amber: oklch(62% 0.14 80);
+  --color-tag-lime: oklch(60% 0.15 130);
+  --color-tag-emerald: oklch(56% 0.13 160);
+  --color-tag-teal: oklch(56% 0.11 185);
+  --color-tag-sky: oklch(58% 0.13 230);
+  --color-tag-indigo: oklch(52% 0.17 270);
+  --color-tag-violet: oklch(55% 0.18 295);
+  --color-tag-fuchsia: oklch(57% 0.19 325);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="hf-light"]) {
+    --color-tag-slate: oklch(72% 0.02 260);
+    --color-tag-rose: oklch(75% 0.13 15);
+    --color-tag-red: oklch(72% 0.15 27);
+    --color-tag-orange: oklch(77% 0.13 55);
+    --color-tag-amber: oklch(80% 0.12 80);
+    --color-tag-lime: oklch(80% 0.14 130);
+    --color-tag-emerald: oklch(76% 0.12 160);
+    --color-tag-teal: oklch(76% 0.1 185);
+    --color-tag-sky: oklch(76% 0.11 230);
+    --color-tag-indigo: oklch(72% 0.13 270);
+    --color-tag-violet: oklch(75% 0.14 295);
+    --color-tag-fuchsia: oklch(76% 0.15 325);
+  }
+}
+
+[data-theme="hf-dark"] {
+  --color-tag-slate: oklch(72% 0.02 260);
+  --color-tag-rose: oklch(75% 0.13 15);
+  --color-tag-red: oklch(72% 0.15 27);
+  --color-tag-orange: oklch(77% 0.13 55);
+  --color-tag-amber: oklch(80% 0.12 80);
+  --color-tag-lime: oklch(80% 0.14 130);
+  --color-tag-emerald: oklch(76% 0.12 160);
+  --color-tag-teal: oklch(76% 0.1 185);
+  --color-tag-sky: oklch(76% 0.11 230);
+  --color-tag-indigo: oklch(72% 0.13 270);
+  --color-tag-violet: oklch(75% 0.14 295);
+  --color-tag-fuchsia: oklch(76% 0.15 325);
+}
+
 @theme {
   /*
    * Curva unica de saida. Nao ha gesto nesta tela ainda, entao uma spring de

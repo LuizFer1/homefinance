@@ -4,6 +4,8 @@ import { App } from "./app";
 import { HomeFinanceDb } from "./data/db";
 import { createEventStore } from "./data/event-store";
 import { cryptoRandomChunk } from "./domain/ids/ulid";
+import { createRegistryStore } from "./features/registry/store";
+import { createSession } from "./features/session/session";
 import type { ThemeStorage } from "./features/theme/theme";
 import { createTransactionsStore } from "./features/transactions/store";
 
@@ -45,13 +47,24 @@ if (!root) {
   throw new Error("Elemento #app nao encontrado em index.html");
 }
 
-const store = createTransactionsStore({
+// Uma sessão por aparelho: relógio HLC, projeção e porta de escrita moram nela,
+// e todas as stores de domínio a compartilham. Um relógio por store entrelaçaria
+// os HLCs e forçaria refold do log inteiro a cada escrita.
+const session = createSession({
   events: createEventStore(new HomeFinanceDb()),
   now: () => Date.now(),
   randomChunk: cryptoRandomChunk,
 });
 
+const store = createTransactionsStore(session);
+const registry = createRegistryStore(session);
+
 render(
-  <App store={store} today={todayISO()} theme={{ storage: safeStorage(), doc: document }} />,
+  <App
+    store={store}
+    registry={registry}
+    today={todayISO()}
+    theme={{ storage: safeStorage(), doc: document }}
+  />,
   root,
 );

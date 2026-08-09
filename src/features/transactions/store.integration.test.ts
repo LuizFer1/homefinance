@@ -5,6 +5,7 @@ import { createEventStore } from "../../data/event-store";
 import type { TransactionDraft } from "../../domain/events/transaction";
 import { cryptoRandomChunk } from "../../domain/ids/ulid";
 import { listTransactions } from "../../domain/projections/selectors";
+import { createSession } from "../session/session";
 import { createTransactionsStore } from "./store";
 
 const DRAFT: TransactionDraft = {
@@ -21,11 +22,13 @@ let dbName: string;
 let counter = 0;
 
 function build() {
-  return createTransactionsStore({
-    events: createEventStore(db),
-    now: () => Date.now(),
-    randomChunk: cryptoRandomChunk,
-  });
+  return createTransactionsStore(
+    createSession({
+      events: createEventStore(db),
+      now: () => Date.now(),
+      randomChunk: cryptoRandomChunk,
+    }),
+  );
 }
 
 beforeEach(() => {

@@ -3,6 +3,7 @@ import type { EventStore } from "../../data/event-store";
 import type { TransactionDraft } from "../../domain/events/transaction";
 import type { DomainEvent } from "../../domain/events/types";
 import { listTransactions } from "../../domain/projections/selectors";
+import { createSession } from "../session/session";
 import { createTransactionsStore } from "./store";
 
 const DRAFT: TransactionDraft = {
@@ -49,9 +50,14 @@ function deps(events: FakeStore, startAt = 1_754_697_600_000) {
   };
 }
 
+/** A store não constrói mais relógio nem projeção: os dois vêm da sessão. */
+function session(events: FakeStore, startAt = 1_754_697_600_000) {
+  return createSession(deps(events, startAt));
+}
+
 describe("createTransactionsStore", () => {
   it("fica pronta num banco vazio", async () => {
-    const store = createTransactionsStore(deps(fakeEventStore()));
+    const store = createTransactionsStore(session(fakeEventStore()));
 
     await store.init();
 
@@ -61,10 +67,10 @@ describe("createTransactionsStore", () => {
 
   it("grava o deviceId no primeiro boot e o reusa depois", async () => {
     const events = fakeEventStore();
-    await createTransactionsStore(deps(events)).init();
+    await createTransactionsStore(session(events)).init();
 
     const first = await events.getMeta("deviceId");
-    await createTransactionsStore(deps(events)).init();
+    await createTransactionsStore(session(events)).init();
 
     expect(first).not.toBeNull();
     expect(await events.getMeta("deviceId")).toBe(first);
@@ -72,7 +78,7 @@ describe("createTransactionsStore", () => {
 
   it("adiciona um lançamento e o publica na projeção", async () => {
     const events = fakeEventStore();
-    const store = createTransactionsStore(deps(events));
+    const store = createTransactionsStore(session(events));
     await store.init();
 
     await store.add(DRAFT);
@@ -86,7 +92,7 @@ describe("createTransactionsStore", () => {
 
   it("edita emitindo apenas o patch recebido", async () => {
     const events = fakeEventStore();
-    const store = createTransactionsStore(deps(events));
+    const store = createTransactionsStore(session(events));
     await store.init();
     await store.add(DRAFT);
     const [created] = listTransactions(store.state.value);
@@ -101,7 +107,7 @@ describe("createTransactionsStore", () => {
 
   it("remove gravando tombstone", async () => {
     const events = fakeEventStore();
-    const store = createTransactionsStore(deps(events));
+    const store = createTransactionsStore(session(events));
     await store.init();
     await store.add(DRAFT);
     const [created] = listTransactions(store.state.value);
@@ -114,7 +120,7 @@ describe("createTransactionsStore", () => {
 
   it("não altera a projeção quando a gravação falha", async () => {
     const events = fakeEventStore();
-    const store = createTransactionsStore(deps(events));
+    const store = createTransactionsStore(session(events));
     await store.init();
     events.failNext = true;
 
@@ -129,7 +135,7 @@ describe("createTransactionsStore", () => {
     broken.readAll = async () => {
       throw new Error("IndexedDB indisponível");
     };
-    const store = createTransactionsStore(deps(broken));
+    const store = createTransactionsStore(session(broken));
 
     await store.init();
 
@@ -139,11 +145,11 @@ describe("createTransactionsStore", () => {
 
   it("recupera a projeção e o relógio a partir do log existente", async () => {
     const events = fakeEventStore();
-    const first = createTransactionsStore(deps(events));
+    const first = createTransactionsStore(session(events));
     await first.init();
     await first.add(DRAFT);
 
-    const second = createTransactionsStore(deps(events));
+    const second = createTransactionsStore(session(events));
     await second.init();
     await second.add({ ...DRAFT, description: "Farmácia" });
 

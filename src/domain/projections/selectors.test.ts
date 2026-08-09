@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
-import type { ProjectionState, TransactionRecord } from "./apply";
-import { listTransactions, totals } from "./selectors";
+import {
+  type CategoryRecord,
+  EMPTY_STATE,
+  type ProjectionState,
+  type TransactionRecord,
+} from "./apply";
+import {
+  listCategories,
+  listPaymentMethods,
+  listTransactions,
+  resolveCategoryName,
+  resolvePaymentMethodName,
+  totals,
+} from "./selectors";
+
+/** Parte de EMPTY_STATE: bucket novo na projeção não obriga a tocar cada literal daqui. */
+function stateWith(transactions: Record<string, TransactionRecord>): ProjectionState {
+  return { ...EMPTY_STATE, transactions };
+}
 
 function record(overrides: Partial<TransactionRecord> & { id: string }): TransactionRecord {
   return {
@@ -17,15 +34,12 @@ function record(overrides: Partial<TransactionRecord> & { id: string }): Transac
   };
 }
 
-const STATE: ProjectionState = {
-  lastHlc: null,
-  transactions: {
-    a: record({ id: "a", occurredOn: "2026-08-05", amountMinor: 1000 }),
-    b: record({ id: "b", occurredOn: "2026-08-09", kind: "income", amountMinor: 5000 }),
-    c: record({ id: "c", occurredOn: "2026-08-10", deleted: true }),
-    d: record({ id: "d", occurredOn: "2026-08-11", materialized: false }),
-  },
-};
+const STATE: ProjectionState = stateWith({
+  a: record({ id: "a", occurredOn: "2026-08-05", amountMinor: 1000 }),
+  b: record({ id: "b", occurredOn: "2026-08-09", kind: "income", amountMinor: 5000 }),
+  c: record({ id: "c", occurredOn: "2026-08-10", deleted: true }),
+  d: record({ id: "d", occurredOn: "2026-08-11", materialized: false }),
+});
 
 describe("listTransactions", () => {
   it("esconde tombstones e registros não materializados", () => {
@@ -40,14 +54,14 @@ describe("listTransactions", () => {
 
   it("desempata por id quando a data é igual, sem depender da ordem de inserção", () => {
     const base = { occurredOn: "2026-08-05" };
-    const umaOrdem: ProjectionState = {
-      lastHlc: null,
-      transactions: { x: record({ id: "x", ...base }), y: record({ id: "y", ...base }) },
-    };
-    const outraOrdem: ProjectionState = {
-      lastHlc: null,
-      transactions: { y: record({ id: "y", ...base }), x: record({ id: "x", ...base }) },
-    };
+    const umaOrdem = stateWith({
+      x: record({ id: "x", ...base }),
+      y: record({ id: "y", ...base }),
+    });
+    const outraOrdem = stateWith({
+      y: record({ id: "y", ...base }),
+      x: record({ id: "x", ...base }),
+    });
 
     expect(listTransactions(umaOrdem).map((item) => item.id)).toEqual(
       listTransactions(outraOrdem).map((item) => item.id),
@@ -79,5 +93,108 @@ describe("totals", () => {
       expenseMinor: 9000,
       balanceMinor: -7000,
     });
+  });
+});
+
+function categoria(overrides: Partial<CategoryRecord> & { id: string }): CategoryRecord {
+  return {
+    name: "Mercado",
+    icon: "tag",
+    color: "slate",
+    deleted: false,
+    materialized: true,
+    fieldHlc: {},
+    ...overrides,
+  };
+}
+
+const VIVA = "01J9F3K2M7QX8YB4TVWZ0DCEC1";
+const APAGADA = "01J9F3K2M7QX8YB4TVWZ0DCEC2";
+const CASCA = "01J9F3K2M7QX8YB4TVWZ0DCEC3";
+
+const REF_STATE: ProjectionState = {
+  ...EMPTY_STATE,
+  categories: {
+    [VIVA]: categoria({ id: VIVA, name: "Mercado" }),
+    [APAGADA]: categoria({ id: APAGADA, name: "Antiga", deleted: true }),
+    [CASCA]: categoria({ id: CASCA, name: "", materialized: false }),
+  },
+  paymentMethods: {
+    [VIVA]: { ...categoria({ id: VIVA, name: "Nubank" }), kind: "credit" },
+    [APAGADA]: { ...categoria({ id: APAGADA, name: "Antigo", deleted: true }), kind: "debit" },
+  },
+};
+
+describe("listCategories", () => {
+  it("esconde apagadas e não materializadas", () => {
+    expect(listCategories(REF_STATE).map((c) => c.id)).toEqual([VIVA]);
+  });
+
+  it("ordena por nome", () => {
+    const state: ProjectionState = {
+      ...EMPTY_STATE,
+      categories: {
+        z: categoria({ id: "z", name: "Zoológico" }),
+        a: categoria({ id: "a", name: "Água" }),
+        m: categoria({ id: "m", name: "Mercado" }),
+      },
+    };
+
+    expect(listCategories(state).map((c) => c.name)).toEqual(["Água", "Mercado", "Zoológico"]);
+  });
+
+  it("desempata nome igual por id, sem depender da ordem de inserção", () => {
+    // Sem o desempate a lista pula de posição a cada refold.
+    const uma: ProjectionState = {
+      ...EMPTY_STATE,
+      categories: { x: categoria({ id: "x" }), y: categoria({ id: "y" }) },
+    };
+    const outra: ProjectionState = {
+      ...EMPTY_STATE,
+      categories: { y: categoria({ id: "y" }), x: categoria({ id: "x" }) },
+    };
+
+    expect(listCategories(uma).map((c) => c.id)).toEqual(listCategories(outra).map((c) => c.id));
+  });
+});
+
+describe("listPaymentMethods", () => {
+  it("esconde apagadas e preserva o kind", () => {
+    expect(listPaymentMethods(REF_STATE).map((m) => m.kind)).toEqual(["credit"]);
+  });
+});
+
+describe("resolveCategoryName", () => {
+  it("resolve o nome da categoria viva", () => {
+    expect(resolveCategoryName(REF_STATE, VIVA)).toBe("Mercado");
+  });
+
+  it("resolve 'Sem categoria' para null", () => {
+    // Opção legítima, não estado de erro: lançamento rápido continua rápido.
+    expect(resolveCategoryName(REF_STATE, null)).toBe("Sem categoria");
+  });
+
+  it("resolve rótulo neutro para categoria apagada", () => {
+    // Apagar categoria não cascateia, então lançamento apontando para registro
+    // deletado é estado normal e permanente — não erro.
+    expect(resolveCategoryName(REF_STATE, APAGADA)).toBe("Categoria removida");
+  });
+
+  it("resolve rótulo neutro para id que nunca existiu", () => {
+    expect(resolveCategoryName(REF_STATE, "01J9F3K2M7QX8YB4TVWZ0DCEXX")).toBe("Categoria removida");
+  });
+
+  it("nunca devolve o id cru, que vazaria ULID na tela e no CSV", () => {
+    for (const id of [APAGADA, CASCA, "01J9F3K2M7QX8YB4TVWZ0DCEXX"]) {
+      expect(resolveCategoryName(REF_STATE, id)).not.toContain(id);
+    }
+  });
+});
+
+describe("resolvePaymentMethodName", () => {
+  it("resolve nome, ausência e referência morta", () => {
+    expect(resolvePaymentMethodName(REF_STATE, VIVA)).toBe("Nubank");
+    expect(resolvePaymentMethodName(REF_STATE, null)).toBe("Sem forma de pagamento");
+    expect(resolvePaymentMethodName(REF_STATE, APAGADA)).toBe("Forma removida");
   });
 });

@@ -13,11 +13,12 @@ function make(
   entityId: string,
   action: DomainEvent["action"],
   data: Record<string, unknown>,
+  entity: DomainEvent["entity"] = "transaction",
 ): DomainEvent {
   const hlc = `${String(millis).padStart(13, "0")}-0000-${deviceId}`;
   return {
     id: `${deviceId}-${millis}-${entityId}`,
-    entity: "transaction",
+    entity,
     entityId,
     action,
     data,
@@ -119,5 +120,87 @@ describe("convergência com backup restaurado em dois aparelhos", () => {
     expect(fold([doAparelho2, doAparelho1, semente]).transactions[TX_1]?.description).toBe(
       "Aparelho 1",
     );
+  });
+});
+
+const CAT_1 = "01J9F3K2M7QX8YB4TVWZ0DCEC1";
+const CAT_2 = "01J9F3K2M7QX8YB4TVWZ0DCEC2";
+const PM_1 = "01J9F3K2M7QX8YB4TVWZ0DCEP1";
+
+const CAT_BASE = { name: "Mercado", icon: "utensils", color: "emerald" };
+
+/** A cria categorias e uma forma de pagamento, e classifica um lançamento. */
+const REF_LOG_A: DomainEvent[] = [
+  make(DEVICE_A, 1_754_697_600_000, TX_1, "create", { ...BASE, categoryId: CAT_1 }),
+  make(DEVICE_A, 1_754_697_600_020, CAT_1, "create", CAT_BASE, "category"),
+  make(DEVICE_A, 1_754_697_600_030, CAT_2, "create", { ...CAT_BASE, name: "Saúde" }, "category"),
+  make(
+    DEVICE_A,
+    1_754_697_600_040,
+    PM_1,
+    "create",
+    { name: "Nubank", icon: "credit-card", color: "violet", kind: "credit" },
+    "paymentMethod",
+  ),
+  // Renomeia CAT_1 — B vai mexer na cor dela no mesmo período.
+  make(DEVICE_A, 1_754_697_700_000, CAT_1, "update", { name: "Supermercado" }, "category"),
+];
+
+/** B, offline: edita outro campo da mesma categoria e apaga a que A criou depois. */
+const REF_LOG_B: DomainEvent[] = [
+  make(DEVICE_B, 1_754_697_700_500, CAT_1, "update", { color: "rose" }, "category"),
+  make(DEVICE_B, 1_754_697_800_000, CAT_2, "delete", {}, "category"),
+  make(DEVICE_B, 1_754_697_900_000, PM_1, "update", { kind: "debit" }, "paymentMethod"),
+];
+
+describe("convergência com quatro entidades no mesmo log", () => {
+  const merged = [...REF_LOG_A, ...REF_LOG_B];
+  const expected = fold(merged);
+
+  it("chega ao mesmo estado em qualquer ordem de merge", () => {
+    for (const order of rotations(merged)) {
+      expect(fold(order)).toEqual(expected);
+    }
+    expect(fold([...merged].reverse())).toEqual(expected);
+    expect(fold([...REF_LOG_B, ...REF_LOG_A])).toEqual(expected);
+  });
+
+  it("preserva edições concorrentes em campos diferentes da mesma categoria", () => {
+    expect(expected.categories[CAT_1]?.name).toBe("Supermercado");
+    expect(expected.categories[CAT_1]?.color).toBe("rose");
+  });
+
+  it("delete de categoria não cascateia para o lançamento", () => {
+    // Cascata num log append-only significaria emitir N deletes de transação a
+    // partir de um clique — e eles não voltariam.
+    const comDelete = fold([
+      ...merged,
+      make(DEVICE_B, 1_754_698_500_000, CAT_1, "delete", {}, "category"),
+    ]);
+
+    expect(comDelete.categories[CAT_1]?.deleted).toBe(true);
+    expect(comDelete.transactions[TX_1]?.deleted).toBe(false);
+    expect(comDelete.transactions[TX_1]?.categoryId).toBe(CAT_1);
+  });
+
+  it("evento de entidade desconhecida não suja nenhum bucket", () => {
+    const ruido = make(
+      DEVICE_B,
+      1_754_698_200_000,
+      "01J9F3K2M7QX8YB4TVWZ0DCEZZ",
+      "create",
+      { qualquer: 1 },
+      "investment",
+    );
+    const comRuido = fold([...merged, ruido]);
+
+    expect(comRuido.transactions).toEqual(expected.transactions);
+    expect(comRuido.categories).toEqual(expected.categories);
+    expect(comRuido.paymentMethods).toEqual(expected.paymentMethods);
+    expect(comRuido.users).toEqual(expected.users);
+  });
+
+  it("é idempotente com as quatro entidades", () => {
+    expect(fold([...merged, ...REF_LOG_B])).toEqual(expected);
   });
 });

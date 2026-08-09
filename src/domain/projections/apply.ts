@@ -2,18 +2,30 @@ import { compareHlc } from "../clock/hlc";
 import type { Transaction } from "../events/transaction";
 import { CURRENT_SCHEMA_VERSION, type DomainEvent } from "../events/types";
 import type { Ulid } from "../ids/ulid";
+import { type BucketName, ENTITY_SPECS, type EntityRecordBase, type EntitySpec } from "./entities";
 
-export interface TransactionRecord extends Transaction {
-  /** Tombstone. Terminal: uma vez verdadeiro, nunca volta a falso. */
-  deleted: boolean;
-  /** Falso enquanto só chegaram update ou delete órfãos. Invisível na UI. */
-  materialized: boolean;
-  /** HLC do último evento que tocou cada campo. Vive só na projeção, nunca no log. */
-  fieldHlc: Record<string, string>;
+export interface TransactionRecord extends Transaction, EntityRecordBase {}
+
+export interface CategoryRecord extends EntityRecordBase {
+  name: string;
+  icon: string;
+  color: string;
+}
+
+export interface PaymentMethodRecord extends CategoryRecord {
+  kind: string;
+}
+
+export interface UserRecord extends EntityRecordBase {
+  name: string;
+  color: string;
 }
 
 export interface ProjectionState {
   transactions: Record<Ulid, TransactionRecord>;
+  categories: Record<Ulid, CategoryRecord>;
+  paymentMethods: Record<Ulid, PaymentMethodRecord>;
+  users: Record<Ulid, UserRecord>;
   /**
    * Maior HLC já aplicado, inclusive de eventos ignorados. É o que decide entre
    * aplicar incremental e refoldar. Avançar demais só força refold — que é sempre
@@ -22,70 +34,13 @@ export interface ProjectionState {
   lastHlc: string | null;
 }
 
-export const EMPTY_STATE: ProjectionState = { transactions: {}, lastHlc: null };
-
-const TRANSACTION_FIELDS = [
-  "kind",
-  "description",
-  "amountMinor",
-  "currency",
-  "categoryId",
-  "occurredOn",
-] as const;
-
-const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-
-/** Data real, não só formato: mês 13 e 31 de fevereiro viram mês fantasma no histórico. */
-function isRealDate(value: string): boolean {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (match === null) return false;
-
-  const [, yearText, monthText, dayText] = match;
-  if (yearText === undefined || monthText === undefined || dayText === undefined) return false;
-
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-  if (month < 1 || month > 12 || day < 1) return false;
-
-  const leapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-  const limit = month === 2 && leapYear ? 29 : (DAYS_IN_MONTH[month - 1] ?? 0);
-  return day <= limit;
-}
-
-function isValidFieldValue(field: string, value: unknown): boolean {
-  switch (field) {
-    case "kind":
-      return value === "income" || value === "expense";
-    case "description":
-      return typeof value === "string";
-    case "amountMinor":
-      return typeof value === "number" && Number.isInteger(value);
-    case "currency":
-      return value === "BRL";
-    case "categoryId":
-      return value === null || typeof value === "string";
-    case "occurredOn":
-      return typeof value === "string" && isRealDate(value);
-    default:
-      return false;
-  }
-}
-
-function shell(entityId: Ulid): TransactionRecord {
-  return {
-    id: entityId,
-    kind: "expense",
-    description: "",
-    amountMinor: 0,
-    currency: "BRL",
-    categoryId: null,
-    occurredOn: "",
-    deleted: false,
-    materialized: false,
-    fieldHlc: {},
-  };
-}
+export const EMPTY_STATE: ProjectionState = {
+  transactions: {},
+  categories: {},
+  paymentMethods: {},
+  users: {},
+  lastHlc: null,
+};
 
 /**
  * LWW por campo: só sobrescreve o campo se este evento for mais novo que o último
@@ -95,19 +50,24 @@ function shell(entityId: Ulid): TransactionRecord {
  * ao restaurar o mesmo backup em dois aparelhos — `compareEvents` já os colocou em
  * ordem total pelo `id`, e aqui o **primeiro aplicado vence**, ou seja, o de menor
  * `id`. Qual dos dois vence é arbitrário; o que não pode variar é a resposta.
+ *
+ * Existe **uma** cópia disto, para as quatro entidades. Uma por entidade seria a
+ * maneira mais barata de quebrar a convergência sem nenhum teste ficar vermelho:
+ * a quarta cópia é a que esqueceria o `>=` ou o desempate.
  */
 function mergeFields(
-  record: TransactionRecord,
+  record: EntityRecordBase,
+  spec: EntitySpec,
   data: Record<string, unknown>,
   hlc: string,
-): TransactionRecord {
-  const next: TransactionRecord = { ...record, fieldHlc: { ...record.fieldHlc } };
+): EntityRecordBase {
+  const next: EntityRecordBase = { ...record, fieldHlc: { ...record.fieldHlc } };
 
-  for (const field of TRANSACTION_FIELDS) {
+  for (const field of spec.fields) {
     if (!(field in data)) continue;
 
     const value = data[field];
-    if (!isValidFieldValue(field, value)) continue;
+    if (!spec.isValidField(field, value)) continue;
 
     const previous = next.fieldHlc[field];
     if (previous !== undefined && previous >= hlc) continue;
@@ -119,30 +79,59 @@ function mergeFields(
   return next;
 }
 
+/**
+ * O único cast do módulo, e a razão dele.
+ *
+ * `ProjectionState` tem buckets **nomeados e tipados** de propósito: é o que faz
+ * `noUncheckedIndexedAccess` proteger os seletores e o que evita cast em toda
+ * leitura da projeção. O preço é aqui: com `bucket` só conhecido em runtime, o
+ * TypeScript não consegue provar que o registro casa com aquele bucket específico.
+ *
+ * A garantia é estrutural e vem do `EntitySpec`: `spec.shell` e `spec.fields` do
+ * mesmo spec produzem exatamente a forma do bucket para onde `spec.bucket` aponta.
+ * Um spec com `bucket` errado é o único jeito de furar isto — e o teste
+ * "cada spec aponta para um bucket distinto" existe por causa disso.
+ */
+function writeBucket(
+  state: ProjectionState,
+  bucket: BucketName,
+  entityId: Ulid,
+  record: EntityRecordBase,
+): ProjectionState {
+  const current = state[bucket] as Record<Ulid, EntityRecordBase>;
+  return { ...state, [bucket]: { ...current, [entityId]: record } } as ProjectionState;
+}
+
 export function apply(state: ProjectionState, event: DomainEvent): ProjectionState {
   const lastHlc =
     state.lastHlc === null || compareHlc(event.hlc, state.lastHlc) > 0 ? event.hlc : state.lastHlc;
-  const unchanged: ProjectionState = { transactions: state.transactions, lastHlc };
+  const unchanged: ProjectionState = { ...state, lastHlc };
 
   if (event.schemaVersion > CURRENT_SCHEMA_VERSION) return unchanged;
-  if (event.entity !== "transaction") return unchanged;
 
-  const current = state.transactions[event.entityId] ?? shell(event.entityId);
-  let next: TransactionRecord;
+  // Entidade fora do registro devolve `unchanged`. Compatibilidade para frente,
+  // não defensividade: um aparelho com versão mais nova emitindo `investment`
+  // não pode derrubar o fold deste.
+  const spec = ENTITY_SPECS[event.entity];
+  if (spec === undefined) return unchanged;
+
+  const bucket = state[spec.bucket] as Record<Ulid, EntityRecordBase>;
+  const current = bucket[event.entityId] ?? spec.shell(event.entityId);
+  let next: EntityRecordBase;
 
   switch (event.action) {
     case "create":
-      next = { ...mergeFields(current, event.data, event.hlc), materialized: true };
+      next = { ...mergeFields(current, spec, event.data, event.hlc), materialized: true };
       break;
     case "update":
-      next = mergeFields(current, event.data, event.hlc);
+      next = mergeFields(current, spec, event.data, event.hlc);
       break;
     case "delete":
       next = { ...current, deleted: true };
       break;
   }
 
-  return { transactions: { ...state.transactions, [event.entityId]: next }, lastHlc };
+  return writeBucket(unchanged, spec.bucket, event.entityId, next);
 }
 
 /**
