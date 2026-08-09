@@ -46,6 +46,37 @@ describe("parseBRL", () => {
     expect(parseBRL("abc")).toBeNull();
     expect(parseBRL("-5")).toBeNull();
   });
+
+  it("aceita o formato en-US com vírgula de milhar", () => {
+    expect(parseBRL("1,234.56")).toBe(123456);
+  });
+
+  it("distingue decimal de milhar pela regra do zero inicial", () => {
+    expect(parseBRL("0.500")).toBe(50);
+    expect(parseBRL("10.500")).toBe(1050000);
+  });
+
+  it("propaga o arredondamento para a casa dos reais", () => {
+    expect(parseBRL("9,995")).toBe(1000);
+    expect(parseBRL("0,999")).toBe(100);
+  });
+
+  it("rejeita sinal negativo em qualquer notação", () => {
+    expect(parseBRL("-12,34")).toBeNull();
+    expect(parseBRL("\u221212,34")).toBeNull();
+    expect(parseBRL("(12,34)")).toBeNull();
+  });
+
+  it("rejeita agrupamento de milhar malformado", () => {
+    expect(parseBRL("1.23.456")).toBeNull();
+    expect(parseBRL("1,2,3")).toBeNull();
+    expect(parseBRL("1.2.3")).toBeNull();
+  });
+
+  it("aceita valor sem parte inteira", () => {
+    expect(parseBRL(",50")).toBe(50);
+    expect(parseBRL(".50")).toBe(50);
+  });
 });
 
 describe("formatBRL", () => {
