@@ -1,10 +1,17 @@
-import { useEffect, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import type { TransactionDraft, TransactionKind } from "../../domain/events/transaction";
 import { parseBRL } from "../../domain/money/money";
 import type { TransactionRecord } from "../../domain/projections/apply";
 
 export interface TransactionFormProps {
-  /** Registro em edição, ou null para criação. */
+  /**
+   * Registro em edição, ou null para criação.
+   *
+   * O `App` monta este componente com `key` derivada do registro: trocar de
+   * registro remonta o formulário, e os inicializadores de `useState` acima
+   * releem as props. Não reintroduza um `useEffect` de reset — ele roda depois
+   * do DOM ficar consultável e sobrescreve o que o usuário já digitou.
+   */
   editing: TransactionRecord | null;
   onSubmit: (draft: TransactionDraft) => void;
   onCancel: () => void;
@@ -16,19 +23,11 @@ function toAmountInput(minor: number): string {
 }
 
 export function TransactionForm({ editing, onSubmit, onCancel, today }: TransactionFormProps) {
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [kind, setKind] = useState<TransactionKind>("expense");
-  const [occurredOn, setOccurredOn] = useState(today);
+  const [description, setDescription] = useState(editing?.description ?? "");
+  const [amount, setAmount] = useState(editing === null ? "" : toAmountInput(editing.amountMinor));
+  const [kind, setKind] = useState<TransactionKind>(editing?.kind ?? "expense");
+  const [occurredOn, setOccurredOn] = useState(editing?.occurredOn ?? today);
   const [problem, setProblem] = useState<string | null>(null);
-
-  useEffect(() => {
-    setDescription(editing?.description ?? "");
-    setAmount(editing === null ? "" : toAmountInput(editing.amountMinor));
-    setKind(editing?.kind ?? "expense");
-    setOccurredOn(editing?.occurredOn ?? today);
-    setProblem(null);
-  }, [editing, today]);
 
   function handleSubmit(event: Event) {
     event.preventDefault();
