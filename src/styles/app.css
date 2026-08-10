@@ -115,7 +115,16 @@
  * O escuro nao repete os valores do claro: sobre `base-100` escuro a mesma cor
  * fica ilegivel. Ele sobe a luminosidade e baixa um pouco o croma.
  */
+/*
+ * Altura da barra de navegacao inferior.
+ *
+ * Vive aqui porque tres lugares dependem dela e precisam concordar: a propria
+ * barra, o padding que a `main` reserva para o ultimo item da lista nao ficar
+ * embaixo dela, e a posicao do botao flutuante. Com tres numeros soltos, mudar
+ * a altura da barra escondia o ultimo lancamento ate alguem notar.
+ */
 :root {
+  --hf-nav-h: 3.75rem;
   --color-tag-slate: oklch(55% 0.02 260);
   --color-tag-rose: oklch(58% 0.16 15);
   --color-tag-red: oklch(55% 0.19 27);

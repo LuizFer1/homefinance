@@ -50,7 +50,7 @@ const SCREENS = [
 type ScreenId = (typeof SCREENS)[number]["id"];
 
 const TAB =
-  "hf-press flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[0.6875rem] font-medium " +
+  "hf-press flex flex-1 flex-col items-center justify-center gap-1 text-xs font-medium " +
   "transition-colors duration-150";
 
 function Shell({ children }: { children: ComponentChildren }) {
@@ -153,7 +153,7 @@ export function App({ store, registry, today, theme }: AppProps) {
         O padding inferior reserva a altura da barra mais o safe area. Sem ele o
         último item da lista fica permanentemente sob a barra, inalcançável.
       */}
-      <main class="mx-auto w-full max-w-md px-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
+      <main class="mx-auto w-full max-w-md px-5 pb-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+5rem)]">
         {store.error.value !== null && (
           <p role="alert" class="rounded-box mt-4 bg-error/10 p-3 text-sm text-error">
             {store.error.value}
@@ -211,7 +211,8 @@ export function App({ store, registry, today, theme }: AppProps) {
           onClick={() => setComposing(true)}
           aria-label="Novo lançamento"
           class="hf-press fixed right-[max(1.25rem,calc(50vw-13rem))]
-            bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 flex size-14 items-center
+            bottom-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+1rem)] z-20 flex size-14
+            items-center
             justify-center rounded-full bg-primary text-2xl leading-none text-primary-content
             shadow-lg"
         >
@@ -221,9 +222,11 @@ export function App({ store, registry, today, theme }: AppProps) {
 
       <nav
         aria-label="Seções"
-        class="hf-material fixed inset-x-0 bottom-0 z-10 border-t border-base-300/60"
+        class="hf-material fixed inset-x-0 bottom-0 z-10 border-t border-base-300/60
+          pb-[env(safe-area-inset-bottom)]"
       >
-        <div class="mx-auto flex w-full max-w-md pb-[env(safe-area-inset-bottom)]">
+        {/* A altura e do conteudo; o safe area soma por fora, no <nav>. */}
+        <div class="mx-auto flex h-[var(--hf-nav-h)] w-full max-w-md">
           {SCREENS.map(({ id, label }) => (
             <button
               key={id}
