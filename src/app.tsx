@@ -1,5 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import type { TransactionKind } from "./domain/events/transaction";
 import { diffTransaction, type TransactionDraft } from "./domain/events/transaction";
 import type { Ulid } from "./domain/ids/ulid";
 import { formatBRL } from "./domain/money/money";
@@ -10,6 +11,7 @@ import {
   listTransactions,
   totals,
 } from "./domain/projections/selectors";
+import { Icon } from "./features/icons/icon";
 import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
@@ -17,13 +19,17 @@ import { ThemeToggle } from "./features/theme/theme-toggle";
 import type { TransactionsStore } from "./features/transactions/store";
 import { TransactionList } from "./features/transactions/transaction-list";
 import { TransactionWizard } from "./features/transactions/transaction-wizard";
+import { greetingFor } from "./features/ui/greeting";
 import { Modal } from "./features/ui/modal";
+import { QuickActions } from "./features/ui/quick-actions";
 
 export interface AppProps {
   store: TransactionsStore;
   registry: RegistryStore;
   /** Data de hoje em 'YYYY-MM-DD'. Vem de fora para o teste não depender do relógio. */
   today: string;
+  /** Hora local 0..23, injetada pelo mesmo motivo que `today`. */
+  hour: number;
   /** `localStorage` e `document` vêm de fora pelo mesmo motivo que o relógio. */
   theme: ThemeToggleProps;
 }
@@ -42,9 +48,9 @@ const CAPTION = "hf-caption text-[0.6875rem] font-semibold uppercase text-base-c
  * é o que a torna alcançável com o polegar sem competir com os destinos.
  */
 const SCREENS = [
-  { id: "lancamentos", label: "Início" },
-  { id: "categorias", label: "Categorias" },
-  { id: "pagamentos", label: "Pagamentos" },
+  { id: "lancamentos", label: "Início", icon: "house" },
+  { id: "categorias", label: "Categorias", icon: "tag" },
+  { id: "pagamentos", label: "Pagamentos", icon: "wallet" },
 ] as const;
 
 type ScreenId = (typeof SCREENS)[number]["id"];
@@ -61,9 +67,9 @@ function Shell({ children }: { children: ComponentChildren }) {
   );
 }
 
-export function App({ store, registry, today, theme }: AppProps) {
+export function App({ store, registry, today, hour, theme }: AppProps) {
   const [editing, setEditing] = useState<TransactionRecord | null>(null);
-  const [composing, setComposing] = useState(false);
+  const [composing, setComposing] = useState<TransactionKind | null>(null);
   const [screen, setScreen] = useState<ScreenId>("lancamentos");
 
   useEffect(() => {
@@ -99,10 +105,10 @@ export function App({ store, registry, today, theme }: AppProps) {
   // Uma condição só para os dois casos: o modal está aberto para criar
   // (`editing` nulo) ou para editar. Dois estados independentes permitiriam
   // abrir os dois ao mesmo tempo.
-  const modalOpen = composing || editing !== null;
+  const modalOpen = composing !== null || editing !== null;
 
   function closeModal() {
-    setComposing(false);
+    setComposing(null);
     setEditing(null);
   }
 
@@ -124,6 +130,18 @@ export function App({ store, registry, today, theme }: AppProps) {
     void store.remove(entityId);
   }
 
+  const QUICK_ACTIONS = [
+    { id: "despesa", label: "Despesa", icon: "receipt", onSelect: () => setComposing("expense") },
+    { id: "receita", label: "Receita", icon: "banknote", onSelect: () => setComposing("income") },
+    { id: "categorias", label: "Categorias", icon: "tag", onSelect: () => setScreen("categorias") },
+    {
+      id: "pagamentos",
+      label: "Pagamentos",
+      icon: "wallet",
+      onSelect: () => setScreen("pagamentos"),
+    },
+  ];
+
   return (
     <div class={SHELL}>
       {/*
@@ -135,7 +153,7 @@ export function App({ store, registry, today, theme }: AppProps) {
         <div class="mx-auto w-full max-w-md px-5 pt-[max(0.875rem,env(safe-area-inset-top))] pb-3">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <h1 class={CAPTION}>HomeFinance</h1>
+              <h1 class={CAPTION}>{greetingFor(hour)}</h1>
               <p
                 data-testid="total-balance"
                 class={`hf-display mt-1 text-[2rem] font-semibold ${negative ? "text-error" : ""}`}
@@ -170,19 +188,21 @@ export function App({ store, registry, today, theme }: AppProps) {
 
         {screen === "lancamentos" && (
           <>
+            <QuickActions actions={QUICK_ACTIONS} />
+
             {/*
               Os rotulos ja dizem o que cada numero e, entao cor aqui seria
               decorativa. Ela fica reservada para onde e o unico portador de
               significado: o saldo negativo e o sinal de receita na lista.
             */}
             <section aria-label="Totais" class="mt-4 grid grid-cols-2 gap-3">
-              <div class="rounded-box bg-base-100 px-4 py-3">
+              <div class="rounded-box border border-base-content/10 bg-base-100/60 px-4 py-3">
                 <p class={CAPTION}>Receitas</p>
                 <p data-testid="total-income" class="hf-num mt-0.5 font-semibold">
                   {formatBRL(summary.incomeMinor)}
                 </p>
               </div>
-              <div class="rounded-box bg-base-100 px-4 py-3">
+              <div class="rounded-box border border-base-content/10 bg-base-100/60 px-4 py-3">
                 <p class={CAPTION}>Despesas</p>
                 <p data-testid="total-expense" class="hf-num mt-0.5 font-semibold">
                   {formatBRL(summary.expenseMinor)}
@@ -208,7 +228,7 @@ export function App({ store, registry, today, theme }: AppProps) {
       {screen === "lancamentos" && (
         <button
           type="button"
-          onClick={() => setComposing(true)}
+          onClick={() => setComposing("expense")}
           aria-label="Novo lançamento"
           class="hf-press fixed right-[max(1.25rem,calc(50vw-13rem))]
             bottom-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+1rem)] z-20 flex size-14
@@ -227,7 +247,7 @@ export function App({ store, registry, today, theme }: AppProps) {
       >
         {/* A altura e do conteudo; o safe area soma por fora, no <nav>. */}
         <div class="mx-auto flex h-[var(--hf-nav-h)] w-full max-w-md">
-          {SCREENS.map(({ id, label }) => (
+          {SCREENS.map(({ id, label, icon }) => (
             <button
               key={id}
               type="button"
@@ -235,6 +255,7 @@ export function App({ store, registry, today, theme }: AppProps) {
               onClick={() => setScreen(id)}
               class={`${TAB} ${screen === id ? "text-primary" : "text-base-content/50"}`}
             >
+              <Icon name={icon} size={20} />
               {label}
             </button>
           ))}
@@ -259,6 +280,7 @@ export function App({ store, registry, today, theme }: AppProps) {
             onSubmit={handleSubmit}
             onCancel={closeModal}
             today={today}
+            initialKind={composing ?? undefined}
             categories={categories}
             paymentMethods={paymentMethods}
           />

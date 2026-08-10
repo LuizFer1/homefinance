@@ -17,14 +17,14 @@ const ACTION =
 export function RegistryList({ items, emptyHint, onEdit, onDelete }: RegistryListProps) {
   if (items.length === 0) {
     return (
-      <p class="rounded-box mt-4 bg-base-100 p-6 text-center text-sm text-base-content/50">
+      <p class="rounded-box mt-4 border border-base-content/10 bg-base-100/60 p-6 text-center text-sm text-base-content/50">
         {emptyHint}
       </p>
     );
   }
 
   return (
-    <ul class="rounded-box mt-4 divide-y divide-base-200 bg-base-100">
+    <ul class="rounded-box mt-4 divide-y divide-base-200 border border-base-content/10 bg-base-100/60">
       {items.map((item) => (
         <li key={item.id} class="flex items-center gap-3 px-4 py-3">
           {/*

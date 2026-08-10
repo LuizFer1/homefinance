@@ -17,6 +17,8 @@ export interface TransactionWizardProps {
   onSubmit: (draft: TransactionDraft) => void;
   onCancel: () => void;
   today: string;
+  /** Tipo pré-selecionado na criação. Ignorado na edição, onde o registro manda. */
+  initialKind?: TransactionKind;
   categories: CategoryRecord[];
   paymentMethods: PaymentMethodRecord[];
 }
@@ -57,13 +59,15 @@ export function TransactionWizard({
   onSubmit,
   onCancel,
   today,
+  initialKind,
   categories,
   paymentMethods,
 }: TransactionWizardProps) {
   const [step, setStep] = useState(0);
   const [description, setDescription] = useState(editing?.description ?? "");
   const [amount, setAmount] = useState(editing === null ? "" : toAmountInput(editing.amountMinor));
-  const [kind, setKind] = useState<TransactionKind>(editing?.kind ?? "expense");
+  // Na edição o registro manda; na criação, o botão que abriu o modal.
+  const [kind, setKind] = useState<TransactionKind>(editing?.kind ?? initialKind ?? "expense");
   const [occurredOn, setOccurredOn] = useState(editing?.occurredOn ?? today);
   const [categoryId, setCategoryId] = useState<Ulid | null>(editing?.categoryId ?? null);
   const [paymentMethodId, setPaymentMethodId] = useState<Ulid | null>(

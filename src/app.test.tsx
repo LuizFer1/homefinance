@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "./app";
 import type { EventStore } from "./data/event-store";
@@ -54,6 +54,18 @@ function fakeTheme() {
   };
 }
 
+/**
+ * O mesmo destino existe na fila de acoes e na barra inferior. As consultas
+ * precisam dizer qual, senao ficam ambiguas.
+ */
+function naBarra() {
+  return within(screen.getByRole("navigation", { name: "Seções" }));
+}
+
+function naFila() {
+  return within(screen.getByRole("navigation", { name: "Ações rápidas" }));
+}
+
 /** Abre o modal pelo botao flutuante e espera a primeira etapa aparecer. */
 async function abrirModal() {
   fireEvent.click(screen.getByRole("button", { name: "Novo lançamento" }));
@@ -83,13 +95,17 @@ async function abrirEdicao(description: string) {
 
 describe("App", () => {
   it("mostra o nome do app como cabeçalho", async () => {
-    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    render(
+      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "HomeFinance" })).toBeDefined());
   });
 
   it("adiciona um lançamento e atualiza os totais", async () => {
-    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    render(
+      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
     await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
 
     await addTransaction("Mercado", "12,34");
@@ -99,7 +115,7 @@ describe("App", () => {
 
   it("edita emitindo patch apenas do campo alterado", async () => {
     const events = fakeEventStore();
-    render(<App {...buildStores(events)} today="2026-08-08" theme={fakeTheme()} />);
+    render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
@@ -116,7 +132,7 @@ describe("App", () => {
 
   it("não emite evento quando nada mudou na edição", async () => {
     const events = fakeEventStore();
-    render(<App {...buildStores(events)} today="2026-08-08" theme={fakeTheme()} />);
+    render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
@@ -130,7 +146,9 @@ describe("App", () => {
   });
 
   it("remove o lançamento da lista", async () => {
-    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    render(
+      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
     await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
@@ -144,7 +162,7 @@ describe("App", () => {
     broken.readAll = async () => {
       throw new Error("IndexedDB indisponível");
     };
-    render(<App {...buildStores(broken)} today="2026-08-08" theme={fakeTheme()} />);
+    render(<App {...buildStores(broken)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain("IndexedDB indisponível"),
@@ -154,14 +172,16 @@ describe("App", () => {
 
 describe("navegacao", () => {
   it("troca para categorias e volta para lancamentos", async () => {
-    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    render(
+      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
     await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
 
-    fireEvent.click(screen.getByRole("button", { name: "Categorias" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
     expect(screen.getByRole("region", { name: "Categorias" })).toBeDefined();
     expect(screen.queryByTestId("total-expense")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Início" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Início" }));
     expect(screen.getByTestId("total-expense")).toBeDefined();
     expect(screen.queryByRole("region", { name: "Categorias" })).toBeNull();
   });
@@ -171,36 +191,40 @@ describe("navegacao", () => {
     // lancamentos, cadastrar, e voltar sem perder nada — as duas telas leem a
     // mesma projecao.
     const events = fakeEventStore();
-    render(<App {...buildStores(events)} today="2026-08-08" theme={fakeTheme()} />);
+    render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
-    fireEvent.click(screen.getByRole("button", { name: "Categorias" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
     fireEvent.input(screen.getByLabelText(/nome/i), { target: { value: "Alimentacao" } });
     fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
     await waitFor(() => expect(screen.getByText("Alimentacao")).toBeDefined());
 
-    fireEvent.click(screen.getByRole("button", { name: "Início" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Início" }));
 
     expect(screen.getByTestId("total-expense").textContent).toContain("12,34");
     expect(events.events.map((e) => e.entity).sort()).toEqual(["category", "transaction"]);
   });
 
   it("a tela de pagamentos oferece o tipo e a de categorias nao", async () => {
-    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    render(
+      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
     await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
 
-    fireEvent.click(screen.getByRole("button", { name: "Categorias" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
     expect(screen.queryByLabelText(/tipo de pagamento/i)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Pagamentos" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Pagamentos" }));
     expect(screen.getByLabelText(/tipo de pagamento/i)).toBeDefined();
   });
 });
 
 describe("modal de lançamento", () => {
   async function pronto() {
-    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    render(
+      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
     await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
   }
 
@@ -244,7 +268,7 @@ describe("modal de lançamento", () => {
     await pronto();
     expect(screen.getByRole("button", { name: "Novo lançamento" })).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Categorias" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
 
     expect(screen.queryByRole("button", { name: "Novo lançamento" })).toBeNull();
   });
@@ -256,5 +280,70 @@ describe("modal de lançamento", () => {
 
     expect(screen.queryByLabelText("Descrição")).toBeNull();
     expect(screen.getByText("Padaria")).toBeDefined();
+  });
+});
+
+describe("fila de ações rápidas", () => {
+  async function pronto() {
+    render(
+      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
+    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
+  }
+
+  it("saúda conforme a hora injetada", async () => {
+    await pronto();
+
+    expect(screen.getByRole("heading", { name: "Bom dia" })).toBeDefined();
+  });
+
+  it("Despesa abre o modal já em despesa", async () => {
+    // Economiza um toque no caso mais comum: o tipo ja vem escolhido.
+    await pronto();
+
+    fireEvent.click(naFila().getByRole("button", { name: "Despesa" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    expect((screen.getByRole("radio", { name: "Despesa" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("Receita abre o modal já em receita", async () => {
+    await pronto();
+
+    fireEvent.click(naFila().getByRole("button", { name: "Receita" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    expect((screen.getByRole("radio", { name: "Receita" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("Categorias e Pagamentos navegam em vez de abrir o modal", async () => {
+    await pronto();
+
+    fireEvent.click(naFila().getByRole("button", { name: "Categorias" }));
+
+    expect(screen.getByRole("region", { name: "Categorias" })).toBeDefined();
+    expect(screen.queryByLabelText("Descrição")).toBeNull();
+  });
+
+  it("a fila some fora da tela de lançamentos", async () => {
+    await pronto();
+
+    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
+
+    expect(screen.queryByRole("navigation", { name: "Ações rápidas" })).toBeNull();
+  });
+
+  it("o tipo escolhido na fila não vaza para a próxima abertura", async () => {
+    // A wizard e remontada por key a cada abertura. Sem isso, abrir por Receita
+    // e depois pelo botao flutuante manteria receita selecionada.
+    await pronto();
+    fireEvent.click(naFila().getByRole("button", { name: "Receita" }));
+    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
+
+    fireEvent.click(naFila().getByRole("button", { name: "Despesa" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    expect((screen.getByRole("radio", { name: "Despesa" }) as HTMLInputElement).checked).toBe(true);
   });
 });

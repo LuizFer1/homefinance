@@ -64,6 +64,7 @@ render(
     store={store}
     registry={registry}
     today={todayISO()}
+    hour={new Date().getHours()}
     theme={{ storage: safeStorage(), doc: document }}
   />,
   root,

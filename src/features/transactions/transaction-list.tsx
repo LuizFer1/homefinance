@@ -21,14 +21,14 @@ function shortDate(iso: string): string {
 export function TransactionList({ items, state, onEdit, onDelete }: TransactionListProps) {
   if (items.length === 0) {
     return (
-      <p class="rounded-box mt-4 bg-base-100 px-4 py-10 text-center text-sm text-base-content/45">
+      <p class="rounded-box mt-4 border border-base-content/10 bg-base-100/60 px-4 py-10 text-center text-sm text-base-content/45">
         Nenhum lançamento ainda.
       </p>
     );
   }
 
   return (
-    <ul class="rounded-box mt-4 divide-y divide-base-300 bg-base-100">
+    <ul class="rounded-box mt-4 divide-y divide-base-300 border border-base-content/10 bg-base-100/60">
       {items.map((item) => (
         <li key={item.id} class="flex items-stretch">
           {/*
