@@ -109,10 +109,12 @@ describe("TransactionList", () => {
 });
 
 describe("rotulos de categoria, forma de pagamento e cashback", () => {
+  const BASE_ITEM = ITEMS[0] ?? record({ id: "a" });
+
   function comAtributos(over: Partial<TransactionRecord>) {
     render(
       <TransactionList
-        items={[{ ...ITEMS[0]!, ...over }]}
+        items={[{ ...BASE_ITEM, ...over }]}
         state={STATE}
         onEdit={vi.fn()}
         onDelete={vi.fn()}

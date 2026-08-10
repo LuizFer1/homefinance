@@ -15,8 +15,9 @@ import type { RegistryStore } from "./features/registry/store";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
 import { ThemeToggle } from "./features/theme/theme-toggle";
 import type { TransactionsStore } from "./features/transactions/store";
-import { TransactionForm } from "./features/transactions/transaction-form";
 import { TransactionList } from "./features/transactions/transaction-list";
+import { TransactionWizard } from "./features/transactions/transaction-wizard";
+import { Modal } from "./features/ui/modal";
 
 export interface AppProps {
   store: TransactionsStore;
@@ -28,16 +29,20 @@ export interface AppProps {
 }
 
 const SHELL = "min-h-dvh bg-base-200 text-base-content";
+const CAPTION = "hf-caption text-[0.6875rem] font-semibold uppercase text-base-content/45";
 
 /**
- * Navegacao sem router.
+ * Navegação sem router.
  *
- * Uma dependencia de roteamento para tres destinos nao se paga contra um teto de
- * 52kb, e nao ha URL a preservar: o app e local-first e abre sempre no mesmo
- * lugar. A fatia 4 acrescenta a quarta entrada aqui.
+ * Uma dependência de roteamento para três destinos não se paga contra o teto de
+ * bundle, e não há URL a preservar: o app é local-first e abre sempre no mesmo
+ * lugar. A fatia de configurações acrescenta a quarta entrada aqui.
+ *
+ * Nenhuma aba é gasta com "novo lançamento" — a ação vive no botão flutuante, que
+ * é o que a torna alcançável com o polegar sem competir com os destinos.
  */
 const SCREENS = [
-  { id: "lancamentos", label: "Lancamentos" },
+  { id: "lancamentos", label: "Início" },
   { id: "categorias", label: "Categorias" },
   { id: "pagamentos", label: "Pagamentos" },
 ] as const;
@@ -45,9 +50,8 @@ const SCREENS = [
 type ScreenId = (typeof SCREENS)[number]["id"];
 
 const TAB =
-  "hf-press rounded-field flex-1 cursor-pointer py-1.5 text-center text-[0.8125rem] font-medium " +
+  "hf-press flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[0.6875rem] font-medium " +
   "transition-colors duration-150";
-const CAPTION = "hf-caption text-[0.6875rem] font-semibold uppercase text-base-content/45";
 
 function Shell({ children }: { children: ComponentChildren }) {
   return (
@@ -59,6 +63,7 @@ function Shell({ children }: { children: ComponentChildren }) {
 
 export function App({ store, registry, today, theme }: AppProps) {
   const [editing, setEditing] = useState<TransactionRecord | null>(null);
+  const [composing, setComposing] = useState(false);
   const [screen, setScreen] = useState<ScreenId>("lancamentos");
 
   useEffect(() => {
@@ -86,25 +91,36 @@ export function App({ store, registry, today, theme }: AppProps) {
   }
 
   const items = listTransactions(store.state.value);
-  const categories = listCategories(store.state.value);
-  const paymentMethods = listPaymentMethods(store.state.value);
   const summary = totals(items);
   const negative = summary.balanceMinor < 0;
+  const categories = listCategories(store.state.value);
+  const paymentMethods = listPaymentMethods(store.state.value);
+
+  // Uma condição só para os dois casos: o modal está aberto para criar
+  // (`editing` nulo) ou para editar. Dois estados independentes permitiriam
+  // abrir os dois ao mesmo tempo.
+  const modalOpen = composing || editing !== null;
+
+  function closeModal() {
+    setComposing(false);
+    setEditing(null);
+  }
 
   function handleSubmit(draft: TransactionDraft) {
     if (editing === null) {
       void store.add(draft);
+      closeModal();
       return;
     }
 
     const patch = diffTransaction(editing, draft);
     // Patch vazio não vira evento: um log append-only não merece lixo permanente.
     if (Object.keys(patch).length > 0) void store.edit(editing.id, patch);
-    setEditing(null);
+    closeModal();
   }
 
   function handleDelete(entityId: Ulid) {
-    if (editing?.id === entityId) setEditing(null);
+    if (editing?.id === entityId) closeModal();
     void store.remove(entityId);
   }
 
@@ -130,26 +146,14 @@ export function App({ store, registry, today, theme }: AppProps) {
             </div>
             <ThemeToggle storage={theme.storage} doc={theme.doc} />
           </div>
-
-          <nav aria-label="Secoes" class="rounded-field mt-3 flex gap-1 bg-base-200/70 p-1">
-            {SCREENS.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                aria-current={screen === id ? "page" : undefined}
-                onClick={() => setScreen(id)}
-                class={`${TAB} ${
-                  screen === id ? "bg-base-100 text-base-content shadow-sm" : "text-base-content/55"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
         </div>
       </header>
 
-      <main class="mx-auto w-full max-w-md px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
+      {/*
+        O padding inferior reserva a altura da barra mais o safe area. Sem ele o
+        último item da lista fica permanentemente sob a barra, inalcançável.
+      */}
+      <main class="mx-auto w-full max-w-md px-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
         {store.error.value !== null && (
           <p role="alert" class="rounded-box mt-4 bg-error/10 p-3 text-sm text-error">
             {store.error.value}
@@ -167,10 +171,10 @@ export function App({ store, registry, today, theme }: AppProps) {
         {screen === "lancamentos" && (
           <>
             {/*
-          Os rotulos ja dizem o que cada numero e, entao cor aqui seria
-          decorativa. Ela fica reservada para onde e o unico portador de
-          significado: o saldo negativo e o sinal de receita na lista.
-        */}
+              Os rotulos ja dizem o que cada numero e, entao cor aqui seria
+              decorativa. Ela fica reservada para onde e o unico portador de
+              significado: o saldo negativo e o sinal de receita na lista.
+            */}
             <section aria-label="Totais" class="mt-4 grid grid-cols-2 gap-3">
               <div class="rounded-box bg-base-100 px-4 py-3">
                 <p class={CAPTION}>Receitas</p>
@@ -186,16 +190,6 @@ export function App({ store, registry, today, theme }: AppProps) {
               </div>
             </section>
 
-            <TransactionForm
-              key={editing?.id ?? "novo"}
-              editing={editing}
-              onSubmit={handleSubmit}
-              onCancel={() => setEditing(null)}
-              today={today}
-              categories={categories}
-              paymentMethods={paymentMethods}
-            />
-
             <TransactionList
               items={items}
               state={store.state.value}
@@ -205,6 +199,68 @@ export function App({ store, registry, today, theme }: AppProps) {
           </>
         )}
       </main>
+
+      {/*
+        Botão flutuante acima da barra, à direita: é a zona que o polegar alcança
+        sem reposicionar a mão. Só aparece na tela de lançamentos — nas telas de
+        cadastro a ação principal é outra, e o botão ali abriria a coisa errada.
+      */}
+      {screen === "lancamentos" && (
+        <button
+          type="button"
+          onClick={() => setComposing(true)}
+          aria-label="Novo lançamento"
+          class="hf-press fixed right-[max(1.25rem,calc(50vw-13rem))]
+            bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 flex size-14 items-center
+            justify-center rounded-full bg-primary text-2xl leading-none text-primary-content
+            shadow-lg"
+        >
+          +
+        </button>
+      )}
+
+      <nav
+        aria-label="Seções"
+        class="hf-material fixed inset-x-0 bottom-0 z-10 border-t border-base-300/60"
+      >
+        <div class="mx-auto flex w-full max-w-md pb-[env(safe-area-inset-bottom)]">
+          {SCREENS.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              aria-current={screen === id ? "page" : undefined}
+              onClick={() => setScreen(id)}
+              class={`${TAB} ${screen === id ? "text-primary" : "text-base-content/50"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <Modal
+        open={modalOpen}
+        title={editing === null ? "Novo lançamento" : "Editar lançamento"}
+        onClose={closeModal}
+      >
+        {/*
+          Montada só enquanto aberta, com `key` derivada do registro: trocar de
+          registro remonta a wizard e os inicializadores de `useState` releem as
+          props. Um `useEffect` de reset rodaria depois do DOM ficar consultável
+          e sobrescreveria o que o usuário já digitou.
+        */}
+        {modalOpen && (
+          <TransactionWizard
+            key={editing?.id ?? "novo"}
+            editing={editing}
+            onSubmit={handleSubmit}
+            onCancel={closeModal}
+            today={today}
+            categories={categories}
+            paymentMethods={paymentMethods}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

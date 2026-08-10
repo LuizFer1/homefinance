@@ -54,11 +54,31 @@ function fakeTheme() {
   };
 }
 
+/** Abre o modal pelo botao flutuante e espera a primeira etapa aparecer. */
+async function abrirModal() {
+  fireEvent.click(screen.getByRole("button", { name: "Novo lançamento" }));
+  await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+}
+
+/** Avanca as tres etapas da wizard e salva. */
+function concluirWizard() {
+  fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+  fireEvent.click(screen.getByRole("button", { name: /adicionar|salvar/i }));
+}
+
 async function addTransaction(description: string, amount: string) {
+  await abrirModal();
   fireEvent.input(screen.getByLabelText("Descrição"), { target: { value: description } });
   fireEvent.input(screen.getByLabelText("Valor"), { target: { value: amount } });
-  fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+  concluirWizard();
   await waitFor(() => expect(screen.getByText(description)).toBeDefined());
+}
+
+/** Abre a edicao tocando no lancamento e espera o modal. */
+async function abrirEdicao(description: string) {
+  fireEvent.click(screen.getByRole("button", { name: `Editar ${description}` }));
+  await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
 }
 
 describe("App", () => {
@@ -70,7 +90,7 @@ describe("App", () => {
 
   it("adiciona um lançamento e atualiza os totais", async () => {
     render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
-    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
 
     await addTransaction("Mercado", "12,34");
 
@@ -80,12 +100,12 @@ describe("App", () => {
   it("edita emitindo patch apenas do campo alterado", async () => {
     const events = fakeEventStore();
     render(<App {...buildStores(events)} today="2026-08-08" theme={fakeTheme()} />);
-    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar Mercado" }));
+    await abrirEdicao("Mercado");
     fireEvent.input(screen.getByLabelText("Valor"), { target: { value: "5,00" } });
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    concluirWizard();
 
     await waitFor(() =>
       expect(events.events.some((event) => event.action === "update")).toBe(true),
@@ -97,19 +117,21 @@ describe("App", () => {
   it("não emite evento quando nada mudou na edição", async () => {
     const events = fakeEventStore();
     render(<App {...buildStores(events)} today="2026-08-08" theme={fakeTheme()} />);
-    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar Mercado" }));
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await abrirEdicao("Mercado");
+    concluirWizard();
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Adicionar" })).toBeDefined());
+    // Modal fecha sem emitir: o patch sai vazio e um log append-only nao merece
+    // lixo permanente.
+    await waitFor(() => expect(screen.queryByLabelText("Descrição")).toBeNull());
     expect(events.events.filter((event) => event.action === "update")).toHaveLength(0);
   });
 
   it("remove o lançamento da lista", async () => {
     render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
-    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
     fireEvent.click(screen.getByRole("button", { name: "Excluir Mercado" }));
@@ -133,13 +155,13 @@ describe("App", () => {
 describe("navegacao", () => {
   it("troca para categorias e volta para lancamentos", async () => {
     render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
-    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
 
     fireEvent.click(screen.getByRole("button", { name: "Categorias" }));
     expect(screen.getByRole("region", { name: "Categorias" })).toBeDefined();
     expect(screen.queryByTestId("total-expense")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Lancamentos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Início" }));
     expect(screen.getByTestId("total-expense")).toBeDefined();
     expect(screen.queryByRole("region", { name: "Categorias" })).toBeNull();
   });
@@ -150,7 +172,7 @@ describe("navegacao", () => {
     // mesma projecao.
     const events = fakeEventStore();
     render(<App {...buildStores(events)} today="2026-08-08" theme={fakeTheme()} />);
-    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
     await addTransaction("Mercado", "12,34");
 
     fireEvent.click(screen.getByRole("button", { name: "Categorias" }));
@@ -158,7 +180,7 @@ describe("navegacao", () => {
     fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
     await waitFor(() => expect(screen.getByText("Alimentacao")).toBeDefined());
 
-    fireEvent.click(screen.getByRole("button", { name: "Lancamentos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Início" }));
 
     expect(screen.getByTestId("total-expense").textContent).toContain("12,34");
     expect(events.events.map((e) => e.entity).sort()).toEqual(["category", "transaction"]);
@@ -166,12 +188,73 @@ describe("navegacao", () => {
 
   it("a tela de pagamentos oferece o tipo e a de categorias nao", async () => {
     render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
-    await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
 
     fireEvent.click(screen.getByRole("button", { name: "Categorias" }));
     expect(screen.queryByLabelText(/tipo de pagamento/i)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Pagamentos" }));
     expect(screen.getByLabelText(/tipo de pagamento/i)).toBeDefined();
+  });
+});
+
+describe("modal de lançamento", () => {
+  async function pronto() {
+    render(<App {...buildStores(fakeEventStore())} today="2026-08-08" theme={fakeTheme()} />);
+    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
+  }
+
+  it("o formulário não fica na tela até o botão ser tocado", async () => {
+    // A tela principal e a lista. O formulario so aparece quando pedido — e o
+    // que libera espaco vertical num celular.
+    await pronto();
+
+    expect(screen.queryByLabelText("Descrição")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Novo lançamento" }));
+
+    expect(screen.getByLabelText("Descrição")).toBeDefined();
+  });
+
+  it("fechar descarta o rascunho sem gravar nada", async () => {
+    await pronto();
+    await abrirModal();
+    fireEvent.input(screen.getByLabelText("Descrição"), { target: { value: "Nao vai" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Descrição")).toBeNull());
+    expect(screen.queryByText("Nao vai")).toBeNull();
+  });
+
+  it("reabrir depois de fechar começa limpo", async () => {
+    // A wizard e montada so enquanto o modal esta aberto, com key. Sem isso o
+    // rascunho abandonado reapareceria no proximo lancamento.
+    await pronto();
+    await abrirModal();
+    fireEvent.input(screen.getByLabelText("Descrição"), { target: { value: "Rascunho" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
+
+    await abrirModal();
+
+    expect((screen.getByLabelText("Descrição") as HTMLInputElement).value).toBe("");
+  });
+
+  it("o botão flutuante só existe na tela de lançamentos", async () => {
+    await pronto();
+    expect(screen.getByRole("button", { name: "Novo lançamento" })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Categorias" }));
+
+    expect(screen.queryByRole("button", { name: "Novo lançamento" })).toBeNull();
+  });
+
+  it("salvar fecha o modal e mostra o lançamento na lista", async () => {
+    await pronto();
+
+    await addTransaction("Padaria", "9,90");
+
+    expect(screen.queryByLabelText("Descrição")).toBeNull();
+    expect(screen.getByText("Padaria")).toBeDefined();
   });
 });
