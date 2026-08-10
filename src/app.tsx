@@ -160,7 +160,9 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
                 data-testid="total-balance"
                 class={`hf-display mt-1 text-[2rem] font-semibold ${negative ? "text-error" : ""}`}
               >
-                <span class="sr-only">Saldo: </span>
+                {/* "total" e não só "saldo": o dashboard agora mostra o do mês,
+                    e dois números com o mesmo nome na mesma sessão confundem. */}
+                <span class="sr-only">Saldo total: </span>
                 {formatBRL(summary.balanceMinor)}
               </p>
             </div>
@@ -180,7 +182,9 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
           </p>
         )}
 
-        {screen === "dashboard" && <DashboardPage totals={summary} count={items.length} />}
+        {screen === "dashboard" && (
+          <DashboardPage items={items} state={store.state.value} today={today} />
+        )}
 
         {screen === "inicio" && (
           <>
