@@ -66,6 +66,17 @@ export const COLOR_TOKENS = [
   "fuchsia",
 ] as const;
 
+/**
+ * Neutro da paleta. É o destino de todo token que não pode ser confiado: o
+ * desconhecido vindo de uma versão futura via sync, e as agregações que não
+ * têm categoria própria de onde tirar cor.
+ *
+ * Mora aqui, junto de `COLOR_TOKENS`, porque a projeção e a UI precisam
+ * concordar sobre ele — em dois lugares, trocar o neutro num deixaria o outro
+ * desalinhado sem nada avisar.
+ */
+export const NEUTRAL_TOKEN = "slate";
+
 export const PAYMENT_KINDS = ["cash", "pix", "credit", "debit", "other"] as const;
 
 /**

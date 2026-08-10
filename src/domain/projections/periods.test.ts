@@ -43,6 +43,10 @@ describe("lastMonths", () => {
   it("devolve só o mês corrente quando a janela é de um", () => {
     expect(lastMonths("2026-01-15", 1)).toEqual(["2026-01"]);
   });
+
+  it("devolve lista vazia quando a janela não tem tamanho", () => {
+    expect(lastMonths("2026-08-10", 0)).toEqual([]);
+  });
 });
 
 describe("rótulos", () => {
@@ -55,5 +59,13 @@ describe("rótulos", () => {
   it("escreve por extenso com o ano", () => {
     expect(monthLabelLong("2026-08")).toBe("agosto de 2026");
     expect(monthLabelLong("2025-03")).toBe("março de 2025");
+  });
+
+  it("devolve rótulo vazio para mês fora de 1..12", () => {
+    // O log é eterno e sincroniza com versões futuras: um mês corrompido tem
+    // que degradar para vazio, não quebrar o render inteiro da tela.
+    expect(monthLabelShort("2026-13")).toBe("");
+    expect(monthLabelShort("2026-00")).toBe("");
+    expect(monthLabelLong("2026-13")).toBe("");
   });
 });

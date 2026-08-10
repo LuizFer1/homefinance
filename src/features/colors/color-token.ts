@@ -1,11 +1,11 @@
-import { COLOR_TOKENS } from "../../domain/projections/entities";
+import { COLOR_TOKENS, NEUTRAL_TOKEN } from "../../domain/projections/entities";
 
 export { COLOR_TOKENS };
 
 const KNOWN = new Set<string>(COLOR_TOKENS);
 
 /** Neutro da paleta. Token desconhecido cai aqui em vez de sumir da tela. */
-export const FALLBACK_TOKEN = "slate";
+export const FALLBACK_TOKEN = NEUTRAL_TOKEN;
 
 /**
  * Resolve o token persistido para a variável CSS que o `app.css` define, com um

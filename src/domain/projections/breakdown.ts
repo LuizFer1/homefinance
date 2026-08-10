@@ -1,4 +1,5 @@
 import type { ProjectionState, TransactionRecord } from "./apply";
+import { NEUTRAL_TOKEN } from "./entities";
 import { monthOf } from "./periods";
 import { resolveCategoryName } from "./selectors";
 
@@ -27,9 +28,6 @@ export interface MonthTotals {
 
 const NO_CATEGORY = "sem-categoria";
 const OTHERS = "outras";
-
-/** Neutro da paleta, para os baldes que não têm cor própria. */
-const NEUTRAL = "slate";
 
 /**
  * Acima disto o excedente vira "Outras". O corte é em seis e não em cinco
@@ -73,7 +71,7 @@ export function expenseByCategory(
     buckets.set(key, {
       key,
       name: resolveCategoryName(state, record.categoryId),
-      color: alive && category !== undefined ? category.color : NEUTRAL,
+      color: alive && category !== undefined ? category.color : NEUTRAL_TOKEN,
       amountMinor: record.amountMinor,
     });
   }
@@ -96,7 +94,7 @@ export function expenseByCategory(
     {
       key: OTHERS,
       name: "Outras",
-      color: NEUTRAL,
+      color: NEUTRAL_TOKEN,
       amountMinor: rest.reduce((sum, slice) => sum + slice.amountMinor, 0),
     },
   ];
@@ -107,6 +105,10 @@ export function expenseByCategory(
  *
  * Os baldes nascem zerados a partir de `months`, e não dos registros: é isso que
  * garante que um mês sem lançamento continue ocupando a posição dele no eixo.
+ *
+ * Pré-condição: `months` não tem repetição. Com mês repetido os baldes
+ * colapsam e a saída fica menor que a entrada — hoje a única origem é
+ * `lastMonths`, que nunca repete.
  */
 export function monthlyTotals(records: TransactionRecord[], months: string[]): MonthTotals[] {
   const buckets = new Map<string, MonthTotals>();

@@ -105,6 +105,32 @@ describe("expenseByCategory", () => {
     ]);
   });
 
+  it("trata categoria ainda não materializada como referência morta", () => {
+    // Update órfão cria a casca antes do create chegar. A casca não tem nome
+    // nem cor confiáveis, então o gasto existe mas o rótulo é o neutro.
+    const state = stateWith([category({ id: "c1", materialized: false })]);
+    const items = [record({ id: "a", categoryId: "c1", amountMinor: 600 })];
+
+    expect(expenseByCategory(items, state)).toEqual([
+      { key: "c1", name: "Categoria removida", color: "slate", amountMinor: 600 },
+    ]);
+  });
+
+  it("mantém ordem estável quando duas categorias empatam em valor", () => {
+    // Sem o desempate a ordem vem da inserção no Map e as fatias trocam de
+    // lugar a cada refold do log, com a rosca piscando sem nada ter mudado.
+    const state = stateWith([
+      category({ id: "c2", name: "Comida" }),
+      category({ id: "c1", name: "Casa" }),
+    ]);
+    const items = [
+      record({ id: "a", categoryId: "c2", amountMinor: 500 }),
+      record({ id: "b", categoryId: "c1", amountMinor: 500 }),
+    ];
+
+    expect(expenseByCategory(items, state).map((slice) => slice.key)).toEqual(["c1", "c2"]);
+  });
+
   it("não agrupa com exatamente seis categorias", () => {
     // No limite, mostrar as seis é melhor que mostrar cinco e um "Outras" de
     // uma categoria só.
