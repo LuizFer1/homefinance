@@ -25,6 +25,7 @@ const CATEGORY: Category = {
   name: "Mercado",
   icon: "utensils",
   color: "emerald",
+  kind: "expense",
 };
 
 const METHOD: PaymentMethod = {
@@ -39,14 +40,19 @@ describe("construtores de categoria", () => {
   it("create carrega o agregado inteiro", () => {
     const event = categoryCreated({
       ...ENVELOPE,
-      draft: { name: "Mercado", icon: "utensils", color: "emerald" },
+      draft: { name: "Mercado", icon: "utensils", color: "emerald", kind: "expense" },
     });
 
     expect(event.entity).toBe("category");
     expect(event.action).toBe("create");
     expect(event.entityId).toBe(ENVELOPE.entityId);
     expect(event.schemaVersion).toBe(1);
-    expect(event.data).toEqual({ name: "Mercado", icon: "utensils", color: "emerald" });
+    expect(event.data).toEqual({
+      name: "Mercado",
+      icon: "utensils",
+      color: "emerald",
+      kind: "expense",
+    });
   });
 
   it("update carrega apenas o patch", () => {
@@ -66,12 +72,12 @@ describe("construtores de categoria", () => {
   it("não vaza draft nem patch para o evento gravado", () => {
     const event = categoryCreated({
       ...ENVELOPE,
-      draft: { name: "Mercado", icon: "utensils", color: "emerald" },
+      draft: { name: "Mercado", icon: "utensils", color: "emerald", kind: "expense" },
     });
 
     expect(event).not.toHaveProperty("draft");
     expect(event).not.toHaveProperty("eventId");
-    expect(Object.keys(event.data).sort()).toEqual(["color", "icon", "name"]);
+    expect(Object.keys(event.data).sort()).toEqual(["color", "icon", "kind", "name"]);
   });
 
   it("produz eventos que passam na guarda de integridade do log", () => {
@@ -109,19 +115,33 @@ describe("construtores de forma de pagamento", () => {
 
 describe("diffCategory", () => {
   it("devolve apenas os campos alterados", () => {
-    expect(diffCategory(CATEGORY, { name: "Feira", icon: "utensils", color: "emerald" })).toEqual({
+    expect(
+      diffCategory(CATEGORY, {
+        name: "Feira",
+        icon: "utensils",
+        color: "emerald",
+        kind: "expense",
+      }),
+    ).toEqual({
       name: "Feira",
     });
   });
 
   it("devolve patch vazio quando nada mudou", () => {
-    expect(diffCategory(CATEGORY, { name: "Mercado", icon: "utensils", color: "emerald" })).toEqual(
-      {},
-    );
+    expect(
+      diffCategory(CATEGORY, {
+        name: "Mercado",
+        icon: "utensils",
+        color: "emerald",
+        kind: "expense",
+      }),
+    ).toEqual({});
   });
 
   it("não para no primeiro campo alterado", () => {
-    expect(diffCategory(CATEGORY, { name: "Feira", icon: "tag", color: "rose" })).toEqual({
+    expect(
+      diffCategory(CATEGORY, { name: "Feira", icon: "tag", color: "rose", kind: "expense" }),
+    ).toEqual({
       name: "Feira",
       icon: "tag",
       color: "rose",

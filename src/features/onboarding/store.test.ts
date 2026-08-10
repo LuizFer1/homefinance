@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { type FakeEventStore, fakeEventStore } from "../../data/event-store.fake";
 import type { UserDraft } from "../../domain/events/user";
 import { userCreated } from "../../domain/events/user";
-import { listPaymentMethods } from "../../domain/projections/selectors";
+import {
+  listCategories,
+  listCategoriesFor,
+  listPaymentMethods,
+} from "../../domain/projections/selectors";
 import { createSession, LOCAL_USER_ID_KEY, type Session } from "../session/session";
 import { createOnboardingStore, type OnboardingStore } from "./store";
 
@@ -74,7 +78,7 @@ describe("primeiro uso", () => {
 });
 
 describe("conclusao do wizard", () => {
-  it("grava o lote, semeia os metodos e para de pedir", async () => {
+  it("grava o lote, semeia metodos e categorias, e para de pedir", async () => {
     const events = fakeEventStore();
     const { session, onboarding } = build(events);
     await session.init();
@@ -82,7 +86,6 @@ describe("conclusao do wizard", () => {
     await onboarding.complete(DRAFT);
 
     expect(onboarding.needsOnboarding.value).toBe(false);
-    expect(await events.readAll()).toHaveLength(5);
     expect(await events.getMeta(LOCAL_USER_ID_KEY)).not.toBeNull();
     expect(listPaymentMethods(session.state.value).map((m) => m.name)).toEqual([
       "Cartão de crédito",
@@ -90,6 +93,26 @@ describe("conclusao do wizard", () => {
       "Dinheiro",
       "Pix",
     ]);
+    expect(listCategories(session.state.value).length).toBeGreaterThan(0);
+  });
+
+  it("as categorias semeadas ja chegam filtradas por lado do lancamento", async () => {
+    // "Salario" oferecido ao lancar uma despesa e a razao de `kind` existir na
+    // categoria.
+    const { session, onboarding } = build(fakeEventStore());
+    await session.init();
+    await onboarding.complete(DRAFT);
+
+    const despesas = listCategoriesFor(session.state.value, "expense").map((c) => c.name);
+    const receitas = listCategoriesFor(session.state.value, "income").map((c) => c.name);
+
+    expect(despesas).toContain("Alimentação");
+    expect(despesas).not.toContain("Salário");
+    expect(receitas).toContain("Salário");
+    expect(receitas).not.toContain("Alimentação");
+    // `both` aparece nas duas listas, e e o caso de investimento.
+    expect(despesas).toContain("Investimentos");
+    expect(receitas).toContain("Investimentos");
   });
 
   it("grava a foto quando ela existe", async () => {

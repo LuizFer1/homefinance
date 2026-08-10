@@ -13,7 +13,7 @@ import { createSession, type Session } from "../session/session";
 import { createTransactionsStore } from "../transactions/store";
 import { createRegistryStore, type RegistryStore } from "./store";
 
-const CATEGORY = { name: "Mercado", icon: "utensils", color: "emerald" } as const;
+const CATEGORY = { name: "Mercado", icon: "utensils", color: "emerald", kind: "expense" } as const;
 const METHOD = { name: "Nubank", icon: "credit-card", color: "violet", kind: "credit" } as const;
 
 let db: HomeFinanceDb;

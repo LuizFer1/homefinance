@@ -81,6 +81,20 @@ export function TransactionWizard({
   const selectedMethod = paymentMethods.find((method) => method.id === paymentMethodId) ?? null;
   const showsCashback = offersCashback(selectedMethod?.kind ?? null, kind);
 
+  /*
+    Filtra pelo tipo do lançamento, e o filtro é reativo: trocar de despesa para
+    receita na etapa 1 troca a lista da etapa 2. "Salário" oferecido numa despesa
+    é a razão de `kind` existir na categoria.
+
+    A escolha já feita **não** é limpa ao trocar o tipo: a `EntitySelect` já sabe
+    manter selecionada uma categoria que sumiu da lista — é o mesmo caminho da
+    referência apagada. Limpar aqui apagaria em silêncio uma escolha do usuário
+    por causa de um toque no segmento de tipo.
+  */
+  const offered = categories.filter(
+    (category) => category.kind === kind || category.kind === "both",
+  );
+
   const trimmed = description.trim();
   const amountMinor = parseBRL(amount);
   const detailsValid = trimmed !== "" && amountMinor !== null && amountMinor > 0;
@@ -235,7 +249,7 @@ export function TransactionWizard({
             label="Categoria"
             emptyLabel="Sem categoria"
             emptyHint="Nenhuma categoria ainda. Cadastre em Categorias."
-            items={categories}
+            items={offered}
             value={categoryId}
             deadLabel="Categoria removida"
             onChange={setCategoryId}

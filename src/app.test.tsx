@@ -541,8 +541,10 @@ describe("primeiro uso", () => {
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
     );
     expect(screen.getByRole("heading", { name: /bom dia, luiz/i })).toBeDefined();
-    // Um user mais os quatro metodos padrao, numa escrita so.
-    expect(events.events).toHaveLength(5);
+    // Perfil, as quatro formas padrao e as categorias padrao, numa escrita so.
+    expect(events.events[0]?.entity).toBe("user");
+    expect(events.events.filter((e) => e.entity === "paymentMethod")).toHaveLength(4);
+    expect(events.events.filter((e) => e.entity === "category").length).toBeGreaterThan(0);
     expect(await events.getMeta(LOCAL_USER_ID_KEY)).not.toBeNull();
   });
 

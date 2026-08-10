@@ -31,6 +31,7 @@ const CATEGORIAS: CategoryRecord[] = [
     name: "Alimentacao",
     icon: "utensils",
     color: "emerald",
+    kind: "expense",
     deleted: false,
     materialized: true,
     fieldHlc: {},
@@ -347,5 +348,84 @@ describe("referências e listas vazias", () => {
 
     expect(screen.queryByLabelText(/^categoria$/i)).toBeNull();
     expect(screen.getByText(/Cadastre em Categorias/)).toBeDefined();
+  });
+});
+
+describe("categoria filtrada pelo tipo do lancamento", () => {
+  const TODAS: CategoryRecord[] = [
+    { ...(CATEGORIAS[0] as CategoryRecord), id: "cat-desp", name: "Alimentacao", kind: "expense" },
+    { ...(CATEGORIAS[0] as CategoryRecord), id: "cat-rec", name: "Salario", kind: "income" },
+    { ...(CATEGORIAS[0] as CategoryRecord), id: "cat-ambos", name: "Investimentos", kind: "both" },
+  ];
+
+  function opcoes() {
+    return Array.from(screen.getByLabelText(/categoria/i).querySelectorAll("option")).map(
+      (option) => option.textContent,
+    );
+  }
+
+  function ateACategoria() {
+    preencherDados();
+    continuar();
+  }
+
+  it("despesa nao oferece categoria de receita", () => {
+    // "Salario" oferecido ao lancar uma despesa e a razao de `kind` existir.
+    montar({ categories: TODAS, initialKind: "expense" });
+    ateACategoria();
+
+    expect(opcoes()).toContain("Alimentacao");
+    expect(opcoes()).not.toContain("Salario");
+  });
+
+  it("receita nao oferece categoria de despesa", () => {
+    montar({ categories: TODAS, initialKind: "income" });
+    ateACategoria();
+
+    expect(opcoes()).toContain("Salario");
+    expect(opcoes()).not.toContain("Alimentacao");
+  });
+
+  it("categoria dos dois lados aparece nas duas listas", () => {
+    montar({ categories: TODAS, initialKind: "expense" });
+    ateACategoria();
+    expect(opcoes()).toContain("Investimentos");
+
+    cleanup();
+
+    montar({ categories: TODAS, initialKind: "income" });
+    ateACategoria();
+    expect(opcoes()).toContain("Investimentos");
+  });
+
+  it("trocar o tipo na etapa 1 troca a lista da etapa 2", () => {
+    // O filtro e reativo: sem isso, quem abre pelo botao de despesa e muda para
+    // receita continuaria vendo as categorias erradas.
+    montar({ categories: TODAS, initialKind: "expense" });
+    preencherDados();
+    fireEvent.click(screen.getByRole("radio", { name: /receita/i }));
+    continuar();
+
+    expect(opcoes()).toContain("Salario");
+    expect(opcoes()).not.toContain("Alimentacao");
+  });
+
+  it("trocar o tipo nao apaga em silencio a categoria ja escolhida", () => {
+    // Mesmo caminho da referencia apagada: a EntitySelect mantem selecionado o
+    // que sumiu da lista. Limpar aqui apagaria uma escolha do usuario por causa
+    // de um toque no segmento de tipo.
+    const { onSubmit } = montar({ categories: TODAS, initialKind: "expense" });
+    preencherDados();
+    continuar();
+    escolher(/categoria/i, "cat-desp");
+    fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+    fireEvent.click(screen.getByRole("radio", { name: /receita/i }));
+    continuar();
+    continuar();
+    enviar();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "income", categoryId: "cat-desp" }),
+    );
   });
 });

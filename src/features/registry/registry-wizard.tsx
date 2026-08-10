@@ -1,7 +1,12 @@
 import { useState } from "preact/hooks";
-import type { CategoryDraft, PaymentKind, PaymentMethodDraft } from "../../domain/events/reference";
+import type {
+  CategoryDraft,
+  CategoryKind,
+  PaymentKind,
+  PaymentMethodDraft,
+} from "../../domain/events/reference";
 import type { CategoryRecord, PaymentMethodRecord } from "../../domain/projections/apply";
-import { PAYMENT_KINDS } from "../../domain/projections/entities";
+import { CATEGORY_KINDS, PAYMENT_KINDS } from "../../domain/projections/entities";
 import { COLOR_TOKENS, cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 import { ICON_KEYS } from "../icons/icon-set";
@@ -34,6 +39,12 @@ const KIND_LABELS: Record<PaymentKind, string> = {
   credit: "Cartão de crédito",
   debit: "Cartão de débito",
   other: "Outro",
+};
+
+const CATEGORY_KIND_LABELS: Record<CategoryKind, string> = {
+  expense: "Só despesas",
+  income: "Só receitas",
+  both: "Despesas e receitas",
 };
 
 const SWATCH =
@@ -71,7 +82,13 @@ export function RegistryWizard({
   // 'other' é o único default que não afirma nada errado sobre a forma. Nascer
   // 'credit' faria o formulário de lançamento oferecer cashback sem motivo.
   const [kind, setKind] = useState<PaymentKind>(
-    ((editing as PaymentMethodRecord | null)?.kind as PaymentKind | undefined) ?? "other",
+    (isPayment ? ((editing?.kind as PaymentKind | undefined) ?? "other") : "other") as PaymentKind,
+  );
+  // 'both' pelo mesmo raciocínio, invertido: esconder a categoria de um dos
+  // formulários por padrão faria ela parecer apagada. Oferecer demais incomoda;
+  // sumir parece bug.
+  const [categoryKind, setCategoryKind] = useState<CategoryKind>(
+    (isPayment ? "both" : ((editing?.kind as CategoryKind | undefined) ?? "both")) as CategoryKind,
   );
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -114,7 +131,7 @@ export function RegistryWizard({
     onSubmit(
       isPayment
         ? ({ name: trimmed, icon, color, kind } as PaymentMethodDraft)
-        : ({ name: trimmed, icon, color } as CategoryDraft),
+        : ({ name: trimmed, icon, color, kind: categoryKind } as CategoryDraft),
     );
   }
 
@@ -157,7 +174,7 @@ export function RegistryWizard({
               />
             </div>
 
-            {isPayment && (
+            {isPayment ? (
               <div class="mt-3">
                 <label class={LABEL} for="registry-kind">
                   Tipo de pagamento
@@ -177,6 +194,29 @@ export function RegistryWizard({
                 </select>
                 <p class="mt-1.5 text-xs text-base-content/45">
                   Cartão de crédito ou débito libera o campo de cashback no lançamento.
+                </p>
+              </div>
+            ) : (
+              <div class="mt-3">
+                <label class={LABEL} for="registry-category-kind">
+                  Onde aparece
+                </label>
+                <select
+                  id="registry-category-kind"
+                  name="categoryKind"
+                  class={FIELD}
+                  value={categoryKind}
+                  onChange={(event) => setCategoryKind(event.currentTarget.value as CategoryKind)}
+                >
+                  {CATEGORY_KINDS.map((value) => (
+                    <option key={value} value={value}>
+                      {CATEGORY_KIND_LABELS[value]}
+                    </option>
+                  ))}
+                </select>
+                <p class="mt-1.5 text-xs text-base-content/45">
+                  Decide em qual formulário a categoria é oferecida. "Despesas e receitas" serve aos
+                  dois — investimento e transferência costumam ser assim.
                 </p>
               </div>
             )}

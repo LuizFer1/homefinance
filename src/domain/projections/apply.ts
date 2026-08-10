@@ -6,15 +6,27 @@ import { type BucketName, ENTITY_SPECS, type EntityRecordBase, type EntitySpec }
 
 export interface TransactionRecord extends Transaction, EntityRecordBase {}
 
-export interface CategoryRecord extends EntityRecordBase {
+/**
+ * Categoria e forma de pagamento projetam a mesma forma.
+ *
+ * `kind` é `string` alargada nas duas, e não a união fechada de cada uma, pelo
+ * mesmo motivo que `color` é: o log é eterno e sincroniza com aparelhos de
+ * versão mais nova. O fold já rejeita `kind` fora da lista e deixa o padrão da
+ * casca no lugar; estreitar o tipo aqui obrigaria um cast em toda leitura da
+ * projeção, que é o oposto do que os buckets tipados existem para dar.
+ */
+export interface ReferenceRecord extends EntityRecordBase {
   name: string;
   icon: string;
   color: string;
-}
-
-export interface PaymentMethodRecord extends CategoryRecord {
   kind: string;
 }
+
+/** `kind` é `'expense' | 'income' | 'both'`. */
+export type CategoryRecord = ReferenceRecord;
+
+/** `kind` é `'cash' | 'pix' | 'credit' | 'debit' | 'other'`. */
+export type PaymentMethodRecord = ReferenceRecord;
 
 export interface UserRecord extends EntityRecordBase {
   name: string;

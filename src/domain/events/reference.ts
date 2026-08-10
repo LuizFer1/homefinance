@@ -28,17 +28,39 @@ export type ColorToken =
  */
 export type PaymentKind = "cash" | "pix" | "credit" | "debit" | "other";
 
+/**
+ * A que lado do lançamento a categoria serve.
+ *
+ * `both` existe e é o padrão de categoria nova. Investimentos e transferências
+ * são legitimamente os dois, e um padrão que escondesse a categoria de um dos
+ * formulários faria o usuário concluir que ela sumiu. Esconder por engano é pior
+ * que oferecer demais: a lista longa incomoda, a categoria invisível parece bug.
+ */
+export type CategoryKind = "expense" | "income" | "both";
+
 /** Chave no mapa estático de `features/icons`. Chave desconhecida cai num neutro. */
 export type IconKey = string;
 
-export interface Category {
+/**
+ * O que categoria e forma de pagamento têm em comum.
+ *
+ * As duas têm `kind`, mas de tipos diferentes e com significados diferentes —
+ * por isso `PaymentMethod` **não** estende `Category`. Estendia, até categoria
+ * ganhar tipo próprio; manter a herança obrigaria os dois `kind` a serem o mesmo
+ * conjunto de valores, e a forma de pagamento passaria a aceitar "income".
+ */
+export interface ReferenceEntity {
   id: Ulid;
   name: string;
   icon: IconKey;
   color: ColorToken;
 }
 
-export interface PaymentMethod extends Category {
+export interface Category extends ReferenceEntity {
+  kind: CategoryKind;
+}
+
+export interface PaymentMethod extends ReferenceEntity {
   kind: PaymentKind;
 }
 
@@ -52,15 +74,15 @@ export interface PaymentMethod extends Category {
  * um cast em toda leitura da projecao, que e o oposto do que os buckets tipados
  * existem para dar.
  */
-export interface CategoryLike {
+export interface ReferenceLike {
   name: string;
   icon: string;
   color: string;
-}
-
-export interface PaymentMethodLike extends CategoryLike {
   kind: string;
 }
+
+export type CategoryLike = ReferenceLike;
+export type PaymentMethodLike = ReferenceLike;
 
 export type CategoryDraft = Omit<Category, "id">;
 export type CategoryPatch = Partial<CategoryDraft>;
@@ -102,6 +124,7 @@ export function categoryCreated(args: Envelope & { draft: CategoryDraft }): Doma
     name: args.draft.name,
     icon: args.draft.icon,
     color: args.draft.color,
+    kind: args.draft.kind,
   });
 }
 
@@ -136,11 +159,25 @@ export function paymentMethodDeleted(args: Envelope): DomainEvent {
  * perder edições concorrentes sem nenhum sintoma visível: duas pessoas editando
  * campos diferentes offline, e uma das edições some no merge.
  */
-export function diffCategory(current: CategoryLike, next: CategoryDraft): CategoryPatch {
-  const patch: CategoryPatch = {};
+/**
+ * Os três campos que categoria e forma de pagamento comparam igual. Genérico
+ * para preservar `ColorToken` e `IconKey` no patch: um retorno de `string`
+ * alargaria o tipo e deixaria o hex livre passar pela porta dos fundos.
+ */
+function diffAppearance<T extends { name: string; icon: IconKey; color: ColorToken }>(
+  current: ReferenceLike,
+  next: T,
+): Partial<T> {
+  const patch = {} as Partial<T>;
   if (current.name !== next.name) patch.name = next.name;
   if (current.icon !== next.icon) patch.icon = next.icon;
   if (current.color !== next.color) patch.color = next.color;
+  return patch;
+}
+
+export function diffCategory(current: CategoryLike, next: CategoryDraft): CategoryPatch {
+  const patch: CategoryPatch = diffAppearance(current, next);
+  if (current.kind !== next.kind) patch.kind = next.kind;
   return patch;
 }
 
@@ -148,7 +185,7 @@ export function diffPaymentMethod(
   current: PaymentMethodLike,
   next: PaymentMethodDraft,
 ): PaymentMethodPatch {
-  const patch: PaymentMethodPatch = { ...diffCategory(current, next) };
+  const patch: PaymentMethodPatch = diffAppearance(current, next);
   if (current.kind !== next.kind) patch.kind = next.kind;
   return patch;
 }

@@ -18,25 +18,52 @@ function clockFalso(): DeviceClock {
 }
 
 describe("buildOnboardingBatch", () => {
-  it("monta o lote na ordem do spec: user, depois os quatro metodos", () => {
+  it("monta o lote na ordem do spec: user, depois metodos, depois categorias", () => {
     const { events } = buildOnboardingBatch(DRAFT, clockFalso());
 
-    expect(events.map((e) => e.entity)).toEqual([
-      "user",
-      "paymentMethod",
-      "paymentMethod",
-      "paymentMethod",
-      "paymentMethod",
+    expect(events[0]?.entity).toBe("user");
+    // O perfil vem primeiro: um lote interrompido nao pode deixar cadastros
+    // existindo sem o perfil que os semeou.
+    expect(new Set(events.slice(1).map((e) => e.entity))).toEqual(
+      new Set(["paymentMethod", "category"]),
+    );
+    expect(events.filter((e) => e.entity === "paymentMethod")).toHaveLength(4);
+  });
+
+  it("semeia os quatro kinds de pagamento do spec", () => {
+    const { events } = buildOnboardingBatch(DRAFT, clockFalso());
+
+    expect(events.filter((e) => e.entity === "paymentMethod").map((e) => e.data.kind)).toEqual([
+      "cash",
+      "pix",
+      "credit",
+      "debit",
     ]);
   });
 
-  it("semeia os quatro kinds do spec", () => {
+  it("semeia categorias dos dois lados, e nenhuma delas sem tipo", () => {
     const { events } = buildOnboardingBatch(DRAFT, clockFalso());
+    const kinds = events.filter((e) => e.entity === "category").map((e) => e.data.kind);
 
-    expect(events.slice(1).map((e) => e.data.kind)).toEqual(["cash", "pix", "credit", "debit"]);
+    expect(kinds).toContain("expense");
+    expect(kinds).toContain("income");
+    // 'both' e a excecao que justifica o valor existir — investimento e
+    // transferencia sao genuinamente os dois lados.
+    expect(kinds).toContain("both");
+    expect(kinds.every((kind) => typeof kind === "string")).toBe(true);
   });
 
-  it("os metodos padrao sao eventos comuns, nao constantes", () => {
+  it("nenhuma categoria padrao repete nome", () => {
+    // A tela de cadastro avisa sobre duplicata; semear duplicatas seria o app
+    // desrespeitando o proprio aviso na primeira abertura.
+    const nomes = buildOnboardingBatch(DRAFT, clockFalso())
+      .events.filter((e) => e.entity === "category")
+      .map((e) => e.data.name);
+
+    expect(new Set(nomes).size).toBe(nomes.length);
+  });
+
+  it("os cadastros padrao sao eventos comuns, nao constantes", () => {
     // Da para renomear "Pix" para "Pix Nubank", trocar a cor e apagar o que nao
     // usa. Constantes embutidas virariam caso especial em toda tela e nao
     // sobreviveriam ao primeiro usuario que quisesse dois cartoes.
@@ -90,7 +117,7 @@ describe("buildOnboardingBatch", () => {
     // ordem do lote testavel sem fake-indexeddb.
     const { events, meta } = buildOnboardingBatch(DRAFT, clockFalso());
 
-    expect(events).toHaveLength(5);
+    expect(events.length).toBeGreaterThan(5);
     expect(Object.keys(meta)).toEqual([LOCAL_USER_ID_KEY]);
   });
 });

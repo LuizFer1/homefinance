@@ -1,3 +1,4 @@
+import type { TransactionKind } from "../events/transaction";
 import type { Ulid } from "../ids/ulid";
 import type {
   CategoryRecord,
@@ -92,6 +93,23 @@ function byNameThenId<T extends EntityRecordBase & { name: string }>(a: T, b: T)
 
 export function listCategories(state: ProjectionState): CategoryRecord[] {
   return visible(state.categories).sort(byNameThenId);
+}
+
+/**
+ * As categorias que servem a um lado do lançamento, mais as que servem aos dois.
+ *
+ * `both` entra em ambas as listas de propósito: investimentos e transferências
+ * são legitimamente despesa e receita, e forçar o usuário a criar duas
+ * categorias homônimas quebraria os relatórios que agregam por categoria.
+ *
+ * `kind` desconhecido — de uma versão mais nova via sync — não chega aqui: o
+ * fold já o rejeita e a casca mantém `both`, então a categoria aparece nas duas
+ * listas em vez de sumir das duas.
+ */
+export function listCategoriesFor(state: ProjectionState, kind: TransactionKind): CategoryRecord[] {
+  return listCategories(state).filter(
+    (category) => category.kind === kind || category.kind === "both",
+  );
 }
 
 export function listPaymentMethods(state: ProjectionState): PaymentMethodRecord[] {

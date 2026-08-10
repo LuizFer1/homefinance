@@ -80,6 +80,12 @@ export const NEUTRAL_TOKEN = "slate";
 export const PAYMENT_KINDS = ["cash", "pix", "credit", "debit", "other"] as const;
 
 /**
+ * A que lado do lançamento a categoria serve. `both` é o padrão e o destino de
+ * todo valor que não pode ser confiado — ver `CATEGORY_SPEC` logo abaixo.
+ */
+export const CATEGORY_KINDS = ["expense", "income", "both"] as const;
+
+/**
  * Cor e ícone são validados como **string não vazia**, não contra a lista.
  *
  * O log é eterno e sincroniza com aparelhos de versão mais nova: rejeitar um
@@ -160,15 +166,32 @@ export const TRANSACTION_SPEC: EntitySpec = {
   }),
 };
 
+/**
+ * `kind` da categoria segue a mesma regra do `kind` da forma de pagamento e o
+ * oposto de cor e ícone: é validado **contra a lista**, porque carrega regra de
+ * produto — é ele que decide se o formulário de despesa oferece a categoria.
+ * Valor fora da lista mudaria comportamento, não só aparência.
+ *
+ * Rejeitado no fold, o campo cai no padrão da casca: `both`. É o único fallback
+ * seguro — esconder a categoria de um dos formulários por causa de um valor
+ * desconhecido vindo do sync faria ela parecer apagada.
+ */
+function isValidCategoryField(field: string, value: unknown): boolean {
+  return field === "kind"
+    ? typeof value === "string" && (CATEGORY_KINDS as readonly string[]).includes(value)
+    : isValidReferenceField(field, value);
+}
+
 export const CATEGORY_SPEC: EntitySpec = {
   bucket: "categories",
-  fields: ["name", "icon", "color"],
-  isValidField: isValidReferenceField,
+  fields: ["name", "icon", "color", "kind"],
+  isValidField: isValidCategoryField,
   shell: (id) => ({
     id,
     name: "",
     icon: "tag",
     color: "slate",
+    kind: "both",
     deleted: false,
     materialized: false,
     fieldHlc: {},

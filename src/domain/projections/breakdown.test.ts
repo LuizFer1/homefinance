@@ -30,6 +30,7 @@ function category(overrides: Partial<CategoryRecord> & { id: string }): Category
     name: "Casa",
     icon: "house",
     color: "rose",
+    kind: "expense",
     deleted: false,
     materialized: true,
     fieldHlc: {},

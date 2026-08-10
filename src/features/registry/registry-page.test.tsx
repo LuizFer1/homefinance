@@ -22,6 +22,7 @@ const CATEGORIA = {
   name: "Mercado",
   icon: "utensils",
   color: "emerald",
+  kind: "expense",
   deleted: false,
   materialized: true,
   fieldHlc: {},

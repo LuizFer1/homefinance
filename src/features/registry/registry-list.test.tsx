@@ -10,6 +10,7 @@ function categoria(overrides: Partial<CategoryRecord> & { id: string }): Categor
     name: "Mercado",
     icon: "utensils",
     color: "emerald",
+    kind: "expense",
     deleted: false,
     materialized: true,
     fieldHlc: {},

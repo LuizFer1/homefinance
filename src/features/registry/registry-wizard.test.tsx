@@ -10,6 +10,7 @@ const CATEGORIA: CategoryRecord = {
   name: "Mercado",
   icon: "tag",
   color: "slate",
+  kind: "expense",
   deleted: false,
   materialized: true,
   fieldHlc: {},
@@ -160,7 +161,36 @@ describe("categoria", () => {
       name: "Mercado",
       icon: "utensils",
       color: "emerald",
+      // Padrao 'both': esconder a categoria de um dos formularios por padrao
+      // faria ela parecer apagada. Oferecer demais incomoda; sumir parece bug.
+      kind: "both",
     });
+  });
+
+  it("categoria declara onde aparece, e o padrao serve aos dois lados", () => {
+    const { onSubmit } = montar();
+
+    digitarNome("Salario");
+    fireEvent.change(screen.getByLabelText(/onde aparece/i), { target: { value: "income" } });
+    continuar();
+    continuar();
+    salvar();
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ kind: "income" }));
+  });
+
+  it("forma de pagamento nao ganha o seletor de categoria, e vice-versa", () => {
+    // Os dois `kind` tem tipos e significados diferentes: um decide cashback, o
+    // outro decide em qual formulario a categoria aparece.
+    montar({ entity: "paymentMethod" });
+    expect(screen.queryByLabelText(/onde aparece/i)).toBeNull();
+    expect(screen.getByLabelText(/tipo de pagamento/i)).toBeDefined();
+
+    cleanup();
+
+    montar();
+    expect(screen.getByLabelText(/onde aparece/i)).toBeDefined();
+    expect(screen.queryByLabelText(/tipo de pagamento/i)).toBeNull();
   });
 
   it("descarta espaços em volta do nome", () => {
