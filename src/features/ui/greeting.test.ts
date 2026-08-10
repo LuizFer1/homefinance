@@ -27,4 +27,24 @@ describe("greetingFor", () => {
     expect(greetingFor(24)).toBe("Olá");
     expect(greetingFor(Number.NaN)).toBe("Olá");
   });
+
+  it("acrescenta o nome quando ele existe", () => {
+    expect(greetingFor(9, "Luiz")).toBe("Bom dia, Luiz");
+    expect(greetingFor(20, "Luiz")).toBe("Boa noite, Luiz");
+  });
+
+  it("continua sem nome quando ele não foi passado", () => {
+    // Aparelho sem perfil local é estado legítimo: enquanto o wizard não
+    // conclui, o cabeçalho já precisa renderizar.
+    expect(greetingFor(9)).toBe("Bom dia");
+  });
+
+  it("ignora nome vazio ou só com espaços", () => {
+    expect(greetingFor(9, "")).toBe("Bom dia");
+    expect(greetingFor(9, "   ")).toBe("Bom dia");
+  });
+
+  it("apara espaços do nome", () => {
+    expect(greetingFor(9, "  Luiz  ")).toBe("Bom dia, Luiz");
+  });
 });

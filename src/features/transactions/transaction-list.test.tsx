@@ -159,3 +159,68 @@ describe("rotulos de categoria, forma de pagamento e cashback", () => {
     expect(screen.queryByText(/de volta/)).toBeNull();
   });
 });
+
+describe("autoria", () => {
+  const AUTOR = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
+
+  const COM_AUTOR: ProjectionState = {
+    ...STATE,
+    users: {
+      [AUTOR]: {
+        id: AUTOR,
+        name: "Luiz",
+        color: "teal",
+        avatar: "data:image/webp;base64,AAAA",
+        deleted: false,
+        materialized: true,
+        fieldHlc: {},
+      },
+    },
+  };
+
+  function comAutor(userId: string | null) {
+    render(
+      <TransactionList
+        items={[record({ id: "a", userId })]}
+        state={COM_AUTOR}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    return screen.getByRole("listitem");
+  }
+
+  it("a cor do autor e marca lateral, nao fundo do item", () => {
+    // Fundo colorido competiria com o unico dado que importa na tela: o
+    // dinheiro. Mesmo raciocinio que o app.css ja registra para o tema.
+    const item = comAutor(AUTOR);
+
+    expect(item.className).not.toMatch(/bg-\[var\(--color-tag/);
+    expect(item.querySelector("[data-testid='author-mark']")).not.toBeNull();
+  });
+
+  it("usa a cor do perfil que criou o lancamento", () => {
+    const item = comAutor(AUTOR);
+
+    expect(item.querySelector("[data-testid='author-mark']")?.getAttribute("style")).toContain(
+      "--color-tag-teal",
+    );
+  });
+
+  it("lancamento sem autor cai na cor neutra", () => {
+    // O historico gravado antes desta fatia e este caso.
+    const item = comAutor(null);
+
+    expect(item.querySelector("[data-testid='author-mark']")?.getAttribute("style")).toContain(
+      "--color-tag-slate",
+    );
+  });
+
+  it("nao mostra a foto do autor na lista", () => {
+    // Uma foto de 96px renderizada a 20px vira ruido cinza, e com um perfil so
+    // ela se repete identica em toda linha, comunicando nada.
+    comAutor(AUTOR);
+
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+});

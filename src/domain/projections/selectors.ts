@@ -4,8 +4,9 @@ import type {
   PaymentMethodRecord,
   ProjectionState,
   TransactionRecord,
+  UserRecord,
 } from "./apply";
-import type { EntityRecordBase } from "./entities";
+import { type EntityRecordBase, NEUTRAL_TOKEN } from "./entities";
 
 export interface Totals {
   incomeMinor: number;
@@ -94,4 +95,26 @@ export function resolveCategoryName(state: ProjectionState, id: Ulid | null): st
 
 export function resolvePaymentMethodName(state: ProjectionState, id: Ulid | null): string {
   return resolveName(state.paymentMethods, id, "Sem forma de pagamento", "Forma removida");
+}
+
+/**
+ * Perfil visível, ou nulo.
+ *
+ * Autor ausente e autor apagado colapsam no mesmo resultado de propósito: quem
+ * chama não faz nada de diferente com os dois, e distinguir vazaria "esse perfil
+ * existiu" na tela sem nenhum ganho.
+ */
+export function findUser(state: ProjectionState, id: Ulid | null): UserRecord | null {
+  if (id === null) return null;
+  const record = state.users[id];
+  if (record === undefined || record.deleted || !record.materialized) return null;
+  return record;
+}
+
+/**
+ * Cor da marca de autoria. Neutro para lançamento sem autor — o histórico
+ * gravado antes desta fatia, que nunca deixa de existir num log eterno.
+ */
+export function resolveAuthorColor(state: ProjectionState, id: Ulid | null): string {
+  return findUser(state, id)?.color ?? NEUTRAL_TOKEN;
 }

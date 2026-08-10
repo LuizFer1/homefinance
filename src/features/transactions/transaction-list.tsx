@@ -1,7 +1,12 @@
 import type { Ulid } from "../../domain/ids/ulid";
 import { formatBRL } from "../../domain/money/money";
 import type { ProjectionState, TransactionRecord } from "../../domain/projections/apply";
-import { resolveCategoryName, resolvePaymentMethodName } from "../../domain/projections/selectors";
+import {
+  resolveAuthorColor,
+  resolveCategoryName,
+  resolvePaymentMethodName,
+} from "../../domain/projections/selectors";
+import { cssVarForToken } from "../colors/color-token";
 
 export interface TransactionListProps {
   /** Já filtrados e ordenados por `listTransactions`. */
@@ -31,6 +36,20 @@ export function TransactionList({ items, state, onEdit, onDelete }: TransactionL
     <ul class="rounded-box mt-4 divide-y divide-base-300 border border-base-content/10 bg-base-100/60">
       {items.map((item) => (
         <li key={item.id} class="flex items-stretch">
+          {/*
+            Autoria como marca lateral, nunca fundo: fundo colorido competiria
+            com o único dado que importa nesta tela — o dinheiro. A foto do autor
+            não entra aqui pelo mesmo motivo, mais o de que 96px renderizados a
+            20px viram ruído cinza que se repete idêntico em toda linha enquanto
+            houver um perfil só.
+          */}
+          <span
+            data-testid="author-mark"
+            aria-hidden="true"
+            class="w-1 shrink-0"
+            style={{ backgroundColor: cssVarForToken(resolveAuthorColor(state, item.userId)) }}
+          />
+
           {/*
             A linha inteira é o alvo de editar. Dois botões de texto por linha
             comiam a largura da descrição num celular e davam ao destrutivo o

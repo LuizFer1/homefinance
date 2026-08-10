@@ -6,9 +6,11 @@ import {
   type TransactionRecord,
 } from "./apply";
 import {
+  findUser,
   listCategories,
   listPaymentMethods,
   listTransactions,
+  resolveAuthorColor,
   resolveCategoryName,
   resolvePaymentMethodName,
   totals,
@@ -211,5 +213,56 @@ describe("resolvePaymentMethodName", () => {
     expect(resolvePaymentMethodName(REF_STATE, VIVA)).toBe("Nubank");
     expect(resolvePaymentMethodName(REF_STATE, null)).toBe("Sem forma de pagamento");
     expect(resolvePaymentMethodName(REF_STATE, APAGADA)).toBe("Forma removida");
+  });
+});
+
+describe("autor do lançamento", () => {
+  const AUTOR = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
+  const AUTOR_APAGADO = "01J9F3K2M7QX8YB4TVWZ0DCEHD";
+
+  const USER_STATE: ProjectionState = {
+    ...EMPTY_STATE,
+    users: {
+      [AUTOR]: {
+        id: AUTOR,
+        name: "Luiz",
+        color: "teal",
+        avatar: "data:image/webp;base64,AAAA",
+        deleted: false,
+        materialized: true,
+        fieldHlc: {},
+      },
+      [AUTOR_APAGADO]: {
+        id: AUTOR_APAGADO,
+        name: "Ana",
+        color: "rose",
+        avatar: null,
+        deleted: true,
+        materialized: true,
+        fieldHlc: {},
+      },
+    },
+  };
+
+  it("resolve a cor do autor do lançamento", () => {
+    expect(resolveAuthorColor(USER_STATE, AUTOR)).toBe("teal");
+  });
+
+  it("lançamento sem autor renderiza a cor neutra", () => {
+    // O histórico gravado antes da fatia de perfil é este caso, e ele nunca
+    // deixa de existir: o log é eterno.
+    expect(resolveAuthorColor(USER_STATE, null)).toBe("slate");
+  });
+
+  it("lançamento de autor apagado ou inexistente renderiza a cor neutra", () => {
+    expect(resolveAuthorColor(USER_STATE, AUTOR_APAGADO)).toBe("slate");
+    expect(resolveAuthorColor(USER_STATE, "01J9F3K2M7QX8YB4TVWZ0DCEXX")).toBe("slate");
+  });
+
+  it("findUser devolve o perfil vivo e nulo para os demais casos", () => {
+    expect(findUser(USER_STATE, AUTOR)?.name).toBe("Luiz");
+    expect(findUser(USER_STATE, null)).toBeNull();
+    expect(findUser(USER_STATE, AUTOR_APAGADO)).toBeNull();
+    expect(findUser(USER_STATE, "01J9F3K2M7QX8YB4TVWZ0DCEXX")).toBeNull();
   });
 });
