@@ -1,7 +1,14 @@
 import { useState } from "preact/hooks";
 import type { TransactionDraft, TransactionKind } from "../../domain/events/transaction";
+import type { Ulid } from "../../domain/ids/ulid";
 import { parseBRL } from "../../domain/money/money";
-import type { TransactionRecord } from "../../domain/projections/apply";
+import type {
+  CategoryRecord,
+  PaymentMethodRecord,
+  TransactionRecord,
+} from "../../domain/projections/apply";
+import { offersCashback } from "../../domain/transactions/cashback";
+import { EntitySelect } from "../registry/entity-select";
 
 export interface TransactionFormProps {
   /**
@@ -16,6 +23,8 @@ export interface TransactionFormProps {
   onSubmit: (draft: TransactionDraft) => void;
   onCancel: () => void;
   today: string;
+  categories: CategoryRecord[];
+  paymentMethods: PaymentMethodRecord[];
 }
 
 const LABEL = "hf-caption block text-[0.6875rem] font-semibold uppercase text-base-content/45";
@@ -42,12 +51,29 @@ function toAmountInput(minor: number): string {
   return (minor / 100).toFixed(2).replace(".", ",");
 }
 
-export function TransactionForm({ editing, onSubmit, onCancel, today }: TransactionFormProps) {
+export function TransactionForm({
+  editing,
+  onSubmit,
+  onCancel,
+  today,
+  categories,
+  paymentMethods,
+}: TransactionFormProps) {
   const [description, setDescription] = useState(editing?.description ?? "");
   const [amount, setAmount] = useState(editing === null ? "" : toAmountInput(editing.amountMinor));
   const [kind, setKind] = useState<TransactionKind>(editing?.kind ?? "expense");
   const [occurredOn, setOccurredOn] = useState(editing?.occurredOn ?? today);
+  const [categoryId, setCategoryId] = useState<Ulid | null>(editing?.categoryId ?? null);
+  const [paymentMethodId, setPaymentMethodId] = useState<Ulid | null>(
+    editing?.paymentMethodId ?? null,
+  );
+  const [cashback, setCashback] = useState(
+    editing?.cashbackMinor == null ? "" : toAmountInput(editing.cashbackMinor),
+  );
   const [problem, setProblem] = useState<string | null>(null);
+
+  const selectedMethod = paymentMethods.find((method) => method.id === paymentMethodId) ?? null;
+  const showsCashback = offersCashback(selectedMethod?.kind ?? null, kind);
 
   function handleSubmit(event: Event) {
     event.preventDefault();
@@ -70,9 +96,13 @@ export function TransactionForm({ editing, onSubmit, onCancel, today }: Transact
       description: trimmed,
       amountMinor,
       currency: "BRL",
-      categoryId: null,
-      paymentMethodId: null,
-      cashbackMinor: null,
+      categoryId,
+      paymentMethodId,
+      // A limpeza acontece **aqui, no draft**, e nao apenas escondendo o campo.
+      // Um cashback pendurado numa despesa em dinheiro seria dado sujo
+      // permanente: invisivel na tela, presente no export, imortal no log. O
+      // `null` entra no patch e a limpeza chega ao disco.
+      cashbackMinor: showsCashback ? parseBRL(cashback) : null,
       occurredOn,
     });
 
@@ -81,6 +111,7 @@ export function TransactionForm({ editing, onSubmit, onCancel, today }: Transact
     if (editing === null) {
       setDescription("");
       setAmount("");
+      setCashback("");
     }
   }
 
@@ -161,6 +192,51 @@ export function TransactionForm({ editing, onSubmit, onCancel, today }: Transact
           />
         </div>
       </div>
+
+      <EntitySelect
+        id="categoryId"
+        label="Categoria"
+        emptyLabel="Sem categoria"
+        emptyHint="Nenhuma categoria ainda. Cadastre em Categorias."
+        items={categories}
+        value={categoryId}
+        deadLabel="Categoria removida"
+        onChange={setCategoryId}
+        class="mt-3"
+      />
+
+      <EntitySelect
+        id="paymentMethodId"
+        label="Forma de pagamento"
+        emptyLabel="Sem forma de pagamento"
+        emptyHint="Nenhuma forma de pagamento ainda. Cadastre em Pagamentos."
+        items={paymentMethods}
+        value={paymentMethodId}
+        deadLabel="Forma removida"
+        onChange={setPaymentMethodId}
+        class="mt-3"
+      />
+
+      {showsCashback && (
+        <div class="mt-3">
+          <label class={LABEL} for="cashback">
+            Cashback
+          </label>
+          <input
+            id="cashback"
+            name="cashback"
+            type="text"
+            inputMode="decimal"
+            placeholder="0,00"
+            class={`${FIELD} hf-num`}
+            value={cashback}
+            onInput={(event) => setCashback(event.currentTarget.value)}
+          />
+          <p class="mt-1.5 text-xs text-base-content/45">
+            Quanto voltou. Nao entra no saldo — e um atributo da despesa.
+          </p>
+        </div>
+      )}
 
       {problem !== null && (
         <p role="alert" class="mt-3 text-sm text-error">

@@ -4,7 +4,12 @@ import { diffTransaction, type TransactionDraft } from "./domain/events/transact
 import type { Ulid } from "./domain/ids/ulid";
 import { formatBRL } from "./domain/money/money";
 import type { TransactionRecord } from "./domain/projections/apply";
-import { listTransactions, totals } from "./domain/projections/selectors";
+import {
+  listCategories,
+  listPaymentMethods,
+  listTransactions,
+  totals,
+} from "./domain/projections/selectors";
 import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
@@ -81,6 +86,8 @@ export function App({ store, registry, today, theme }: AppProps) {
   }
 
   const items = listTransactions(store.state.value);
+  const categories = listCategories(store.state.value);
+  const paymentMethods = listPaymentMethods(store.state.value);
   const summary = totals(items);
   const negative = summary.balanceMinor < 0;
 
@@ -185,6 +192,8 @@ export function App({ store, registry, today, theme }: AppProps) {
               onSubmit={handleSubmit}
               onCancel={() => setEditing(null)}
               today={today}
+              categories={categories}
+              paymentMethods={paymentMethods}
             />
 
             <TransactionList items={items} onEdit={setEditing} onDelete={handleDelete} />
