@@ -1,10 +1,13 @@
 import type { Ulid } from "../../domain/ids/ulid";
 import { formatBRL } from "../../domain/money/money";
-import type { TransactionRecord } from "../../domain/projections/apply";
+import type { ProjectionState, TransactionRecord } from "../../domain/projections/apply";
+import { resolveCategoryName, resolvePaymentMethodName } from "../../domain/projections/selectors";
 
 export interface TransactionListProps {
   /** Já filtrados e ordenados por `listTransactions`. */
   items: TransactionRecord[];
+  /** Para resolver categoria e forma de pagamento em texto, inclusive as apagadas. */
+  state: ProjectionState;
   onEdit: (record: TransactionRecord) => void;
   onDelete: (entityId: Ulid) => void;
 }
@@ -15,7 +18,7 @@ function shortDate(iso: string): string {
   return month && day ? `${day}/${month}` : iso;
 }
 
-export function TransactionList({ items, onEdit, onDelete }: TransactionListProps) {
+export function TransactionList({ items, state, onEdit, onDelete }: TransactionListProps) {
   if (items.length === 0) {
     return (
       <p class="rounded-box mt-4 bg-base-100 px-4 py-10 text-center text-sm text-base-content/45">
@@ -47,7 +50,31 @@ export function TransactionList({ items, onEdit, onDelete }: TransactionListProp
               {shortDate(item.occurredOn)}
             </time>
 
-            <span class="min-w-0 flex-1 truncate text-[0.9375rem]">{item.description}</span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-[0.9375rem]">{item.description}</span>
+              {/*
+                Segunda linha só aparece quando há o que dizer. Um "Sem
+                categoria · Sem forma de pagamento" em toda linha viraria ruído
+                constante e empurraria o valor, que é o dado que importa.
+              */}
+              {(item.categoryId !== null ||
+                item.paymentMethodId !== null ||
+                item.cashbackMinor !== null) && (
+                <span class="mt-0.5 block truncate text-xs text-base-content/45">
+                  {[
+                    item.categoryId !== null ? resolveCategoryName(state, item.categoryId) : null,
+                    item.paymentMethodId !== null
+                      ? resolvePaymentMethodName(state, item.paymentMethodId)
+                      : null,
+                    item.cashbackMinor !== null
+                      ? `${formatBRL(item.cashbackMinor)} de volta`
+                      : null,
+                  ]
+                    .filter((part) => part !== null)
+                    .join(" · ")}
+                </span>
+              )}
+            </span>
 
             {/*
               Coluna de largura mínima e alinhada à direita: sem isso o valor

@@ -196,7 +196,12 @@ export function App({ store, registry, today, theme }: AppProps) {
               paymentMethods={paymentMethods}
             />
 
-            <TransactionList items={items} onEdit={setEditing} onDelete={handleDelete} />
+            <TransactionList
+              items={items}
+              state={store.state.value}
+              onEdit={setEditing}
+              onDelete={handleDelete}
+            />
           </>
         )}
       </main>
