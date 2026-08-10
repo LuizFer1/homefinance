@@ -86,8 +86,14 @@ function continuar() {
   fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
 }
 
-function escolher(label: RegExp | string, value: string) {
-  fireEvent.change(screen.getByLabelText(label), { target: { value } });
+/** Escolhe uma opcao da grade pelo nome visivel do chip. */
+function escolher(nome: RegExp | string) {
+  fireEvent.click(screen.getByRole("radio", { name: nome }));
+}
+
+/** Nomes oferecidos na grade em foco, na ordem em que aparecem. */
+function opcoes(): string[] {
+  return screen.getAllByRole("radio").map((radio) => radio.closest("label")?.textContent ?? "");
 }
 
 function enviar() {
@@ -106,7 +112,7 @@ describe("navegação entre etapas", () => {
     montar();
 
     expect(screen.getByLabelText("Descrição")).toBeDefined();
-    expect(screen.queryByLabelText(/^categoria$/i)).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Alimentacao" })).toBeNull();
   });
 
   it("avança e volta preservando o que foi digitado", () => {
@@ -116,7 +122,7 @@ describe("navegação entre etapas", () => {
     preencherDados("Farmacia", "25,50");
 
     continuar();
-    escolher(/categoria/i, "cat-1");
+    escolher("Alimentacao");
     fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
 
     expect((screen.getByLabelText("Descrição") as HTMLInputElement).value).toBe("Farmacia");
@@ -158,7 +164,7 @@ describe("navegação entre etapas", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Pagamento/ }));
 
-    expect(screen.getByLabelText(/forma de pagamento/i)).toBeDefined();
+    expect(screen.getByRole("radio", { name: "Sem forma de pagamento" })).toBeDefined();
   });
 
   it("só a última etapa oferece o botão de salvar", () => {
@@ -217,9 +223,9 @@ describe("emissão do rascunho", () => {
     const { onSubmit } = montar();
     preencherDados();
     continuar();
-    escolher(/categoria/i, "cat-1");
+    escolher("Alimentacao");
     continuar();
-    escolher(/forma de pagamento/i, "pm-pix");
+    escolher("Pix");
 
     enviar();
 
@@ -235,7 +241,7 @@ describe("emissão do rascunho", () => {
     expect((screen.getByLabelText("Valor") as HTMLInputElement).value).toBe("123,45");
 
     fireEvent.click(screen.getByRole("button", { name: /Categoria/ }));
-    expect((screen.getByLabelText(/categoria/i) as HTMLSelectElement).value).toBe("cat-1");
+    expect(screen.getByRole("radio", { name: "Alimentacao" })).toHaveProperty("checked", true);
   });
 });
 
@@ -244,10 +250,10 @@ describe("cashback condicionado", () => {
     montar();
     ateOPagamento();
 
-    escolher(/forma de pagamento/i, "pm-credito");
+    escolher("Cartao credito");
     expect(screen.getByLabelText(/cashback/i)).toBeDefined();
 
-    escolher(/forma de pagamento/i, "pm-debito");
+    escolher("Cartao debito");
     expect(screen.getByLabelText(/cashback/i)).toBeDefined();
   });
 
@@ -255,8 +261,8 @@ describe("cashback condicionado", () => {
     montar();
     ateOPagamento();
 
-    for (const id of ["pm-dinheiro", "pm-pix", "pm-outro"]) {
-      escolher(/forma de pagamento/i, id);
+    for (const nome of ["Dinheiro", "Pix", "Vale"]) {
+      escolher(nome);
       expect(screen.queryByLabelText(/cashback/i)).toBeNull();
     }
   });
@@ -272,7 +278,7 @@ describe("cashback condicionado", () => {
     // So despesa pode gerar retorno.
     montar();
     ateOPagamento();
-    escolher(/forma de pagamento/i, "pm-credito");
+    escolher("Cartao credito");
     expect(screen.getByLabelText(/cashback/i)).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: /Dados/ }));
@@ -298,7 +304,7 @@ describe("limpeza do cashback", () => {
     fireEvent.click(screen.getByRole("button", { name: /Pagamento/ }));
     expect((screen.getByLabelText(/cashback/i) as HTMLInputElement).value).toBe("5,00");
 
-    escolher(/forma de pagamento/i, "pm-dinheiro");
+    escolher("Dinheiro");
     enviar();
 
     expect(onSubmit).toHaveBeenCalledWith(
@@ -336,9 +342,10 @@ describe("referências e listas vazias", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Categoria/ }));
 
-    const select = screen.getByLabelText(/categoria/i) as HTMLSelectElement;
-    expect(select.value).toBe("cat-apagada");
-    expect(screen.getByText("Categoria removida")).toBeDefined();
+    expect(screen.getByRole("radio", { name: "Categoria removida" })).toHaveProperty(
+      "checked",
+      true,
+    );
   });
 
   it("sem nada cadastrado mostra atalho em vez de dropdown vazio", () => {
@@ -346,7 +353,7 @@ describe("referências e listas vazias", () => {
     preencherDados();
     continuar();
 
-    expect(screen.queryByLabelText(/^categoria$/i)).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Alimentacao" })).toBeNull();
     expect(screen.getByText(/Cadastre em Categorias/)).toBeDefined();
   });
 });
@@ -357,12 +364,6 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
     { ...(CATEGORIAS[0] as CategoryRecord), id: "cat-rec", name: "Salario", kind: "income" },
     { ...(CATEGORIAS[0] as CategoryRecord), id: "cat-ambos", name: "Investimentos", kind: "both" },
   ];
-
-  function opcoes() {
-    return Array.from(screen.getByLabelText(/categoria/i).querySelectorAll("option")).map(
-      (option) => option.textContent,
-    );
-  }
 
   function ateACategoria() {
     preencherDados();
@@ -410,6 +411,22 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
     expect(opcoes()).not.toContain("Alimentacao");
   });
 
+  it("a categoria escolhida sobrevive a troca de tipo com o proprio nome", () => {
+    // Reanexada a grade, e nao tratada como referencia morta: rotula-la
+    // "Categoria removida" seria mentira — ela existe, so nao serve a este lado
+    // do lancamento.
+    montar({ categories: TODAS, initialKind: "expense" });
+    preencherDados();
+    continuar();
+    escolher("Alimentacao");
+    fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+    fireEvent.click(screen.getByRole("radio", { name: /receita/i }));
+    continuar();
+
+    expect(screen.getByRole("radio", { name: "Alimentacao" })).toHaveProperty("checked", true);
+    expect(screen.queryByRole("radio", { name: "Categoria removida" })).toBeNull();
+  });
+
   it("trocar o tipo nao apaga em silencio a categoria ja escolhida", () => {
     // Mesmo caminho da referencia apagada: a EntitySelect mantem selecionado o
     // que sumiu da lista. Limpar aqui apagaria uma escolha do usuario por causa
@@ -417,7 +434,7 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
     const { onSubmit } = montar({ categories: TODAS, initialKind: "expense" });
     preencherDados();
     continuar();
-    escolher(/categoria/i, "cat-desp");
+    escolher("Alimentacao");
     fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
     fireEvent.click(screen.getByRole("radio", { name: /receita/i }));
     continuar();

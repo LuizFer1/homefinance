@@ -8,7 +8,7 @@ import type {
   TransactionRecord,
 } from "../../domain/projections/apply";
 import { offersCashback } from "../../domain/transactions/cashback";
-import { EntitySelect } from "../registry/entity-select";
+import { EntityPicker } from "../registry/entity-picker";
 import { StepIndicator } from "./step-indicator";
 
 export interface TransactionWizardProps {
@@ -86,14 +86,20 @@ export function TransactionWizard({
     receita na etapa 1 troca a lista da etapa 2. "Salário" oferecido numa despesa
     é a razão de `kind` existir na categoria.
 
-    A escolha já feita **não** é limpa ao trocar o tipo: a `EntitySelect` já sabe
-    manter selecionada uma categoria que sumiu da lista — é o mesmo caminho da
-    referência apagada. Limpar aqui apagaria em silêncio uma escolha do usuário
-    por causa de um toque no segmento de tipo.
+    A escolha já feita **não** é limpa ao trocar o tipo — isso apagaria em
+    silêncio uma decisão do usuário por causa de um toque no segmento. Ela é
+    reanexada à grade: sem isso o `EntityPicker` a trataria como referência
+    morta e a rotularia "Categoria removida", que seria mentira — a categoria
+    existe, só não serve a este lado do lançamento.
   */
   const offered = categories.filter(
     (category) => category.kind === kind || category.kind === "both",
   );
+  const chosenCategory = categories.find((category) => category.id === categoryId) ?? null;
+  const categoryItems =
+    chosenCategory !== null && !offered.some((category) => category.id === chosenCategory.id)
+      ? [...offered, chosenCategory]
+      : offered;
 
   const trimmed = description.trim();
   const amountMinor = parseBRL(amount);
@@ -244,12 +250,12 @@ export function TransactionWizard({
         )}
 
         {step === 1 && (
-          <EntitySelect
+          <EntityPicker
             id="categoryId"
             label="Categoria"
             emptyLabel="Sem categoria"
             emptyHint="Nenhuma categoria ainda. Cadastre em Categorias."
-            items={offered}
+            items={categoryItems}
             value={categoryId}
             deadLabel="Categoria removida"
             onChange={setCategoryId}
@@ -258,7 +264,7 @@ export function TransactionWizard({
 
         {step === 2 && (
           <>
-            <EntitySelect
+            <EntityPicker
               id="paymentMethodId"
               label="Forma de pagamento"
               emptyLabel="Sem forma de pagamento"
