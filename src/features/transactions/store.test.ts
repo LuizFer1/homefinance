@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { type FakeEventStore, fakeEventStore } from "../../data/event-store.fake";
 import type { TransactionDraft } from "../../domain/events/transaction";
 import { listTransactions } from "../../domain/projections/selectors";
-import { createSession } from "../session/session";
+import { createSession, LOCAL_USER_ID_KEY } from "../session/session";
 import { createTransactionsStore } from "./store";
 
 const DRAFT: TransactionDraft = {
@@ -141,5 +141,50 @@ describe("createTransactionsStore", () => {
     const [primeiro = "", segundo = ""] = hlcs;
     expect(segundo > primeiro).toBe(true);
     expect(new Set(hlcs).size).toBe(hlcs.length);
+  });
+});
+
+describe("autoria", () => {
+  it("preenche userId no create a partir do localUserId", async () => {
+    const events = fakeEventStore();
+    await events.setMeta(LOCAL_USER_ID_KEY, "01J9F3K2M7QX8YB4TVWZ0DCEHU");
+    const store = createTransactionsStore(session(events));
+    await store.init();
+
+    await store.add(DRAFT);
+
+    expect(events.events.at(-1)?.data).toMatchObject({
+      userId: "01J9F3K2M7QX8YB4TVWZ0DCEHU",
+    });
+  });
+
+  it("grava autor nulo quando o aparelho ainda nao tem perfil", async () => {
+    // O historico gravado antes desta fatia e este caso, e ele nunca deixa de
+    // existir: o log e eterno.
+    const events = fakeEventStore();
+    const store = createTransactionsStore(session(events));
+    await store.init();
+
+    await store.add(DRAFT);
+
+    expect(events.events.at(-1)?.data).toMatchObject({ userId: null });
+  });
+
+  it("update nao altera userId, nem quando quem edita e outro perfil", async () => {
+    // Se sua esposa corrige o valor de um lancamento seu, ele continua seu. Um
+    // update que reescrevesse userId faria a autoria virar "quem mexeu por
+    // ultimo", que e outra coisa.
+    const events = fakeEventStore();
+    await events.setMeta(LOCAL_USER_ID_KEY, "01J9F3K2M7QX8YB4TVWZ0DCEHU");
+    const store = createTransactionsStore(session(events));
+    await store.init();
+    await store.add(DRAFT);
+    const criado = listTransactions(store.state.value)[0];
+
+    await events.setMeta(LOCAL_USER_ID_KEY, "01J9F3K2M7QX8YB4TVWZ0DCEHO");
+    await store.edit(criado?.id ?? "", { amountMinor: 999 });
+
+    expect(events.events.at(-1)?.data).not.toHaveProperty("userId");
+    expect(listTransactions(store.state.value)[0]?.userId).toBe("01J9F3K2M7QX8YB4TVWZ0DCEHU");
   });
 });

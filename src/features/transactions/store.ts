@@ -36,8 +36,15 @@ export function createTransactionsStore(session: Session): TransactionsStore {
     init: session.init,
 
     async add(draft: TransactionDraft): Promise<void> {
+      // Autoria vem da sessão, não do formulário, e **só** no create. `edit` não
+      // a toca: se sua esposa corrige o valor de um lançamento seu, ele continua
+      // seu. Isso não depende de vigilância — `TransactionPatch` não tem o campo.
       await session.commit(
-        transactionCreated({ ...session.clock().newEntity(), draft, userId: null }),
+        transactionCreated({
+          ...session.clock().newEntity(),
+          draft,
+          userId: session.localUserId.value,
+        }),
       );
     },
 
