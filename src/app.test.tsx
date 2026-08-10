@@ -196,7 +196,10 @@ describe("navegacao", () => {
     await addTransaction("Mercado", "12,34");
 
     fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
+    fireEvent.click(screen.getByRole("button", { name: "Nova categoria" }));
     fireEvent.input(screen.getByLabelText(/nome/i), { target: { value: "Alimentacao" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
     fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
     await waitFor(() => expect(screen.getByText("Alimentacao")).toBeDefined());
 
@@ -213,9 +216,12 @@ describe("navegacao", () => {
     await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
 
     fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
+    fireEvent.click(screen.getByRole("button", { name: "Nova categoria" }));
     expect(screen.queryByLabelText(/tipo de pagamento/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
 
     fireEvent.click(naBarra().getByRole("button", { name: "Pagamentos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Nova forma de pagamento" }));
     expect(screen.getByLabelText(/tipo de pagamento/i)).toBeDefined();
   });
 });
@@ -331,6 +337,19 @@ describe("fila de ações rápidas", () => {
     fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
 
     expect(screen.queryByRole("navigation", { name: "Ações rápidas" })).toBeNull();
+  });
+
+  it("o botão flutuante cria o que a tela lista", async () => {
+    // Um padrao so no app inteiro: o + sempre cria o que esta na tela.
+    await pronto();
+    expect(screen.getByRole("button", { name: "Novo lançamento" })).toBeDefined();
+
+    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
+    expect(screen.getByRole("button", { name: "Nova categoria" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Novo lançamento" })).toBeNull();
+
+    fireEvent.click(naBarra().getByRole("button", { name: "Pagamentos" }));
+    expect(screen.getByRole("button", { name: "Nova forma de pagamento" })).toBeDefined();
   });
 
   it("o tipo escolhido na fila não vaza para a próxima abertura", async () => {

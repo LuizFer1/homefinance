@@ -32,14 +32,24 @@ const stateWith = (over: Partial<ProjectionState>): ProjectionState => ({
   ...over,
 });
 
+/** O formulario agora vive num modal: e preciso abri-lo primeiro. */
+function abrirCadastro() {
+  fireEvent.click(screen.getByRole("button", { name: /nova (categoria|forma)/i }));
+}
+
+function abrirEdicao() {
+  fireEvent.click(screen.getByRole("button", { name: /editar/i }));
+}
+
 function preencherNome(valor: string) {
   fireEvent.input(screen.getByLabelText(/nome/i), { target: { value: valor } });
 }
 
+/** Avanca as tres etapas e salva. */
 function salvar() {
-  fireEvent.submit(
-    screen.getByRole("button", { name: /adicionar|salvar/i }).closest("form") as HTMLFormElement,
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+  fireEvent.click(screen.getByRole("button", { name: /adicionar|salvar/i }));
 }
 
 describe("RegistryPage", () => {
@@ -49,11 +59,13 @@ describe("RegistryPage", () => {
       <RegistryPage entity="category" state={EMPTY_STATE} store={store} />,
     );
     expect(screen.getByRole("region", { name: "Categorias" })).toBeDefined();
+    abrirCadastro();
     expect(screen.queryByLabelText(/tipo de pagamento/i)).toBeNull();
     unmount();
 
     render(<RegistryPage entity="paymentMethod" state={EMPTY_STATE} store={store} />);
     expect(screen.getByRole("region", { name: "Formas de pagamento" })).toBeDefined();
+    abrirCadastro();
     expect(screen.getByLabelText(/tipo de pagamento/i)).toBeDefined();
   });
 
@@ -61,6 +73,7 @@ describe("RegistryPage", () => {
     const store = fakeStore();
     render(<RegistryPage entity="category" state={EMPTY_STATE} store={store} />);
 
+    abrirCadastro();
     preencherNome("Transporte");
     salvar();
 
@@ -72,6 +85,7 @@ describe("RegistryPage", () => {
     const store = fakeStore();
     render(<RegistryPage entity="paymentMethod" state={EMPTY_STATE} store={store} />);
 
+    abrirCadastro();
     preencherNome("Nubank");
     salvar();
 
@@ -91,7 +105,7 @@ describe("RegistryPage", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /editar/i }));
+    abrirEdicao();
     preencherNome("Supermercado");
     salvar();
 
@@ -108,7 +122,7 @@ describe("RegistryPage", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /editar/i }));
+    abrirEdicao();
     salvar();
 
     expect(store.editCategory).toHaveBeenCalledWith("cat-1", {});

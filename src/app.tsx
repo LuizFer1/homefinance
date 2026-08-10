@@ -19,6 +19,7 @@ import { ThemeToggle } from "./features/theme/theme-toggle";
 import type { TransactionsStore } from "./features/transactions/store";
 import { TransactionList } from "./features/transactions/transaction-list";
 import { TransactionWizard } from "./features/transactions/transaction-wizard";
+import { Fab } from "./features/ui/fab";
 import { greetingFor } from "./features/ui/greeting";
 import { Modal } from "./features/ui/modal";
 import { QuickActions } from "./features/ui/quick-actions";
@@ -226,18 +227,7 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
         cadastro a ação principal é outra, e o botão ali abriria a coisa errada.
       */}
       {screen === "lancamentos" && (
-        <button
-          type="button"
-          onClick={() => setComposing("expense")}
-          aria-label="Novo lançamento"
-          class="hf-press fixed right-[max(1.25rem,calc(50vw-13rem))]
-            bottom-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+1rem)] z-20 flex size-14
-            items-center
-            justify-center rounded-full bg-primary text-2xl leading-none text-primary-content
-            shadow-lg"
-        >
-          +
-        </button>
+        <Fab label="Novo lançamento" onSelect={() => setComposing("expense")} />
       )}
 
       <nav
