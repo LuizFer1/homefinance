@@ -5,6 +5,15 @@ export interface QuickAction {
   label: string;
   /** Chave do `ICON_SET`. Só chaves já no bundle — ícone novo custa gzip. */
   icon: string;
+  /**
+   * Classes de cor da ação primária.
+   *
+   * Vermelho em despesa e verde em receita é a cor carregando significado, que é
+   * a única razão pela qual ela entra neste app — o `app.css` registra
+   * exatamente receita/despesa como o caso legítimo. Os tokens `error` e
+   * `success` já têm par calibrado para os dois temas.
+   */
+  tone?: string;
   onSelect: () => void;
 }
 
@@ -24,10 +33,12 @@ export interface QuickActionsProps {
  * fundo preenchido enquanto os secundários ficam em contorno.
  */
 const PRIMARY =
-  "hf-press rounded-box flex flex-1 items-center justify-center gap-2.5 " +
-  "border border-base-content/10 bg-base-100 py-4 text-sm font-semibold " +
-  "transition-colors duration-150 hover:border-base-content/25 " +
+  "hf-press rounded-box flex flex-1 items-center justify-center gap-2.5 border py-4 " +
+  "font-semibold transition-colors duration-150 " +
   "focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:outline-none";
+
+/** Fundo tingido e não preenchido: a cor marca o sentido sem gritar na tela. */
+const NEUTRAL_TONE = "border-base-content/10 bg-base-100 hover:border-base-content/25";
 
 const SECONDARY =
   "hf-press rounded-field flex flex-1 items-center justify-center gap-1.5 " +
@@ -41,7 +52,12 @@ export function QuickActions({ primary, secondary }: QuickActionsProps) {
     <nav aria-label="Ações rápidas" class="mt-4">
       <div class="flex gap-3">
         {primary.map((action) => (
-          <button key={action.id} type="button" onClick={action.onSelect} class={PRIMARY}>
+          <button
+            key={action.id}
+            type="button"
+            onClick={action.onSelect}
+            class={`${PRIMARY} ${action.tone ?? NEUTRAL_TONE}`}
+          >
             <Icon name={action.icon} size={22} />
             {action.label}
           </button>

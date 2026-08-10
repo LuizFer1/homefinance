@@ -35,7 +35,7 @@ function PendingRow({ icon, label, reason }: { icon: string; label: string; reas
     <div class={`${ROW} opacity-55`} aria-disabled="true">
       <Icon name={icon} size={18} />
       <span class="min-w-0 flex-1">
-        <span class="block text-[0.9375rem]">{label}</span>
+        <span class="block">{label}</span>
         <span class="mt-0.5 block text-xs text-base-content/50">{reason}</span>
       </span>
     </div>
@@ -49,7 +49,7 @@ export function SettingsPage({ categoryCount, paymentMethodCount, onOpen }: Sett
       <Group>
         <button type="button" class={ENABLED} onClick={() => onOpen("category")}>
           <Icon name="tag" size={18} />
-          <span class="min-w-0 flex-1 text-[0.9375rem]">Categorias</span>
+          <span class="min-w-0 flex-1">Categorias</span>
           <span class="hf-num text-sm text-base-content/45">{categoryCount}</span>
           <span aria-hidden="true" class="text-base-content/30">
             &rsaquo;
@@ -58,7 +58,7 @@ export function SettingsPage({ categoryCount, paymentMethodCount, onOpen }: Sett
 
         <button type="button" class={ENABLED} onClick={() => onOpen("paymentMethod")}>
           <Icon name="wallet" size={18} />
-          <span class="min-w-0 flex-1 text-[0.9375rem]">Formas de pagamento</span>
+          <span class="min-w-0 flex-1">Formas de pagamento</span>
           <span class="hf-num text-sm text-base-content/45">{paymentMethodCount}</span>
           <span aria-hidden="true" class="text-base-content/30">
             &rsaquo;

@@ -51,7 +51,7 @@ export function TransactionList({ items, state, onEdit, onDelete }: TransactionL
             </time>
 
             <span class="min-w-0 flex-1">
-              <span class="block truncate text-[0.9375rem]">{item.description}</span>
+              <span class="block truncate">{item.description}</span>
               {/*
                 Segunda linha só aparece quando há o que dizer. Um "Sem
                 categoria · Sem forma de pagamento" em toda linha viraria ruído
@@ -83,7 +83,7 @@ export function TransactionList({ items, state, onEdit, onDelete }: TransactionL
               pintar a regra de vermelho vira ruído em vez de sinal.
             */}
             <span
-              class={`hf-num shrink-0 text-right text-[0.9375rem] font-semibold tabular-nums ${
+              class={`hf-num shrink-0 text-right font-semibold tabular-nums ${
                 item.kind === "income" ? "text-success" : "text-base-content"
               }`}
             >

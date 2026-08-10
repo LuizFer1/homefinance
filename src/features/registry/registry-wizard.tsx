@@ -123,9 +123,7 @@ export function RegistryWizard({
   return (
     <form onSubmit={handleSubmit} class="p-4">
       <div class="flex items-center justify-between gap-3">
-        <h2 class="hf-title text-[0.9375rem] font-semibold">
-          {editing === null ? "Novo item" : "Editar item"}
-        </h2>
+        <h2 class="hf-title font-semibold">{editing === null ? "Novo item" : "Editar item"}</h2>
         <button
           type="button"
           onClick={onCancel}

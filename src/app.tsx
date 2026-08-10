@@ -190,12 +190,14 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
                   id: "despesa",
                   label: "Despesa",
                   icon: "receipt",
+                  tone: "border-error/25 bg-error/10 text-error hover:border-error/45",
                   onSelect: () => setComposing("expense"),
                 },
                 {
                   id: "receita",
                   label: "Receita",
                   icon: "banknote",
+                  tone: "border-success/25 bg-success/10 text-success hover:border-success/45",
                   onSelect: () => setComposing("income"),
                 },
               ]}

@@ -187,6 +187,17 @@
     -webkit-text-size-adjust: 100%;
   }
 
+  body {
+    /*
+     * Corpo de texto do app: 15px expressos em rem, para respeitar quem aumenta
+     * a fonte do sistema.
+     *
+     * Os campos de formulario ficam de fora e seguem em 1rem: abaixo de 16px o
+     * Safari do iOS aplica zoom ao focar o input, e a pagina inteira salta.
+     */
+    font-size: 0.9375rem;
+  }
+
   html,
   body {
     /* O overscroll do iOS revela o fundo do html, nao o do body. */

@@ -136,7 +136,7 @@ export function TransactionWizard({
   return (
     <form onSubmit={handleSubmit} class="p-4">
       <div class="flex items-center justify-between gap-3">
-        <h2 class="hf-title text-[0.9375rem] font-semibold">
+        <h2 class="hf-title font-semibold">
           {editing === null ? "Novo lançamento" : "Editar lançamento"}
         </h2>
         <button
