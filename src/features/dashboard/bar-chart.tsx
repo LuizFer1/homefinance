@@ -56,15 +56,20 @@ export function BarChart({ data }: BarChartProps) {
       <div class="mt-3 flex gap-2" aria-hidden="true">
         {data.map((item) => (
           <div key={item.month} class="flex flex-1 flex-col gap-2">
+            {/*
+              Largura em fração da coluna, e não em pixels fixos: com largura
+              fixa o par de barras encolhe em relação ao vão a cada mês a mais
+              na série, e o gráfico vira fiapos separados por espaço vazio.
+            */}
             <div class="flex h-28 items-end justify-center gap-1">
               <div
                 data-testid={`bar-income-${item.month}`}
-                class="w-2.5 rounded-t-sm bg-success"
+                class="w-1/3 rounded-t-sm bg-success"
                 style={{ height: `${(item.incomeMinor / peak) * 100}%` }}
               />
               <div
                 data-testid={`bar-expense-${item.month}`}
-                class="w-2.5 rounded-t-sm bg-error"
+                class="w-1/3 rounded-t-sm bg-error"
                 style={{ height: `${(item.expenseMinor / peak) * 100}%` }}
               />
             </div>
