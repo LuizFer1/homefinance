@@ -21,9 +21,17 @@ import { gzipSync } from "node:zlib";
  *           medidos, sendo 6.9kb de CSS). Sem dependencia nova: o <dialog> e
  *           nativo e os icones ja estavam no ICON_SET. A folga anterior era de
  *           0.31kb, entao qualquer feature estouraria.
+ *   70kb  — perfil e primeiro uso (65.74kb medidos) mais o extrato agrupado por
+ *           dia (66.25kb medidos, sendo 7.37kb de CSS). Duas fatias, nenhuma
+ *           dependencia nova: o pipeline de foto usa createImageBitmap e
+ *           canvas.toDataURL, ambos nativos, e o icone da linha ja estava no
+ *           ICON_SET. A folga anterior era de 0.26kb — o teto de 66kb foi
+ *           calculado para a fatia que o pediu e nao sobrou para a seguinte.
+ *           Os 3.75kb de folga agora sao deliberados: a fatia 4 (exportar,
+ *           importar, apagar dados) ja tem plano e vai gastar.
  * Alvo de projeto: ~140kb gzip, conforme o README.
  */
-export const LIMIT_BYTES = 66 * 1024;
+export const LIMIT_BYTES = 70 * 1024;
 
 const MEASURED = /\.(js|css)$/;
 
