@@ -1,11 +1,17 @@
+import type { UserRecord } from "../../domain/projections/apply";
 import { Icon } from "../icons/icon";
+import { Avatar } from "../profile/avatar-view";
+import { ResetSection } from "./reset-section";
 
 export type SettingsSection = "category" | "paymentMethod";
 
 export interface SettingsPageProps {
   categoryCount: number;
   paymentMethodCount: number;
+  /** Perfil local, ou null enquanto ele não existe. */
+  profile: UserRecord | null;
   onOpen: (section: SettingsSection) => void;
+  onReset: () => void;
 }
 
 const CAPTION = "hf-caption text-[0.6875rem] font-semibold uppercase text-base-content/45";
@@ -42,7 +48,13 @@ function PendingRow({ icon, label, reason }: { icon: string; label: string; reas
   );
 }
 
-export function SettingsPage({ categoryCount, paymentMethodCount, onOpen }: SettingsPageProps) {
+export function SettingsPage({
+  categoryCount,
+  paymentMethodCount,
+  profile,
+  onOpen,
+  onReset,
+}: SettingsPageProps) {
   return (
     <section aria-label="Configurações">
       <h2 class={`${CAPTION} mt-4`}>Cadastros</h2>
@@ -68,11 +80,19 @@ export function SettingsPage({ categoryCount, paymentMethodCount, onOpen }: Sett
 
       <h2 class={`${CAPTION} mt-6`}>Perfil</h2>
       <Group>
-        <PendingRow
-          icon="baby"
-          label="Seu perfil"
-          reason="Nome e cor do autor dos lançamentos. Ainda não construído."
-        />
+        {profile === null ? (
+          <PendingRow icon="baby" label="Seu perfil" reason="Nenhum perfil neste aparelho ainda." />
+        ) : (
+          <div class={ROW}>
+            <Avatar name={profile.name} color={profile.color} avatar={profile.avatar} size={40} />
+            <span class="min-w-0 flex-1">
+              <span class="block truncate">{profile.name}</span>
+              <span class="mt-0.5 block text-xs text-base-content/50">
+                Marca os lançamentos que você criar.
+              </span>
+            </span>
+          </div>
+        )}
       </Group>
 
       <h2 class={`${CAPTION} mt-6`}>Sincronização</h2>
@@ -87,6 +107,13 @@ export function SettingsPage({ categoryCount, paymentMethodCount, onOpen }: Sett
       <p class="mt-4 px-1 text-xs text-base-content/40">
         Seus dados ficam neste aparelho. O app funciona sem internet e não depende de nenhuma conta.
       </p>
+
+      {/*
+        Por último e visualmente separado do resto: é a única ação sem desfazer
+        do app, e ela não pode dividir peso com "Categorias".
+      */}
+      <h2 class={`${CAPTION} mt-8 text-error/70`}>Zona de risco</h2>
+      <ResetSection onReset={onReset} />
     </section>
   );
 }
