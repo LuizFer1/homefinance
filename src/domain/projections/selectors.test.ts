@@ -6,7 +6,9 @@ import {
   type TransactionRecord,
 } from "./apply";
 import {
+  findCategory,
   findUser,
+  groupByDay,
   listCategories,
   listPaymentMethods,
   listTransactions,
@@ -264,5 +266,101 @@ describe("autor do lançamento", () => {
     expect(findUser(USER_STATE, null)).toBeNull();
     expect(findUser(USER_STATE, AUTOR_APAGADO)).toBeNull();
     expect(findUser(USER_STATE, "01J9F3K2M7QX8YB4TVWZ0DCEXX")).toBeNull();
+  });
+});
+
+describe("groupByDay", () => {
+  const HOJE = "2026-08-10";
+  const ONTEM = "2026-08-09";
+
+  it("junta lancamentos do mesmo dia num grupo so", () => {
+    const grupos = groupByDay([
+      record({ id: "a", occurredOn: HOJE }),
+      record({ id: "b", occurredOn: HOJE }),
+      record({ id: "c", occurredOn: ONTEM }),
+    ]);
+
+    expect(grupos.map((g) => g.date)).toEqual([HOJE, ONTEM]);
+    expect(grupos[0]?.items.map((i) => i.id)).toEqual(["a", "b"]);
+    expect(grupos[1]?.items.map((i) => i.id)).toEqual(["c"]);
+  });
+
+  it("preserva a ordem que listTransactions ja decidiu", () => {
+    // Reagrupar por chave num objeto perderia o desempate por id, e os dias
+    // pulariam de posicao a cada refold do log.
+    const ordenados = listTransactions(
+      stateWith({
+        a: record({ id: "a", occurredOn: ONTEM }),
+        b: record({ id: "b", occurredOn: HOJE }),
+        c: record({ id: "c", occurredOn: HOJE }),
+      }),
+    );
+
+    expect(groupByDay(ordenados).map((g) => g.date)).toEqual([HOJE, ONTEM]);
+  });
+
+  it("o subtotal e o saldo do dia, nao a soma bruta", () => {
+    const grupos = groupByDay([
+      record({ id: "a", occurredOn: HOJE, kind: "income", amountMinor: 300_000 }),
+      record({ id: "b", occurredOn: HOJE, kind: "expense", amountMinor: 21_000 }),
+    ]);
+
+    expect(grupos[0]?.totals.balanceMinor).toBe(279_000);
+    expect(grupos[0]?.totals.incomeMinor).toBe(300_000);
+    expect(grupos[0]?.totals.expenseMinor).toBe(21_000);
+  });
+
+  it("saldo negativo do dia e normal, nao erro", () => {
+    const grupos = groupByDay([record({ id: "a", occurredOn: HOJE, amountMinor: 21_000 })]);
+
+    expect(grupos[0]?.totals.balanceMinor).toBe(-21_000);
+  });
+
+  it("lista vazia devolve nenhum grupo", () => {
+    expect(groupByDay([])).toEqual([]);
+  });
+});
+
+describe("findCategory", () => {
+  const VIVA_CAT = "01J9F3K2M7QX8YB4TVWZ0DCEC1";
+  const MORTA_CAT = "01J9F3K2M7QX8YB4TVWZ0DCEC2";
+
+  const CAT_STATE: ProjectionState = {
+    ...EMPTY_STATE,
+    categories: {
+      [VIVA_CAT]: {
+        id: VIVA_CAT,
+        name: "Alimentacao",
+        icon: "utensils",
+        color: "emerald",
+        deleted: false,
+        materialized: true,
+        fieldHlc: {},
+      },
+      [MORTA_CAT]: {
+        id: MORTA_CAT,
+        name: "Antiga",
+        icon: "tag",
+        color: "rose",
+        deleted: true,
+        materialized: true,
+        fieldHlc: {},
+      },
+    },
+  };
+
+  it("devolve icone e cor da categoria viva", () => {
+    expect(findCategory(CAT_STATE, VIVA_CAT)).toMatchObject({
+      icon: "utensils",
+      color: "emerald",
+    });
+  });
+
+  it("categoria apagada, ausente ou inexistente devolve nulo", () => {
+    // O nome tem rotulo neutro para referencia morta; icone e cor de um
+    // registro apagado nao devem aparecer.
+    expect(findCategory(CAT_STATE, MORTA_CAT)).toBeNull();
+    expect(findCategory(CAT_STATE, null)).toBeNull();
+    expect(findCategory(CAT_STATE, "01J9F3K2M7QX8YB4TVWZ0DCEXX")).toBeNull();
   });
 });

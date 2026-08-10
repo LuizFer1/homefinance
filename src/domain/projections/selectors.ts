@@ -45,6 +45,35 @@ export function totals(records: TransactionRecord[]): Totals {
   return { incomeMinor, expenseMinor, balanceMinor: incomeMinor - expenseMinor };
 }
 
+export interface DayGroup {
+  /** 'YYYY-MM-DD'. */
+  date: string;
+  items: TransactionRecord[];
+  totals: Totals;
+}
+
+/**
+ * Agrupa os registros **já ordenados** por `listTransactions` em dias.
+ *
+ * Depende da ordenação de entrada de propósito: agrupar consecutivos preserva a
+ * ordem que a lista já decidiu, enquanto reagrupar por chave num objeto perderia
+ * o desempate por `id` e faria os dias pularem de posição a cada refold.
+ *
+ * O subtotal é o **saldo** do dia, não a soma bruta: num dia com salário e
+ * mercado, o que o usuário quer saber é o que sobrou.
+ */
+export function groupByDay(items: TransactionRecord[]): DayGroup[] {
+  const groups: { date: string; items: TransactionRecord[] }[] = [];
+
+  for (const item of items) {
+    const last = groups[groups.length - 1];
+    if (last !== undefined && last.date === item.occurredOn) last.items.push(item);
+    else groups.push({ date: item.occurredOn, items: [item] });
+  }
+
+  return groups.map((group) => ({ ...group, totals: totals(group.items) }));
+}
+
 /** Materializados e não apagados. Mesma regra de visibilidade de `listTransactions`. */
 function visible<T extends EntityRecordBase>(bucket: Record<Ulid, T>): T[] {
   return Object.values(bucket).filter((record) => record.materialized && !record.deleted);
@@ -95,6 +124,21 @@ export function resolveCategoryName(state: ProjectionState, id: Ulid | null): st
 
 export function resolvePaymentMethodName(state: ProjectionState, id: Ulid | null): string {
   return resolveName(state.paymentMethods, id, "Sem forma de pagamento", "Forma removida");
+}
+
+/**
+ * Categoria visível, ou nulo — para a tela pegar ícone e cor.
+ *
+ * Separado de `resolveCategoryName` porque responde outra pergunta: o nome tem
+ * rótulo neutro para referência morta ("Categoria removida"), enquanto ícone e
+ * cor de um registro apagado não devem aparecer. Apagar categoria não cascateia,
+ * então lançamento apontando para registro deletado é estado permanente.
+ */
+export function findCategory(state: ProjectionState, id: Ulid | null): CategoryRecord | null {
+  if (id === null) return null;
+  const record = state.categories[id];
+  if (record === undefined || record.deleted || !record.materialized) return null;
+  return record;
 }
 
 /**

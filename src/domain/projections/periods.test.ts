@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lastMonths, monthLabelLong, monthLabelShort, monthOf } from "./periods";
+import { dayLabel, lastMonths, monthLabelLong, monthLabelShort, monthOf } from "./periods";
 
 describe("monthOf", () => {
   it("corta a data no mês", () => {
@@ -67,5 +67,41 @@ describe("rótulos", () => {
     expect(monthLabelShort("2026-13")).toBe("");
     expect(monthLabelShort("2026-00")).toBe("");
     expect(monthLabelLong("2026-13")).toBe("");
+  });
+});
+
+describe("dayLabel", () => {
+  const HOJE = "2026-08-10";
+
+  it("reconhece hoje e ontem", () => {
+    // Sao os dois dias que o usuario reconhece sem ler a data.
+    expect(dayLabel("2026-08-10", HOJE)).toBe("Hoje");
+    expect(dayLabel("2026-08-09", HOJE)).toBe("Ontem");
+  });
+
+  it("do antepenultimo em diante volta a data por extenso", () => {
+    expect(dayLabel("2026-08-08", HOJE)).toBe("08 de agosto");
+  });
+
+  it("omite o ano corrente e mostra o de outro ano", () => {
+    // Repetir o ano em toda linha de um extrato do mes seria ruido constante.
+    expect(dayLabel("2026-01-03", HOJE)).toBe("03 de janeiro");
+    expect(dayLabel("2025-12-31", HOJE)).toBe("31 de dezembro de 2025");
+  });
+
+  it("acha o dia anterior na virada de mes, de ano e no bissexto", () => {
+    expect(dayLabel("2026-07-31", "2026-08-01")).toBe("Ontem");
+    expect(dayLabel("2025-12-31", "2026-01-01")).toBe("Ontem");
+    expect(dayLabel("2024-02-29", "2024-03-01")).toBe("Ontem");
+    // 2100 nao e bissexto: o dia anterior a 01/03 e 28/02, nao 29/02.
+    expect(dayLabel("2100-02-28", "2100-03-01")).toBe("Ontem");
+  });
+
+  it("nao confunde o dia seguinte com ontem", () => {
+    expect(dayLabel("2026-08-11", HOJE)).toBe("11 de agosto");
+  });
+
+  it("data corrompida aparece crua em vez de derrubar o render", () => {
+    expect(dayLabel("2026-13-01", HOJE)).toBe("2026-13-01");
   });
 });
