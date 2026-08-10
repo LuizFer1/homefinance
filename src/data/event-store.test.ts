@@ -94,3 +94,60 @@ describe("EventStore", () => {
     reaberto.close();
   });
 });
+
+const USER = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
+
+describe("appendBatch", () => {
+  it("grava todos os eventos e o meta numa transacao so", async () => {
+    const eventos = [event(1_754_697_600_010), event(1_754_697_600_020)];
+
+    await store.appendBatch(eventos, { localUserId: USER });
+
+    expect(await store.readAll()).toHaveLength(2);
+    expect(await store.getMeta("localUserId")).toBe(USER);
+  });
+
+  it("falha no meio nao deixa nenhum evento nem o meta gravados", async () => {
+    // Evento sem `id` viola a primary key e faz o Dexie abortar a transacao
+    // inteira. Este teste e o motivo de `appendBatch` existir: com N chamadas de
+    // `append` em sequencia, os dois primeiros ficariam gravados para sempre.
+    const comDefeito = [
+      event(1_754_697_600_010),
+      event(1_754_697_600_020),
+      { ...event(1_754_697_600_030), id: undefined } as unknown as DomainEvent,
+    ];
+
+    await expect(store.appendBatch(comDefeito, { localUserId: USER })).rejects.toThrow();
+
+    expect(await store.readAll()).toHaveLength(0);
+    expect(await store.getMeta("localUserId")).toBeNull();
+  });
+
+  it("e idempotente por id, como o append de um evento so", async () => {
+    const eventos = [event(1_754_697_600_010)];
+
+    await store.appendBatch(eventos, {});
+    await store.appendBatch(eventos, {});
+
+    expect(await store.readAll()).toHaveLength(1);
+  });
+
+  it("lote vazio com meta grava so o meta", async () => {
+    await store.appendBatch([], { localUserId: USER });
+
+    expect(await store.getMeta("localUserId")).toBe(USER);
+    expect(await store.readAll()).toEqual([]);
+  });
+
+  it("sobrevive a reabrir o banco", async () => {
+    await store.appendBatch([event(1_754_697_600_010)], { localUserId: USER });
+    db.close();
+
+    const reaberto = new HomeFinanceDb(dbName);
+    const storeReaberta = createEventStore(reaberto);
+
+    expect(await storeReaberta.readAll()).toHaveLength(1);
+    expect(await storeReaberta.getMeta("localUserId")).toBe(USER);
+    reaberto.close();
+  });
+});
