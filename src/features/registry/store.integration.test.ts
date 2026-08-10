@@ -91,6 +91,8 @@ describe("registry sobre Dexie real", () => {
       amountMinor: 1000,
       currency: "BRL",
       categoryId,
+      paymentMethodId: null,
+      cashbackMinor: null,
       occurredOn: "2026-08-07",
     });
     await primeiro.registry.removeCategory(categoryId);

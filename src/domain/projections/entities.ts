@@ -94,7 +94,10 @@ function isValidTransactionField(field: string, value: unknown): boolean {
     case "currency":
       return value === "BRL";
     case "categoryId":
+    case "paymentMethodId":
       return value === null || typeof value === "string";
+    case "cashbackMinor":
+      return value === null || (typeof value === "number" && Number.isInteger(value));
     case "occurredOn":
       return typeof value === "string" && isRealDate(value);
     default:
@@ -116,7 +119,16 @@ function isValidReferenceField(field: string, value: unknown): boolean {
 
 export const TRANSACTION_SPEC: EntitySpec = {
   bucket: "transactions",
-  fields: ["kind", "description", "amountMinor", "currency", "categoryId", "occurredOn"],
+  fields: [
+    "kind",
+    "description",
+    "amountMinor",
+    "currency",
+    "categoryId",
+    "paymentMethodId",
+    "cashbackMinor",
+    "occurredOn",
+  ],
   isValidField: isValidTransactionField,
   shell: (id) => ({
     id,
@@ -125,6 +137,8 @@ export const TRANSACTION_SPEC: EntitySpec = {
     amountMinor: 0,
     currency: "BRL",
     categoryId: null,
+    paymentMethodId: null,
+    cashbackMinor: null,
     occurredOn: "",
     deleted: false,
     materialized: false,

@@ -16,6 +16,8 @@ const TX_DRAFT = {
   amountMinor: 1000,
   currency: "BRL",
   categoryId: null,
+  paymentMethodId: null,
+  cashbackMinor: null,
   occurredOn: "2026-08-07",
 } as const;
 

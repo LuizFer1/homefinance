@@ -71,6 +71,8 @@ export function TransactionForm({ editing, onSubmit, onCancel, today }: Transact
       amountMinor,
       currency: "BRL",
       categoryId: null,
+      paymentMethodId: null,
+      cashbackMinor: null,
       occurredOn,
     });
 

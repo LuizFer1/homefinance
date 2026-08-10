@@ -11,6 +11,20 @@ export interface Transaction {
   amountMinor: number;
   currency: "BRL";
   categoryId: Ulid | null;
+  paymentMethodId: Ulid | null;
+  /**
+   * Retorno de cartao em centavos, nao percentual.
+   *
+   * Percentual seria mais fiel ao contrato do cartao e mais errado na pratica:
+   * exigiria uma regra de arredondamento propria e o valor calculado quase nunca
+   * bate com o que aparece na fatura. Guardar o que o extrato mostra responde
+   * direto a pergunta que o usuario faz — quanto recebi de volta.
+   *
+   * **Nao entra no saldo.** E atributo da despesa, nao receita: somar exigiria
+   * decidir quando o dinheiro entra de fato, o que varia por emissor e nao e
+   * observavel pelo app.
+   */
+  cashbackMinor: number | null;
   /** Data do fato, escolhida pelo usuário. Não confundir com o HLC. */
   occurredOn: string;
 }
@@ -66,6 +80,13 @@ export function diffTransaction(current: Transaction, next: TransactionDraft): T
   if (current.description !== next.description) patch.description = next.description;
   if (current.amountMinor !== next.amountMinor) patch.amountMinor = next.amountMinor;
   if (current.categoryId !== next.categoryId) patch.categoryId = next.categoryId;
+  if (current.paymentMethodId !== next.paymentMethodId) {
+    patch.paymentMethodId = next.paymentMethodId;
+  }
+  // Precisa estar aqui para a limpeza chegar ao log. Sem esta comparacao o patch
+  // sai vazio quando o cashback e zerado, e o dado sujo fica no registro para
+  // sempre — invisivel na tela, presente no export.
+  if (current.cashbackMinor !== next.cashbackMinor) patch.cashbackMinor = next.cashbackMinor;
   if (current.occurredOn !== next.occurredOn) patch.occurredOn = next.occurredOn;
   return patch;
 }

@@ -12,6 +12,8 @@ const RECORD: TransactionRecord = {
   amountMinor: 12_345,
   currency: "BRL",
   categoryId: null,
+  paymentMethodId: null,
+  cashbackMinor: null,
   occurredOn: "2026-08-07",
   deleted: false,
   materialized: true,
@@ -35,6 +37,8 @@ describe("TransactionForm", () => {
       amountMinor: 1234,
       currency: "BRL",
       categoryId: null,
+      paymentMethodId: null,
+      cashbackMinor: null,
       occurredOn: "2026-08-08",
     });
   });
