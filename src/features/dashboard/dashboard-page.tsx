@@ -25,7 +25,13 @@ const EMPTY =
   "rounded-box border border-base-content/10 bg-base-100/60 px-4 py-8 text-center text-sm " +
   "text-base-content/45";
 
-/** Quantos meses a série de barras compara. Uma barra sozinha não compara com nada. */
+/**
+ * Quantos meses a série de barras compara. Uma barra sozinha não compara com nada.
+ *
+ * Mudar este número obriga a mudar a frase "últimos seis meses" do estado vazio,
+ * mais abaixo — ela está por extenso porque "últimos 6 meses" lê pior, e por isso
+ * não dá para compor a partir daqui.
+ */
 const WINDOW = 6;
 
 /**
@@ -92,6 +98,13 @@ export function DashboardPage({ items, state, today }: DashboardPageProps) {
         {monthItems.length} {monthItems.length === 1 ? "lançamento" : "lançamentos"} no mês.
       </p>
 
+      {/*
+        Os dois vazios abaixo podem aparecer juntos, e junto com a contagem em
+        zero: histórico inteiro fora da janela deixa mês e série vazios ao mesmo
+        tempo. Ficam os dois de propósito — eles falam de recortes diferentes
+        (o mês corrente e os seis meses), e esconder um em função do outro
+        criaria um caso especial que depende do estado do vizinho.
+      */}
       <h2 class={`${CAPTION} mt-6`}>Gasto por categoria</h2>
       {/*
         A checagem é sobre o total de despesa, e não sobre `slices.length`: um

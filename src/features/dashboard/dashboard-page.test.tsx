@@ -101,4 +101,66 @@ describe("DashboardPage", () => {
 
     expect(screen.getByText(/Sem movimento nos últimos seis meses/)).toBeDefined();
   });
+
+  it("marca o saldo do mês em vermelho quando fecha negativo", () => {
+    // A única cor com significado nesta tela. Sem teste, uma refatoração de
+    // classes a apagaria sem nada acusar.
+    render(
+      <DashboardPage
+        items={[
+          record({ id: "a", amountMinor: 9000 }),
+          record({ id: "b", kind: "income", amountMinor: 1000 }),
+        ]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    const saldo = screen.getByTestId("dashboard-balance");
+
+    expect(saldo.className).toContain("text-error");
+    expect(saldo.textContent).toContain("80,00");
+  });
+
+  it("não pinta o saldo quando o mês fecha positivo", () => {
+    render(
+      <DashboardPage
+        items={[record({ id: "a", kind: "income", amountMinor: 5000 })]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    expect(screen.getByTestId("dashboard-balance").className).not.toContain("text-error");
+  });
+
+  it("mostra os vazios do mês e da série juntos quando o histórico está fora da janela", () => {
+    // Decisão registrada, não acidente: as duas frases falam de recortes
+    // diferentes e nenhuma cede lugar para a outra.
+    render(
+      <DashboardPage
+        items={[record({ id: "a", occurredOn: "2020-01-05" })]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    expect(screen.getByText(/Nenhuma despesa em agosto de 2026/)).toBeDefined();
+    expect(screen.getByText(/Sem movimento nos últimos seis meses/)).toBeDefined();
+    expect(screen.getByText(/0 lançamentos no mês/)).toBeDefined();
+  });
+
+  it("conta lançamento datado para frente, desde que no mês corrente", () => {
+    // O recorte é por prefixo de mês, não uma comparação com hoje: uma conta
+    // agendada para o dia 28 já pesa no mês em que vai ser paga.
+    render(
+      <DashboardPage
+        items={[record({ id: "a", amountMinor: 4000, occurredOn: "2026-08-28" })]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    expect(screen.getByTestId("total-expense").textContent).toContain("40,00");
+  });
 });
