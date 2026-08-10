@@ -271,6 +271,7 @@ export function App({
             <TransactionList
               items={items}
               state={store.state.value}
+              today={today}
               onEdit={setEditing}
               onDelete={handleDelete}
             />

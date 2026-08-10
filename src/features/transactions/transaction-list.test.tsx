@@ -67,7 +67,15 @@ const STATE: ProjectionState = {
 
 describe("TransactionList", () => {
   it("mostra uma linha por lançamento", () => {
-    render(<TransactionList items={ITEMS} state={STATE} onEdit={vi.fn()} onDelete={vi.fn()} />);
+    render(
+      <TransactionList
+        items={ITEMS}
+        state={STATE}
+        today="2026-08-08"
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
 
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
     expect(screen.getByText("Mercado")).toBeDefined();
@@ -75,14 +83,30 @@ describe("TransactionList", () => {
   });
 
   it("avisa quando não há lançamentos", () => {
-    render(<TransactionList items={[]} state={STATE} onEdit={vi.fn()} onDelete={vi.fn()} />);
+    render(
+      <TransactionList
+        items={[]}
+        state={STATE}
+        today="2026-08-08"
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
 
     expect(screen.getByText("Nenhum lançamento ainda.")).toBeDefined();
   });
 
   it("pede edição do registro clicado", () => {
     const onEdit = vi.fn();
-    render(<TransactionList items={ITEMS} state={STATE} onEdit={onEdit} onDelete={vi.fn()} />);
+    render(
+      <TransactionList
+        items={ITEMS}
+        state={STATE}
+        today="2026-08-08"
+        onEdit={onEdit}
+        onDelete={vi.fn()}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Editar Salário" }));
 
@@ -91,7 +115,15 @@ describe("TransactionList", () => {
 
   it("pede exclusão do registro clicado", () => {
     const onDelete = vi.fn();
-    render(<TransactionList items={ITEMS} state={STATE} onEdit={vi.fn()} onDelete={onDelete} />);
+    render(
+      <TransactionList
+        items={ITEMS}
+        state={STATE}
+        today="2026-08-08"
+        onEdit={vi.fn()}
+        onDelete={onDelete}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Excluir Mercado" }));
 
@@ -99,7 +131,15 @@ describe("TransactionList", () => {
   });
 
   it("distingue receita de despesa no valor exibido", () => {
-    render(<TransactionList items={ITEMS} state={STATE} onEdit={vi.fn()} onDelete={vi.fn()} />);
+    render(
+      <TransactionList
+        items={ITEMS}
+        state={STATE}
+        today="2026-08-08"
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
 
     const linhas = screen.getAllByRole("listitem");
 
@@ -117,6 +157,7 @@ describe("rotulos de categoria, forma de pagamento e cashback", () => {
       <TransactionList
         items={[{ ...BASE_ITEM, ...over }]}
         state={STATE}
+        today="2026-08-08"
         onEdit={vi.fn()}
         onDelete={vi.fn()}
       />,
@@ -183,6 +224,7 @@ describe("autoria", () => {
       <TransactionList
         items={[record({ id: "a", userId })]}
         state={COM_AUTOR}
+        today="2026-08-08"
         onEdit={vi.fn()}
         onDelete={vi.fn()}
       />,
@@ -222,5 +264,111 @@ describe("autoria", () => {
     comAutor(AUTOR);
 
     expect(screen.queryByRole("img")).toBeNull();
+  });
+});
+
+describe("agrupamento por dia", () => {
+  const HOJE = "2026-08-10";
+
+  function comItens(items: TransactionRecord[]) {
+    render(
+      <TransactionList
+        items={items}
+        state={STATE}
+        today={HOJE}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+  }
+
+  it("um cabecalho por dia, com o rotulo relativo", () => {
+    comItens([
+      record({ id: "a", occurredOn: HOJE }),
+      record({ id: "b", occurredOn: "2026-08-09" }),
+      record({ id: "c", occurredOn: "2026-08-05" }),
+    ]);
+
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
+      "Hoje",
+      "Ontem",
+      "05 de agosto",
+    ]);
+  });
+
+  it("a data nao se repete linha a linha", () => {
+    // Era a repeticao mais cara da tela: uma coluna fixa a esquerda, em todo
+    // item, com a mesma data do item de cima.
+    comItens([record({ id: "a", occurredOn: HOJE }), record({ id: "b", occurredOn: HOJE })]);
+
+    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(1);
+    expect(screen.queryByText("10/08")).toBeNull();
+  });
+
+  it("mostra o subtotal do dia quando ha mais de um lancamento", () => {
+    comItens([
+      record({ id: "a", occurredOn: HOJE, kind: "income", amountMinor: 300_000 }),
+      record({ id: "b", occurredOn: HOJE, amountMinor: 21_000 }),
+    ]);
+
+    expect(screen.getByTestId("day-total").textContent).toContain("2.790,00");
+  });
+
+  it("nao mostra subtotal num dia de um lancamento so", () => {
+    // Repetiria o valor da linha logo abaixo, palavra por palavra.
+    comItens([record({ id: "a", occurredOn: HOJE })]);
+
+    expect(screen.queryByTestId("day-total")).toBeNull();
+  });
+});
+
+describe("ancora visual da linha", () => {
+  function comCategoria(over: Partial<TransactionRecord>) {
+    render(
+      <TransactionList
+        items={[record({ id: "a", ...over })]}
+        state={STATE}
+        today="2026-08-08"
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+  }
+
+  it("usa o icone da categoria do lancamento", () => {
+    comCategoria({ categoryId: "cat-viva" });
+
+    expect(screen.getByTestId("icon-utensils")).toBeDefined();
+  });
+
+  it("sem categoria, cai no icone do tipo do lancamento", () => {
+    // E a unica coisa que se sabe do lancamento sem categoria, e sao os mesmos
+    // dois icones que a fila de acoes rapidas usa para criar cada tipo.
+    comCategoria({ categoryId: null, kind: "expense" });
+    expect(screen.getByTestId("icon-receipt")).toBeDefined();
+
+    cleanup();
+
+    comCategoria({ categoryId: null, kind: "income" });
+    expect(screen.getByTestId("icon-banknote")).toBeDefined();
+  });
+
+  it("categoria apagada nao empresta seu icone nem sua cor", () => {
+    // O nome vira rotulo neutro, mas icone e cor de um registro apagado nao
+    // devem aparecer.
+    comCategoria({ categoryId: "cat-apagada", kind: "expense" });
+
+    expect(screen.queryByTestId("icon-tag")).toBeNull();
+    expect(screen.getByTestId("icon-receipt")).toBeDefined();
+  });
+
+  it("a marca de autoria e uma pilula recuada, nao faixa ate a borda", () => {
+    // A lista tem raio de 1rem: faixa em esquadro contra o canto arredondado le
+    // como defeito no primeiro e no ultimo item.
+    comCategoria({});
+
+    const marca = screen.getByTestId("author-mark");
+    expect(marca.className).toContain("rounded-full");
+    expect(marca.className).toContain("absolute");
   });
 });
