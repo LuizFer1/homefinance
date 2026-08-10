@@ -40,9 +40,24 @@ describe("DonutChart", () => {
     // A segunda começa onde a primeira terminou; o sinal negativo desloca o
     // padrão para frente ao longo do traço.
     //
-    // O primeiro é 0 e não -0: o componente calcula `-0`, mas o atributo do DOM
-    // serializa como "0", e `toEqual` distingue os dois zeros.
+    // O esperado é 0, e não -0: o componente calcula `-0`, mas o atributo do
+    // DOM já serializa como "0". Escrever -0 aqui falharia, porque `toEqual`
+    // separa os dois zeros e o que chega da leitura é o positivo.
     expect(offsets(container)).toEqual([0, -50]);
+  });
+
+  it("acumula o deslocamento ao longo de três fatias", () => {
+    // Com duas fatias iguais o segundo offset coincide com a própria fatia, e
+    // um erro de acumulação passaria. Com três, cada offset só bate se a soma
+    // vier das anteriores.
+    const { container } = render(
+      <DonutChart
+        slices={[slice("a", 5000), slice("b", 3000), slice("c", 2000)]}
+        caption="no mês"
+      />,
+    );
+
+    expect(offsets(container)).toEqual([0, -50, -80]);
   });
 
   it("não abre respiro quando há uma fatia só", () => {
@@ -80,5 +95,16 @@ describe("DonutChart", () => {
     expect(screen.getByText("Comida")).toBeDefined();
     // Total é R$ 78,34, então "12,34" só pode ter vindo da linha da legenda.
     expect(screen.getByText(/12,34/)).toBeDefined();
+  });
+
+  it("esconde o desenho do leitor de tela e começa a primeira fatia no topo", () => {
+    // Os dois atributos carregam decisão de projeto: a legenda é o único
+    // conteúdo acessível, e sem a rotação a rosca começaria às 3h. Ambos
+    // sobreviveriam a uma regressão sem nenhum outro teste acusar.
+    const { container } = render(<DonutChart slices={[slice("a", 1000)]} caption="no mês" />);
+    const svg = container.querySelector("svg");
+
+    expect(svg?.getAttribute("aria-hidden")).toBe("true");
+    expect(svg?.getAttribute("class")).toContain("-rotate-90");
   });
 });

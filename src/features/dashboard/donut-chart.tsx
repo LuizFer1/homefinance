@@ -3,7 +3,13 @@ import type { CategorySlice } from "../../domain/projections/breakdown";
 import { cssVarForToken } from "../colors/color-token";
 
 export interface DonutChartProps {
-  /** Já ordenadas por valor decrescente. */
+  /**
+   * Já ordenadas por valor decrescente, e todas com valor não negativo.
+   *
+   * Valor negativo não é rejeitado aqui: ele desapareceria da tela (o `dash`
+   * trava em zero) mas ainda deslocaria as fatias seguintes, corrompendo o
+   * desenho em silêncio. Quem monta as fatias é que garante o sinal.
+   */
   slices: CategorySlice[];
   /** Legenda sob o valor central, ex. "no mês". */
   caption: string;
@@ -17,7 +23,15 @@ export interface DonutChartProps {
  * arbitrário e exige trigonometria de volta.
  */
 const RADIUS = 15.915_494;
+
+/**
+ * Metade do `viewBox` de 42. Os dois números têm que concordar: mudar um sem o
+ * outro tira a rosca do centro sem nenhum teste acusar, porque o dasharray
+ * continua correto.
+ */
 const CENTER = 21;
+
+/** Espessura do anel. Acima de ~6 o furo do meio fecha e some o espaço do total. */
 const STROKE = 5;
 
 /** Respiro entre fatias, na mesma escala de 100. */
