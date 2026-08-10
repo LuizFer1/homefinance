@@ -19,6 +19,7 @@ export interface PaymentMethodRecord extends CategoryRecord {
 export interface UserRecord extends EntityRecordBase {
   name: string;
   color: string;
+  avatar: string | null;
 }
 
 export interface ProjectionState {

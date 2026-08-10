@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { COLOR_TOKENS, ENTITY_SPECS, PAYMENT_METHOD_SPEC, TRANSACTION_SPEC } from "./entities";
+import {
+  COLOR_TOKENS,
+  ENTITY_SPECS,
+  PAYMENT_METHOD_SPEC,
+  TRANSACTION_SPEC,
+  USER_SPEC,
+} from "./entities";
 
 const ENTITY = "01J9F3K2M7QX8YB4TVWZ0DCEH2";
 
@@ -99,6 +105,31 @@ describe("isValidField", () => {
     expect(PAYMENT_METHOD_SPEC.isValidField("kind", "credit")).toBe(true);
     expect(PAYMENT_METHOD_SPEC.isValidField("kind", "cash")).toBe(true);
     expect(PAYMENT_METHOD_SPEC.isValidField("kind", "cripto")).toBe(false);
+  });
+});
+
+describe("avatar do perfil", () => {
+  it("aceita avatar nulo e avatar string", () => {
+    expect(USER_SPEC.isValidField("avatar", null)).toBe(true);
+    expect(USER_SPEC.isValidField("avatar", "data:image/webp;base64,AAAA")).toBe(true);
+  });
+
+  it("rejeita avatar que nao e string nem null", () => {
+    expect(USER_SPEC.isValidField("avatar", 42)).toBe(false);
+  });
+
+  it("preserva avatar longo e de formato desconhecido vindo de versao mais nova", () => {
+    // O log e eterno e sincroniza com aparelhos de versao mais nova. Validar
+    // tamanho ou formato aqui apagaria a foto do registro do usuario para
+    // sempre. A lista de permissao de formatos mora na renderizacao, onde a
+    // decisao e reversivel.
+    const enorme = `data:image/avif;base64,${"A".repeat(200_000)}`;
+
+    expect(USER_SPEC.isValidField("avatar", enorme)).toBe(true);
+  });
+
+  it("a casca do usuario nasce sem foto", () => {
+    expect(USER_SPEC.shell(ENTITY)).toMatchObject({ avatar: null });
   });
 });
 

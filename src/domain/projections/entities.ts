@@ -195,18 +195,24 @@ export const PAYMENT_METHOD_SPEC: EntitySpec = {
 };
 
 /**
- * Populado na fatia 2 (perfil e primeiro uso). Entra agora, e não lá, porque
- * acrescentar um bucket depois obriga a tocar `EMPTY_STATE`, os seletores e os
- * testes de convergência de novo.
+ * `avatar` é validado como `null | string` e **nada mais** — não contra tamanho,
+ * não contra formato. Mesma razão que `isToken` registra acima para os tokens de
+ * cor: o log é eterno e sincroniza com aparelhos de versão mais nova, então
+ * rejeitar aqui apagaria a foto do registro do usuário para sempre. A lista de
+ * permissão de formatos mora na renderização, onde a decisão é reversível.
  */
 export const USER_SPEC: EntitySpec = {
   bucket: "users",
-  fields: ["name", "color"],
-  isValidField: isValidReferenceField,
+  fields: ["name", "color", "avatar"],
+  isValidField: (field, value) =>
+    field === "avatar"
+      ? value === null || typeof value === "string"
+      : isValidReferenceField(field, value),
   shell: (id) => ({
     id,
     name: "",
     color: "slate",
+    avatar: null,
     deleted: false,
     materialized: false,
     fieldHlc: {},
