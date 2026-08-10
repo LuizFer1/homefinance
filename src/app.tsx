@@ -1,3 +1,4 @@
+import type { ReadonlySignal } from "@preact/signals";
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { TransactionKind } from "./domain/events/transaction";
@@ -6,6 +7,7 @@ import type { Ulid } from "./domain/ids/ulid";
 import { formatBRL } from "./domain/money/money";
 import type { TransactionRecord } from "./domain/projections/apply";
 import {
+  findUser,
   listCategories,
   listPaymentMethods,
   listTransactions,
@@ -13,6 +15,9 @@ import {
 } from "./domain/projections/selectors";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
 import { Icon } from "./features/icons/icon";
+import type { OnboardingStore } from "./features/onboarding/store";
+import { OnboardingWizard } from "./features/onboarding/wizard";
+import { Avatar } from "./features/profile/avatar-view";
 import { RegistryFormModal } from "./features/registry/registry-form-modal";
 import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
@@ -29,6 +34,16 @@ import { QuickActions } from "./features/ui/quick-actions";
 export interface AppProps {
   store: TransactionsStore;
   registry: RegistryStore;
+  onboarding: OnboardingStore;
+  /**
+   * Só leitura. O App não escreve autoria; passar a `Session` inteira lhe daria
+   * um poder que ele não usa. Ler o sinal **dentro** do componente é o que faz o
+   * cabeçalho reagir ao perfil recém-criado pelo wizard.
+   */
+  localUserId: ReadonlySignal<Ulid | null>;
+  /** Pipeline da foto já ligado ao canvas. Injetado: `happy-dom` não tem um. */
+  processFile: (file: Blob) => Promise<string>;
+  onReset: () => void;
   /** Data de hoje em 'YYYY-MM-DD'. Vem de fora para o teste não depender do relógio. */
   today: string;
   /** Hora local 0..23, injetada pelo mesmo motivo que `today`. */
@@ -71,7 +86,17 @@ function Shell({ children }: { children: ComponentChildren }) {
   );
 }
 
-export function App({ store, registry, today, hour, theme }: AppProps) {
+export function App({
+  store,
+  registry,
+  onboarding,
+  localUserId,
+  processFile,
+  onReset,
+  today,
+  hour,
+  theme,
+}: AppProps) {
   const [editing, setEditing] = useState<TransactionRecord | null>(null);
   const [composing, setComposing] = useState<TransactionKind | null>(null);
   const [screen, setScreen] = useState<ScreenId>("inicio");
@@ -103,6 +128,18 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
     );
   }
 
+  // Renderiza **no lugar** do app, não sobre ele: não há tela por trás do wizard
+  // que faça sentido sem um autor, e um modal deixaria a lista consultável por
+  // baixo dele.
+  if (onboarding.needsOnboarding.value) {
+    return (
+      <Shell>
+        <OnboardingWizard onComplete={onboarding.complete} processFile={processFile} />
+      </Shell>
+    );
+  }
+
+  const profile = findUser(store.state.value, localUserId.value);
   const items = listTransactions(store.state.value);
   const summary = totals(items);
   const negative = summary.balanceMinor < 0;
@@ -155,7 +192,7 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
         <div class="mx-auto w-full max-w-md px-5 pt-[max(0.875rem,env(safe-area-inset-top))] pb-3">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <h1 class={CAPTION}>{greetingFor(hour)}</h1>
+              <h1 class={CAPTION}>{greetingFor(hour, profile?.name)}</h1>
               <p
                 data-testid="total-balance"
                 class={`hf-display mt-1 text-[2rem] font-semibold ${negative ? "text-error" : ""}`}
@@ -166,7 +203,17 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
                 {formatBRL(summary.balanceMinor)}
               </p>
             </div>
-            <ThemeToggle storage={theme.storage} doc={theme.doc} />
+            {/*
+              A foto aparece aqui e nas configurações, e **não** na lista de
+              lançamentos: lá o autor é a marca lateral colorida, porque o
+              dinheiro é o único dado que importa naquela tela.
+            */}
+            <div class="flex shrink-0 items-center gap-2">
+              {profile !== null && (
+                <Avatar name={profile.name} color={profile.color} avatar={profile.avatar} />
+              )}
+              <ThemeToggle storage={theme.storage} doc={theme.doc} />
+            </div>
           </div>
         </div>
       </header>
@@ -235,7 +282,9 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
             <SettingsPage
               categoryCount={categories.length}
               paymentMethodCount={paymentMethods.length}
+              profile={profile}
               onOpen={setSection}
+              onReset={onReset}
             />
           ) : (
             <RegistryPage

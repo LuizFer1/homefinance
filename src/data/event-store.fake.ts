@@ -15,8 +15,16 @@ export interface FakeEventStore extends EventStore {
   failNext: boolean;
 }
 
-export function fakeEventStore(seed: DomainEvent[] = []): FakeEventStore {
-  const meta = new Map<string, string>();
+/**
+ * `seedMeta` existe para o teste montar um aparelho **já cadastrado** sem
+ * precisar de um `await` antes do `render`. Sem ele, toda suíte de UI cairia no
+ * wizard de primeiro uso em vez da tela que ela quer exercitar.
+ */
+export function fakeEventStore(
+  seed: DomainEvent[] = [],
+  seedMeta: Record<string, string> = {},
+): FakeEventStore {
+  const meta = new Map<string, string>(Object.entries(seedMeta));
 
   const state: FakeEventStore = {
     events: [...seed],

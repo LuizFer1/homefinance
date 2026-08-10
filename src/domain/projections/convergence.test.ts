@@ -204,3 +204,90 @@ describe("convergência com quatro entidades no mesmo log", () => {
     expect(fold([...merged, ...REF_LOG_B])).toEqual(expected);
   });
 });
+
+const USER_A = "01J9F3K2M7QX8YB4TVWZ0DCEUA";
+const USER_B = "01J9F3K2M7QX8YB4TVWZ0DCEUB";
+const FOTO_A = "data:image/webp;base64,AAAA";
+const FOTO_B = "data:image/webp;base64,BBBB";
+
+/** Cada aparelho cadastra o seu perfil e lança marcando a própria autoria. */
+const PERFIL_LOG_A: DomainEvent[] = [
+  make(
+    DEVICE_A,
+    1_754_697_500_000,
+    USER_A,
+    "create",
+    { name: "Luiz", color: "teal", avatar: FOTO_A },
+    "user",
+  ),
+  make(DEVICE_A, 1_754_697_600_000, TX_1, "create", { ...BASE, userId: USER_A }),
+];
+
+const PERFIL_LOG_B: DomainEvent[] = [
+  make(
+    DEVICE_B,
+    1_754_697_500_500,
+    USER_B,
+    "create",
+    { name: "Ana", color: "rose", avatar: FOTO_B },
+    "user",
+  ),
+  make(DEVICE_B, 1_754_697_600_500, TX_2, "create", {
+    ...BASE,
+    description: "Farmácia",
+    userId: USER_B,
+  }),
+];
+
+describe("convergência de perfis e autoria", () => {
+  const todos = [...PERFIL_LOG_A, ...PERFIL_LOG_B];
+  const esperado = fold(todos);
+
+  it("os dois perfis coexistem, cada um com sua cor e sua foto", () => {
+    expect(esperado.users[USER_A]).toMatchObject({ name: "Luiz", color: "teal", avatar: FOTO_A });
+    expect(esperado.users[USER_B]).toMatchObject({ name: "Ana", color: "rose", avatar: FOTO_B });
+  });
+
+  it("cada lançamento mantém seu autor em qualquer ordem de merge", () => {
+    // Se a autoria dependesse da ordem de chegada, dois aparelhos que
+    // receberam os mesmos eventos em ordens diferentes divergiriam em silêncio.
+    for (const ordem of [
+      [...PERFIL_LOG_A, ...PERFIL_LOG_B],
+      [...PERFIL_LOG_B, ...PERFIL_LOG_A],
+      [...todos].reverse(),
+    ]) {
+      const estado = fold(ordem);
+
+      expect(estado.transactions[TX_1]?.userId).toBe(USER_A);
+      expect(estado.transactions[TX_2]?.userId).toBe(USER_B);
+      expect(estado).toEqual(esperado);
+    }
+  });
+
+  it("editar o lançamento do outro não rouba a autoria", () => {
+    // A store nunca emite userId num update, mas o fold precisa convergir mesmo
+    // que um evento assim chegue de uma versão futura ou de um import corrigido.
+    const corrigido = fold([
+      ...todos,
+      make(DEVICE_B, 1_754_697_900_000, TX_1, "update", { amountMinor: 500 }),
+    ]);
+
+    expect(corrigido.transactions[TX_1]?.amountMinor).toBe(500);
+    expect(corrigido.transactions[TX_1]?.userId).toBe(USER_A);
+  });
+
+  it("trocar a foto é LWW por campo e não mexe no nome nem na cor", () => {
+    const trocada = fold([
+      ...todos,
+      make(DEVICE_A, 1_754_698_000_000, USER_A, "update", { avatar: null }, "user"),
+    ]);
+
+    expect(trocada.users[USER_A]?.avatar).toBeNull();
+    expect(trocada.users[USER_A]?.name).toBe("Luiz");
+    expect(trocada.users[USER_A]?.color).toBe("teal");
+  });
+
+  it("é idempotente com perfis e autoria", () => {
+    expect(fold([...todos, ...PERFIL_LOG_B])).toEqual(esperado);
+  });
+});

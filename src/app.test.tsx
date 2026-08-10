@@ -1,16 +1,28 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app";
 import type { EventStore } from "./data/event-store";
 import { fakeEventStore } from "./data/event-store.fake";
-import { createRegistryStore, type RegistryStore } from "./features/registry/store";
-import { createSession } from "./features/session/session";
-import { createTransactionsStore, type TransactionsStore } from "./features/transactions/store";
+import { userCreated } from "./domain/events/user";
+import { createOnboardingStore } from "./features/onboarding/store";
+import { createRegistryStore } from "./features/registry/store";
+import { createSession, LOCAL_USER_ID_KEY } from "./features/session/session";
+import { createTransactionsStore } from "./features/transactions/store";
 
 afterEach(cleanup);
 
-/** As duas stores partilham a mesma sessao, como em producao. */
-function buildStores(events: EventStore): { store: TransactionsStore; registry: RegistryStore } {
+const PERFIL_LOCAL = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
+
+/**
+ * Duplo de aparelho **já cadastrado**: o meta traz `localUserId`, senão toda
+ * suíte daqui cairia no wizard de primeiro uso em vez da tela sob teste.
+ */
+function fakeCadastrado(seed: Parameters<typeof fakeEventStore>[0] = []) {
+  return fakeEventStore(seed, { [LOCAL_USER_ID_KEY]: PERFIL_LOCAL });
+}
+
+/** As tres stores partilham a mesma sessao, como em producao. */
+function buildStores(events: EventStore) {
   let millis = 1_754_697_600_000;
   const session = createSession({
     events,
@@ -20,7 +32,14 @@ function buildStores(events: EventStore): { store: TransactionsStore; registry: 
     },
     randomChunk: (count: number) => Array.from({ length: count }, (_, index) => index % 32),
   });
-  return { store: createTransactionsStore(session), registry: createRegistryStore(session) };
+  return {
+    store: createTransactionsStore(session),
+    registry: createRegistryStore(session),
+    onboarding: createOnboardingStore(session),
+    localUserId: session.localUserId,
+    processFile: () => Promise.resolve("data:image/webp;base64,AAAA"),
+    onReset: () => {},
+  };
 }
 
 /** O tema escreve num documento à parte para não sujar o do testing-library. */
@@ -85,7 +104,7 @@ async function abrirEdicao(description: string) {
 describe("App", () => {
   it("mostra o nome do app como cabeçalho", async () => {
     render(
-      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "HomeFinance" })).toBeDefined());
@@ -93,7 +112,7 @@ describe("App", () => {
 
   it("adiciona um lançamento e atualiza os totais", async () => {
     render(
-      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -107,7 +126,7 @@ describe("App", () => {
   });
 
   it("edita emitindo patch apenas do campo alterado", async () => {
-    const events = fakeEventStore();
+    const events = fakeCadastrado();
     render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -126,7 +145,7 @@ describe("App", () => {
   });
 
   it("não emite evento quando nada mudou na edição", async () => {
-    const events = fakeEventStore();
+    const events = fakeCadastrado();
     render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -144,7 +163,7 @@ describe("App", () => {
 
   it("remove o lançamento da lista", async () => {
     render(
-      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -172,7 +191,7 @@ describe("App", () => {
 describe("navegacao", () => {
   it("troca para categorias e volta para lancamentos", async () => {
     render(
-      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -190,7 +209,7 @@ describe("navegacao", () => {
     // O ciclo que a fatia inteira existe para permitir: sair da tela de
     // lancamentos, cadastrar, e voltar sem perder nada — as duas telas leem a
     // mesma projecao.
-    const events = fakeEventStore();
+    const events = fakeCadastrado();
     render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -214,7 +233,7 @@ describe("navegacao", () => {
 
   it("a tela de pagamentos oferece o tipo e a de categorias nao", async () => {
     render(
-      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -234,7 +253,7 @@ describe("navegacao", () => {
 describe("modal de lançamento", () => {
   async function pronto() {
     render(
-      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -290,7 +309,7 @@ describe("modal de lançamento", () => {
 describe("fila de ações rápidas", () => {
   async function pronto() {
     render(
-      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -358,7 +377,7 @@ describe("fila de ações rápidas", () => {
 describe("as tres telas", () => {
   async function pronto() {
     render(
-      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -447,5 +466,131 @@ describe("as tres telas", () => {
       fireEvent.click(naBarra().getByRole("button", { name: aba }));
       expect(screen.queryByRole("button", { name: "Novo lançamento" })).toBeNull();
     }
+  });
+});
+
+describe("primeiro uso", () => {
+  /** Aparelho virgem: sem `localUserId` no meta. */
+  function novoAparelho(over: Partial<Parameters<typeof App>[0]> = {}) {
+    const events = fakeEventStore();
+    render(
+      <App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} {...over} />,
+    );
+    return events;
+  }
+
+  it("bloqueia o app com o wizard na primeira abertura", async () => {
+    // Renderiza no lugar do app, nao sobre ele: nao ha tela por tras do wizard
+    // que faca sentido sem um autor.
+    novoAparelho();
+
+    await waitFor(() => expect(screen.getByLabelText(/seu nome/i)).toBeDefined());
+    expect(screen.queryByRole("navigation", { name: "Ações rápidas" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Seções" })).toBeNull();
+  });
+
+  it("nao pede cadastro quando o aparelho ja tem perfil local", async () => {
+    render(
+      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
+    expect(screen.queryByLabelText(/seu nome/i)).toBeNull();
+  });
+
+  it("pede cadastro mesmo com um user de outro aparelho ja no log", async () => {
+    // Decisao transversal 6: derivar de "existe algum user no log" faria este
+    // aparelho pular o cadastro depois do sync, e todo lancamento seguinte
+    // sairia sem autor.
+    const outro = "01J9F3K2M7QX8YB4TVWZ0DCEHZ";
+    render(
+      <App
+        {...buildStores(
+          fakeEventStore([
+            userCreated({
+              eventId: "01J9F3K2M7QX8YB4TVWZ0DCEE1",
+              entityId: "01J9F3K2M7QX8YB4TVWZ0DCEHO",
+              deviceId: outro,
+              hlc: `1754697500000-0000-${outro}`,
+              draft: { name: "Ana", color: "rose", avatar: null },
+            }),
+          ]),
+        )}
+        today="2026-08-08"
+        hour={9}
+        theme={fakeTheme()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText(/seu nome/i)).toBeDefined());
+  });
+
+  it("concluir o wizard abre o app com o nome na saudacao e as formas padrao", async () => {
+    const events = novoAparelho();
+    await waitFor(() => expect(screen.getByLabelText(/seu nome/i)).toBeDefined());
+
+    fireEvent.input(screen.getByLabelText(/seu nome/i), { target: { value: "Luiz" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("radio", { name: "teal" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: /começar/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
+    expect(screen.getByRole("heading", { name: /bom dia, luiz/i })).toBeDefined();
+    // Um user mais os quatro metodos padrao, numa escrita so.
+    expect(events.events).toHaveLength(5);
+    expect(await events.getMeta(LOCAL_USER_ID_KEY)).not.toBeNull();
+  });
+
+  it("falha na escrita do lote mantem o wizard na tela, sem estado parcial", async () => {
+    const events = fakeEventStore();
+    events.failNext = true;
+    render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await waitFor(() => expect(screen.getByLabelText(/seu nome/i)).toBeDefined());
+
+    fireEvent.input(screen.getByLabelText(/seu nome/i), { target: { value: "Luiz" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: /começar/i }));
+
+    await waitFor(() => expect(events.failNext).toBe(true));
+    expect(screen.getByLabelText(/escolher foto/i)).toBeDefined();
+    expect(events.events).toHaveLength(0);
+    expect(await events.getMeta(LOCAL_USER_ID_KEY)).toBeNull();
+  });
+});
+
+describe("perfil e reset nas configuracoes", () => {
+  async function emAjustes(onReset = () => {}) {
+    render(
+      <App
+        {...buildStores(fakeCadastrado())}
+        onReset={onReset}
+        today="2026-08-08"
+        hour={9}
+        theme={fakeTheme()}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
+    fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
+  }
+
+  it("oferece resetar a conta atras da digitacao exata", async () => {
+    const onReset = vi.fn();
+    await emAjustes(onReset);
+
+    const botao = screen.getByRole("button", { name: /^resetar conta$/i });
+    expect(botao.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.input(screen.getByLabelText(/digite apagar/i), { target: { value: "APAGAR" } });
+    fireEvent.click(botao);
+
+    expect(onReset).toHaveBeenCalledTimes(1);
   });
 });
