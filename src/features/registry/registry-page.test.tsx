@@ -34,7 +34,7 @@ const stateWith = (over: Partial<ProjectionState>): ProjectionState => ({
 
 /** O formulario agora vive num modal: e preciso abri-lo primeiro. */
 function abrirCadastro() {
-  fireEvent.click(screen.getByRole("button", { name: /nova (categoria|forma)/i }));
+  fireEvent.click(screen.getByRole("button", { name: /\+ nova (categoria|forma)/i }));
 }
 
 function abrirEdicao() {
@@ -56,14 +56,16 @@ describe("RegistryPage", () => {
   it("a mesma composição serve categorias e formas de pagamento", () => {
     const store = fakeStore();
     const { unmount } = render(
-      <RegistryPage entity="category" state={EMPTY_STATE} store={store} />,
+      <RegistryPage entity="category" state={EMPTY_STATE} store={store} onBack={vi.fn()} />,
     );
     expect(screen.getByRole("region", { name: "Categorias" })).toBeDefined();
     abrirCadastro();
     expect(screen.queryByLabelText(/tipo de pagamento/i)).toBeNull();
     unmount();
 
-    render(<RegistryPage entity="paymentMethod" state={EMPTY_STATE} store={store} />);
+    render(
+      <RegistryPage entity="paymentMethod" state={EMPTY_STATE} store={store} onBack={vi.fn()} />,
+    );
     expect(screen.getByRole("region", { name: "Formas de pagamento" })).toBeDefined();
     abrirCadastro();
     expect(screen.getByLabelText(/tipo de pagamento/i)).toBeDefined();
@@ -71,7 +73,7 @@ describe("RegistryPage", () => {
 
   it("criar categoria chama a store da entidade certa", () => {
     const store = fakeStore();
-    render(<RegistryPage entity="category" state={EMPTY_STATE} store={store} />);
+    render(<RegistryPage entity="category" state={EMPTY_STATE} store={store} onBack={vi.fn()} />);
 
     abrirCadastro();
     preencherNome("Transporte");
@@ -83,7 +85,9 @@ describe("RegistryPage", () => {
 
   it("criar forma de pagamento nao chama a store de categoria", () => {
     const store = fakeStore();
-    render(<RegistryPage entity="paymentMethod" state={EMPTY_STATE} store={store} />);
+    render(
+      <RegistryPage entity="paymentMethod" state={EMPTY_STATE} store={store} onBack={vi.fn()} />,
+    );
 
     abrirCadastro();
     preencherNome("Nubank");
@@ -102,6 +106,7 @@ describe("RegistryPage", () => {
         entity="category"
         state={stateWith({ categories: { "cat-1": CATEGORIA } })}
         store={store}
+        onBack={vi.fn()}
       />,
     );
 
@@ -119,6 +124,7 @@ describe("RegistryPage", () => {
         entity="category"
         state={stateWith({ categories: { "cat-1": CATEGORIA } })}
         store={store}
+        onBack={vi.fn()}
       />,
     );
 
@@ -135,6 +141,7 @@ describe("RegistryPage", () => {
         entity="category"
         state={stateWith({ categories: { "cat-1": CATEGORIA } })}
         store={store}
+        onBack={vi.fn()}
       />,
     );
 
@@ -153,6 +160,7 @@ describe("RegistryPage", () => {
           paymentMethods: { "pm-1": { ...CATEGORIA, id: "pm-1", name: "Nubank", kind: "credit" } },
         })}
         store={store}
+        onBack={vi.fn()}
       />,
     );
 

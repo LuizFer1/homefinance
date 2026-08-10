@@ -66,10 +66,16 @@ function naFila() {
   return within(screen.getByRole("navigation", { name: "Ações rápidas" }));
 }
 
-/** Abre o modal pelo botao flutuante e espera a primeira etapa aparecer. */
+/** Abre o modal pela acao rapida de despesa e espera a primeira etapa. */
 async function abrirModal() {
-  fireEvent.click(screen.getByRole("button", { name: "Novo lançamento" }));
+  fireEvent.click(naFila().getByRole("button", { name: "Despesa" }));
   await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
+}
+
+/** Navega ate Ajustes e entra na sub-tela pedida. */
+function irParaCadastro(nome: RegExp) {
+  fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
+  fireEvent.click(screen.getByRole("button", { name: nome }));
 }
 
 /** Avanca as tres etapas da wizard e salva. */
@@ -106,17 +112,23 @@ describe("App", () => {
     render(
       <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
-    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
 
     await addTransaction("Mercado", "12,34");
 
+    // Os totais moraram no Inicio ate a reestruturacao; agora sao do Dashboard.
+    fireEvent.click(naBarra().getByRole("button", { name: "Dashboard" }));
     expect(screen.getByTestId("total-expense").textContent).toContain("12,34");
   });
 
   it("edita emitindo patch apenas do campo alterado", async () => {
     const events = fakeEventStore();
     render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
-    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
     await addTransaction("Mercado", "12,34");
 
     await abrirEdicao("Mercado");
@@ -133,7 +145,9 @@ describe("App", () => {
   it("não emite evento quando nada mudou na edição", async () => {
     const events = fakeEventStore();
     render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
-    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
     await addTransaction("Mercado", "12,34");
 
     await abrirEdicao("Mercado");
@@ -149,7 +163,9 @@ describe("App", () => {
     render(
       <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
-    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
     await addTransaction("Mercado", "12,34");
 
     fireEvent.click(screen.getByRole("button", { name: "Excluir Mercado" }));
@@ -175,14 +191,15 @@ describe("navegacao", () => {
     render(
       <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
-    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
 
-    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
+    irParaCadastro(/^Categorias/);
     expect(screen.getByRole("region", { name: "Categorias" })).toBeDefined();
-    expect(screen.queryByTestId("total-expense")).toBeNull();
 
     fireEvent.click(naBarra().getByRole("button", { name: "Início" }));
-    expect(screen.getByTestId("total-expense")).toBeDefined();
+    expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined();
     expect(screen.queryByRole("region", { name: "Categorias" })).toBeNull();
   });
 
@@ -192,11 +209,13 @@ describe("navegacao", () => {
     // mesma projecao.
     const events = fakeEventStore();
     render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
-    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
     await addTransaction("Mercado", "12,34");
 
-    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
-    fireEvent.click(screen.getByRole("button", { name: "Nova categoria" }));
+    irParaCadastro(/^Categorias/);
+    fireEvent.click(screen.getByRole("button", { name: /\+ Nova categoria/ }));
     fireEvent.input(screen.getByLabelText(/nome/i), { target: { value: "Alimentacao" } });
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
@@ -205,7 +224,8 @@ describe("navegacao", () => {
 
     fireEvent.click(naBarra().getByRole("button", { name: "Início" }));
 
-    expect(screen.getByTestId("total-expense").textContent).toContain("12,34");
+    // O lancamento continua la, e os dois eventos foram para o mesmo log.
+    expect(screen.getByText("Mercado")).toBeDefined();
     expect(events.events.map((e) => e.entity).sort()).toEqual(["category", "transaction"]);
   });
 
@@ -213,15 +233,17 @@ describe("navegacao", () => {
     render(
       <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
-    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
 
-    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
-    fireEvent.click(screen.getByRole("button", { name: "Nova categoria" }));
+    irParaCadastro(/^Categorias/);
+    fireEvent.click(screen.getByRole("button", { name: /\+ Nova categoria/ }));
     expect(screen.queryByLabelText(/tipo de pagamento/i)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
 
-    fireEvent.click(naBarra().getByRole("button", { name: "Pagamentos" }));
-    fireEvent.click(screen.getByRole("button", { name: "Nova forma de pagamento" }));
+    irParaCadastro(/^Formas de pagamento/);
+    fireEvent.click(screen.getByRole("button", { name: /\+ Nova forma de pagamento/ }));
     expect(screen.getByLabelText(/tipo de pagamento/i)).toBeDefined();
   });
 });
@@ -231,17 +253,19 @@ describe("modal de lançamento", () => {
     render(
       <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
-    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
   }
 
-  it("o formulário não fica na tela até o botão ser tocado", async () => {
+  it("o formulário não fica na tela até a ação ser tocada", async () => {
     // A tela principal e a lista. O formulario so aparece quando pedido — e o
     // que libera espaco vertical num celular.
     await pronto();
 
     expect(screen.queryByLabelText("Descrição")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Novo lançamento" }));
+    fireEvent.click(naFila().getByRole("button", { name: "Despesa" }));
 
     expect(screen.getByLabelText("Descrição")).toBeDefined();
   });
@@ -270,15 +294,6 @@ describe("modal de lançamento", () => {
     expect((screen.getByLabelText("Descrição") as HTMLInputElement).value).toBe("");
   });
 
-  it("o botão flutuante só existe na tela de lançamentos", async () => {
-    await pronto();
-    expect(screen.getByRole("button", { name: "Novo lançamento" })).toBeDefined();
-
-    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
-
-    expect(screen.queryByRole("button", { name: "Novo lançamento" })).toBeNull();
-  });
-
   it("salvar fecha o modal e mostra o lançamento na lista", async () => {
     await pronto();
 
@@ -294,7 +309,9 @@ describe("fila de ações rápidas", () => {
     render(
       <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
-    await waitFor(() => expect(screen.getByTestId("total-expense")).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
   }
 
   it("saúda conforme a hora injetada", async () => {
@@ -322,34 +339,22 @@ describe("fila de ações rápidas", () => {
     expect((screen.getByRole("radio", { name: "Receita" }) as HTMLInputElement).checked).toBe(true);
   });
 
-  it("Categorias e Pagamentos navegam em vez de abrir o modal", async () => {
+  it("Nova categoria abre o cadastro sem sair de Início", async () => {
     await pronto();
 
-    fireEvent.click(naFila().getByRole("button", { name: "Categorias" }));
+    fireEvent.click(naFila().getByRole("button", { name: "Nova categoria" }));
 
-    expect(screen.getByRole("region", { name: "Categorias" })).toBeDefined();
-    expect(screen.queryByLabelText("Descrição")).toBeNull();
+    // Abre o cadastro sem tirar o usuario da tela de Inicio.
+    expect(screen.getByLabelText(/nome/i)).toBeDefined();
+    expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined();
   });
 
   it("a fila some fora da tela de lançamentos", async () => {
     await pronto();
 
-    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
 
     expect(screen.queryByRole("navigation", { name: "Ações rápidas" })).toBeNull();
-  });
-
-  it("o botão flutuante cria o que a tela lista", async () => {
-    // Um padrao so no app inteiro: o + sempre cria o que esta na tela.
-    await pronto();
-    expect(screen.getByRole("button", { name: "Novo lançamento" })).toBeDefined();
-
-    fireEvent.click(naBarra().getByRole("button", { name: "Categorias" }));
-    expect(screen.getByRole("button", { name: "Nova categoria" })).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Novo lançamento" })).toBeNull();
-
-    fireEvent.click(naBarra().getByRole("button", { name: "Pagamentos" }));
-    expect(screen.getByRole("button", { name: "Nova forma de pagamento" })).toBeDefined();
   });
 
   it("o tipo escolhido na fila não vaza para a próxima abertura", async () => {
@@ -364,5 +369,100 @@ describe("fila de ações rápidas", () => {
 
     await waitFor(() => expect(screen.getByLabelText("Descrição")).toBeDefined());
     expect((screen.getByRole("radio", { name: "Despesa" }) as HTMLInputElement).checked).toBe(true);
+  });
+});
+
+describe("as tres telas", () => {
+  async function pronto() {
+    render(
+      <App {...buildStores(fakeEventStore())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
+  }
+
+  it("abre em Início", async () => {
+    await pronto();
+
+    expect(naBarra().getByRole("button", { name: "Início" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+  });
+
+  it("o saldo fica visível nas três telas", async () => {
+    // E o unico numero que merece estar sempre a vista, entao vive no cabecalho
+    // fixo e nao dentro de uma aba.
+    await pronto();
+    for (const aba of ["Dashboard", "Início", "Ajustes"]) {
+      fireEvent.click(naBarra().getByRole("button", { name: aba }));
+      expect(screen.getByTestId("total-balance")).toBeDefined();
+    }
+  });
+
+  it("o Dashboard mostra os totais e diz quando não há nada", async () => {
+    await pronto();
+    fireEvent.click(naBarra().getByRole("button", { name: "Dashboard" }));
+    expect(screen.getByText(/Nenhum lançamento ainda/)).toBeDefined();
+
+    fireEvent.click(naBarra().getByRole("button", { name: "Início" }));
+    await addTransaction("Mercado", "12,34");
+    fireEvent.click(naBarra().getByRole("button", { name: "Dashboard" }));
+
+    expect(screen.getByTestId("total-expense").textContent).toContain("12,34");
+    expect(screen.getByText(/1 lançamento/)).toBeDefined();
+  });
+
+  it("Ajustes lista os cadastros com a contagem", async () => {
+    await pronto();
+
+    fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
+
+    expect(screen.getByRole("region", { name: "Configurações" })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Categorias/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Formas de pagamento/ })).toBeDefined();
+  });
+
+  it("perfil e hub aparecem desabilitados, com o motivo", async () => {
+    // Mostrar desabilitado em vez de esconder comunica que a coisa existe no
+    // projeto e e opcional. Escondida, o usuario concluiria que o app nao a tem.
+    await pronto();
+
+    fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
+
+    expect(screen.getByText("Seu perfil")).toBeDefined();
+    expect(screen.getByText("Hub de sincronização")).toBeDefined();
+    expect(
+      screen.getByText(/roda no seu computador, nunca um servidor de terceiros/),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Seu perfil/ })).toBeNull();
+  });
+
+  it("sair de Ajustes e voltar cai na raiz, não na sub-tela", async () => {
+    await pronto();
+    irParaCadastro(/^Categorias/);
+    expect(screen.getByRole("region", { name: "Categorias" })).toBeDefined();
+
+    fireEvent.click(naBarra().getByRole("button", { name: "Início" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
+
+    expect(screen.getByRole("region", { name: "Configurações" })).toBeDefined();
+  });
+
+  it("o botão voltar sai da sub-tela de cadastro", async () => {
+    await pronto();
+    irParaCadastro(/^Categorias/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Voltar para configurações" }));
+
+    expect(screen.getByRole("region", { name: "Configurações" })).toBeDefined();
+  });
+
+  it("não existe mais botão flutuante em tela nenhuma", async () => {
+    await pronto();
+    for (const aba of ["Dashboard", "Início", "Ajustes"]) {
+      fireEvent.click(naBarra().getByRole("button", { name: aba }));
+      expect(screen.queryByRole("button", { name: "Novo lançamento" })).toBeNull();
+    }
   });
 });

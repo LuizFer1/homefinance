@@ -1,26 +1,18 @@
 import { useState } from "preact/hooks";
-import type { CategoryDraft, PaymentMethodDraft } from "../../domain/events/reference";
-import { diffCategory, diffPaymentMethod } from "../../domain/events/reference";
 import type { Ulid } from "../../domain/ids/ulid";
-import type {
-  CategoryRecord,
-  PaymentMethodRecord,
-  ProjectionState,
-} from "../../domain/projections/apply";
+import type { ProjectionState } from "../../domain/projections/apply";
 import { listCategories, listPaymentMethods } from "../../domain/projections/selectors";
-import { Fab } from "../ui/fab";
-import { Modal } from "../ui/modal";
+import { REGISTRY_COPY, RegistryFormModal, type RegistryRecord } from "./registry-form-modal";
 import { RegistryList } from "./registry-list";
-import { type RegistryEntity, RegistryWizard } from "./registry-wizard";
+import type { RegistryEntity } from "./registry-wizard";
 import type { RegistryStore } from "./store";
 
 export interface RegistryPageProps {
   entity: RegistryEntity;
   state: ProjectionState;
   store: RegistryStore;
+  onBack: () => void;
 }
-
-type Record_ = CategoryRecord | PaymentMethodRecord;
 
 /**
  * Uma composição, duas instâncias.
@@ -29,55 +21,21 @@ type Record_ = CategoryRecord | PaymentMethodRecord;
  * tela de gestão. Construídas em telas separadas, a segunda seria uma cópia da
  * primeira, e a cópia é onde a divergência mora.
  *
- * A página é dona do próprio modal e do próprio botão de criação: cadastro é
- * assunto dela, e centralizar isso no `App` faria o arquivo raiz conhecer
- * detalhes de uma feature.
+ * Vive dentro de Configurações: é manutenção, não uso diário. O caminho rápido
+ * para criar está nas ações de Início.
  */
-const COPY = {
-  category: {
-    title: "Categorias",
-    empty: "Nenhuma categoria ainda. Toque em + para criar a primeira.",
-    create: "Nova categoria",
-  },
-  paymentMethod: {
-    title: "Formas de pagamento",
-    empty: "Nenhuma forma de pagamento ainda. Toque em + para criar a primeira.",
-    create: "Nova forma de pagamento",
-  },
-} as const;
-
-export function RegistryPage({ entity, state, store }: RegistryPageProps) {
-  const [editing, setEditing] = useState<Record_ | null>(null);
+export function RegistryPage({ entity, state, store, onBack }: RegistryPageProps) {
+  const [editing, setEditing] = useState<RegistryRecord | null>(null);
   const [composing, setComposing] = useState(false);
 
   const isPayment = entity === "paymentMethod";
-  const items: Record_[] = isPayment ? listPaymentMethods(state) : listCategories(state);
-  const copy = COPY[entity];
+  const items: RegistryRecord[] = isPayment ? listPaymentMethods(state) : listCategories(state);
+  const copy = REGISTRY_COPY[entity];
   const modalOpen = composing || editing !== null;
 
   function closeModal() {
     setComposing(false);
     setEditing(null);
-  }
-
-  function handleSubmit(draft: CategoryDraft | PaymentMethodDraft) {
-    if (editing === null) {
-      if (isPayment) void store.addPaymentMethod(draft as PaymentMethodDraft);
-      else void store.addCategory(draft as CategoryDraft);
-      closeModal();
-      return;
-    }
-
-    // Patch parcial, nunca o agregado inteiro: emitir tudo faria o LWW por campo
-    // perder edições concorrentes sem sintoma visível.
-    if (isPayment) {
-      const patch = diffPaymentMethod(editing as PaymentMethodRecord, draft as PaymentMethodDraft);
-      void store.editPaymentMethod(editing.id, patch);
-    } else {
-      const patch = diffCategory(editing, draft as CategoryDraft);
-      void store.editCategory(editing.id, patch);
-    }
-    closeModal();
   }
 
   function handleDelete(id: Ulid) {
@@ -88,9 +46,34 @@ export function RegistryPage({ entity, state, store }: RegistryPageProps) {
 
   return (
     <section aria-label={copy.title}>
-      <h2 class="hf-caption mt-4 text-[0.6875rem] font-semibold uppercase text-base-content/45">
-        {copy.title}
-      </h2>
+      <div class="mt-4 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Voltar para configurações"
+          class="hf-press rounded-field px-2 py-1 text-base-content/55"
+        >
+          &lsaquo;
+        </button>
+        <h2 class="hf-caption text-[0.6875rem] font-semibold uppercase text-base-content/45">
+          {copy.title}
+        </h2>
+      </div>
+
+      {/*
+        Botão no topo da lista, e não flutuante: o flutuante saiu do app inteiro,
+        e aqui a criação é secundária — o caminho rápido está nas ações de Início.
+      */}
+      <button
+        type="button"
+        onClick={() => setComposing(true)}
+        class="hf-press rounded-box mt-3 flex w-full items-center justify-center gap-2
+          border border-dashed border-base-content/20 bg-base-100/40 py-3 text-sm
+          font-medium text-base-content/70 transition-colors duration-150
+          hover:border-base-content/35 hover:text-base-content"
+      >
+        + {copy.create}
+      </button>
 
       <RegistryList
         items={items}
@@ -99,30 +82,14 @@ export function RegistryPage({ entity, state, store }: RegistryPageProps) {
         onDelete={handleDelete}
       />
 
-      <Fab label={copy.create} onSelect={() => setComposing(true)} />
-
-      <Modal
+      <RegistryFormModal
+        entity={entity}
         open={modalOpen}
-        title={editing === null ? copy.create : "Editar item"}
+        editing={editing}
+        state={state}
+        store={store}
         onClose={closeModal}
-      >
-        {/*
-          Montada só enquanto aberta, com `key` derivada do registro: trocar de
-          registro remonta a wizard e os inicializadores de `useState` releem as
-          props. Um `useEffect` de reset rodaria depois do DOM ficar consultável
-          e sobrescreveria o que o usuário já digitou.
-        */}
-        {modalOpen && (
-          <RegistryWizard
-            key={editing?.id ?? "novo"}
-            entity={entity}
-            editing={editing}
-            existingNames={items.map((item) => item.name)}
-            onSubmit={handleSubmit}
-            onCancel={closeModal}
-          />
-        )}
-      </Modal>
+      />
     </section>
   );
 }

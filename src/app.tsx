@@ -11,15 +11,17 @@ import {
   listTransactions,
   totals,
 } from "./domain/projections/selectors";
+import { DashboardPage } from "./features/dashboard/dashboard-page";
 import { Icon } from "./features/icons/icon";
+import { RegistryFormModal } from "./features/registry/registry-form-modal";
 import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
+import { SettingsPage, type SettingsSection } from "./features/settings/settings-page";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
 import { ThemeToggle } from "./features/theme/theme-toggle";
 import type { TransactionsStore } from "./features/transactions/store";
 import { TransactionList } from "./features/transactions/transaction-list";
 import { TransactionWizard } from "./features/transactions/transaction-wizard";
-import { Fab } from "./features/ui/fab";
 import { greetingFor } from "./features/ui/greeting";
 import { Modal } from "./features/ui/modal";
 import { QuickActions } from "./features/ui/quick-actions";
@@ -43,15 +45,16 @@ const CAPTION = "hf-caption text-[0.6875rem] font-semibold uppercase text-base-c
  *
  * Uma dependência de roteamento para três destinos não se paga contra o teto de
  * bundle, e não há URL a preservar: o app é local-first e abre sempre no mesmo
- * lugar. A fatia de configurações acrescenta a quarta entrada aqui.
+ * lugar.
  *
- * Nenhuma aba é gasta com "novo lançamento" — a ação vive no botão flutuante, que
- * é o que a torna alcançável com o polegar sem competir com os destinos.
+ * Configurações tem uma sub-tela (a lista de cadastro), guardada num estado
+ * próprio em vez de virar um quarto destino: cadastro é manutenção, e uma aba
+ * para ele competiria com as três coisas que o usuário realmente faz.
  */
 const SCREENS = [
-  { id: "lancamentos", label: "Início", icon: "house" },
-  { id: "categorias", label: "Categorias", icon: "tag" },
-  { id: "pagamentos", label: "Pagamentos", icon: "wallet" },
+  { id: "dashboard", label: "Dashboard", icon: "piggy-bank" },
+  { id: "inicio", label: "Início", icon: "house" },
+  { id: "config", label: "Ajustes", icon: "briefcase" },
 ] as const;
 
 type ScreenId = (typeof SCREENS)[number]["id"];
@@ -71,7 +74,10 @@ function Shell({ children }: { children: ComponentChildren }) {
 export function App({ store, registry, today, hour, theme }: AppProps) {
   const [editing, setEditing] = useState<TransactionRecord | null>(null);
   const [composing, setComposing] = useState<TransactionKind | null>(null);
-  const [screen, setScreen] = useState<ScreenId>("lancamentos");
+  const [screen, setScreen] = useState<ScreenId>("inicio");
+  const [section, setSection] = useState<SettingsSection | null>(null);
+  /** Cadastro aberto a partir das ações de Início, sem sair da tela. */
+  const [quickRegistry, setQuickRegistry] = useState<SettingsSection | null>(null);
 
   useEffect(() => {
     void store.init();
@@ -131,24 +137,19 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
     void store.remove(entityId);
   }
 
-  const QUICK_ACTIONS = [
-    { id: "despesa", label: "Despesa", icon: "receipt", onSelect: () => setComposing("expense") },
-    { id: "receita", label: "Receita", icon: "banknote", onSelect: () => setComposing("income") },
-    { id: "categorias", label: "Categorias", icon: "tag", onSelect: () => setScreen("categorias") },
-    {
-      id: "pagamentos",
-      label: "Pagamentos",
-      icon: "wallet",
-      onSelect: () => setScreen("pagamentos"),
-    },
-  ];
+  function goToScreen(id: ScreenId) {
+    setScreen(id);
+    // Voltar para Ajustes depois sempre cai na raiz, e não na sub-tela de onde
+    // o usuário saiu — que ele já não lembra ter deixado aberta.
+    setSection(null);
+  }
 
   return (
     <div class={SHELL}>
       {/*
         Cabeçalho translúcido e fixo: o conteúdo corre por baixo dele em vez de
         o chrome comer uma faixa fixa da tela. O saldo é o único número que
-        merece ficar sempre visível — receitas e despesas são detalhamento.
+        merece ficar sempre visível — em todas as três telas.
       */}
       <header class="hf-material hf-scroll-edge sticky top-0 z-10">
         <div class="mx-auto w-full max-w-md px-5 pt-[max(0.875rem,env(safe-area-inset-top))] pb-3">
@@ -172,44 +173,47 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
         O padding inferior reserva a altura da barra mais o safe area. Sem ele o
         último item da lista fica permanentemente sob a barra, inalcançável.
       */}
-      <main class="mx-auto w-full max-w-md px-5 pb-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+5rem)]">
+      <main class="mx-auto w-full max-w-md px-5 pb-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+2rem)]">
         {store.error.value !== null && (
           <p role="alert" class="rounded-box mt-4 bg-error/10 p-3 text-sm text-error">
             {store.error.value}
           </p>
         )}
 
-        {screen !== "lancamentos" && (
-          <RegistryPage
-            entity={screen === "categorias" ? "category" : "paymentMethod"}
-            state={store.state.value}
-            store={registry}
-          />
-        )}
+        {screen === "dashboard" && <DashboardPage totals={summary} count={items.length} />}
 
-        {screen === "lancamentos" && (
+        {screen === "inicio" && (
           <>
-            <QuickActions actions={QUICK_ACTIONS} />
-
-            {/*
-              Os rotulos ja dizem o que cada numero e, entao cor aqui seria
-              decorativa. Ela fica reservada para onde e o unico portador de
-              significado: o saldo negativo e o sinal de receita na lista.
-            */}
-            <section aria-label="Totais" class="mt-4 grid grid-cols-2 gap-3">
-              <div class="rounded-box border border-base-content/10 bg-base-100/60 px-4 py-3">
-                <p class={CAPTION}>Receitas</p>
-                <p data-testid="total-income" class="hf-num mt-0.5 font-semibold">
-                  {formatBRL(summary.incomeMinor)}
-                </p>
-              </div>
-              <div class="rounded-box border border-base-content/10 bg-base-100/60 px-4 py-3">
-                <p class={CAPTION}>Despesas</p>
-                <p data-testid="total-expense" class="hf-num mt-0.5 font-semibold">
-                  {formatBRL(summary.expenseMinor)}
-                </p>
-              </div>
-            </section>
+            <QuickActions
+              primary={[
+                {
+                  id: "despesa",
+                  label: "Despesa",
+                  icon: "receipt",
+                  onSelect: () => setComposing("expense"),
+                },
+                {
+                  id: "receita",
+                  label: "Receita",
+                  icon: "banknote",
+                  onSelect: () => setComposing("income"),
+                },
+              ]}
+              secondary={[
+                {
+                  id: "categoria",
+                  label: "Nova categoria",
+                  icon: "tag",
+                  onSelect: () => setQuickRegistry("category"),
+                },
+                {
+                  id: "pagamento",
+                  label: "Nova forma",
+                  icon: "wallet",
+                  onSelect: () => setQuickRegistry("paymentMethod"),
+                },
+              ]}
+            />
 
             <TransactionList
               items={items}
@@ -219,16 +223,23 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
             />
           </>
         )}
-      </main>
 
-      {/*
-        Botão flutuante acima da barra, à direita: é a zona que o polegar alcança
-        sem reposicionar a mão. Só aparece na tela de lançamentos — nas telas de
-        cadastro a ação principal é outra, e o botão ali abriria a coisa errada.
-      */}
-      {screen === "lancamentos" && (
-        <Fab label="Novo lançamento" onSelect={() => setComposing("expense")} />
-      )}
+        {screen === "config" &&
+          (section === null ? (
+            <SettingsPage
+              categoryCount={categories.length}
+              paymentMethodCount={paymentMethods.length}
+              onOpen={setSection}
+            />
+          ) : (
+            <RegistryPage
+              entity={section}
+              state={store.state.value}
+              store={registry}
+              onBack={() => setSection(null)}
+            />
+          ))}
+      </main>
 
       <nav
         aria-label="Seções"
@@ -242,7 +253,7 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
               key={id}
               type="button"
               aria-current={screen === id ? "page" : undefined}
-              onClick={() => setScreen(id)}
+              onClick={() => goToScreen(id)}
               class={`${TAB} ${screen === id ? "text-primary" : "text-base-content/50"}`}
             >
               <Icon name={icon} size={20} />
@@ -276,6 +287,18 @@ export function App({ store, registry, today, hour, theme }: AppProps) {
           />
         )}
       </Modal>
+
+      {/* Cadastro disparado de Início, sem tirar o usuário da tela. */}
+      {quickRegistry !== null && (
+        <RegistryFormModal
+          entity={quickRegistry}
+          open
+          editing={null}
+          state={store.state.value}
+          store={registry}
+          onClose={() => setQuickRegistry(null)}
+        />
+      )}
     </div>
   );
 }
