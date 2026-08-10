@@ -36,7 +36,9 @@ export function createTransactionsStore(session: Session): TransactionsStore {
     init: session.init,
 
     async add(draft: TransactionDraft): Promise<void> {
-      await session.commit(transactionCreated({ ...session.clock().newEntity(), draft }));
+      await session.commit(
+        transactionCreated({ ...session.clock().newEntity(), draft, userId: null }),
+      );
     },
 
     async edit(entityId: Ulid, patch: TransactionPatch): Promise<void> {

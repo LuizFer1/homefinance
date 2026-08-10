@@ -84,6 +84,14 @@ describe("isValidField", () => {
     expect(PAYMENT_METHOD_SPEC.isValidField("color", 42)).toBe(false);
   });
 
+  it("aceita userId nulo, que e o estado do historico ja gravado", () => {
+    // O log e eterno: os lancamentos ja gravados neste aparelho nao tem autor,
+    // e torna-lo obrigatorio invalidaria o historico existente.
+    expect(TRANSACTION_SPEC.isValidField("userId", null)).toBe(true);
+    expect(TRANSACTION_SPEC.isValidField("userId", "01J9F3K2M7QX8YB4TVWZ0DCEHU")).toBe(true);
+    expect(TRANSACTION_SPEC.isValidField("userId", 42)).toBe(false);
+  });
+
   it("valida kind da forma de pagamento contra a lista fechada", () => {
     // `kind` é diferente de cor e ícone: ele carrega regra de produto (cashback
     // na fatia 3), então um valor fora da lista mudaria comportamento, não só

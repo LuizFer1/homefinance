@@ -106,6 +106,7 @@ function isValidTransactionField(field: string, value: unknown): boolean {
       return value === "BRL";
     case "categoryId":
     case "paymentMethodId":
+    case "userId":
       return value === null || typeof value === "string";
     case "cashbackMinor":
       return value === null || (typeof value === "number" && Number.isInteger(value));
@@ -139,6 +140,7 @@ export const TRANSACTION_SPEC: EntitySpec = {
     "paymentMethodId",
     "cashbackMinor",
     "occurredOn",
+    "userId",
   ],
   isValidField: isValidTransactionField,
   shell: (id) => ({
@@ -151,6 +153,7 @@ export const TRANSACTION_SPEC: EntitySpec = {
     paymentMethodId: null,
     cashbackMinor: null,
     occurredOn: "",
+    userId: null,
     deleted: false,
     materialized: false,
     fieldHlc: {},

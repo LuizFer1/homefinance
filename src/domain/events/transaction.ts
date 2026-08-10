@@ -27,10 +27,26 @@ export interface Transaction {
   cashbackMinor: number | null;
   /** Data do fato, escolhida pelo usuário. Não confundir com o HLC. */
   occurredOn: string;
+  /**
+   * Autor do lançamento. **Anulável, sempre** — os lançamentos já gravados neste
+   * aparelho não têm autor, e torná-lo obrigatório invalidaria o histórico
+   * existente. Lançamento sem autor renderiza com a cor neutra.
+   */
+  userId: Ulid | null;
 }
 
-export type TransactionDraft = Omit<Transaction, "id">;
-export type TransactionPatch = Partial<Omit<Transaction, "id" | "currency">>;
+/**
+ * `userId` fica **de fora** dos dois: autoria não é campo de formulário, é
+ * decisão da store, tomada a partir de `meta.localUserId`. Excluí-lo aqui faz o
+ * compilador impedir que uma tela decida autoria e — de quebra — torna
+ * `diffTransaction` estruturalmente incapaz de emitir `userId` num `update`.
+ *
+ * Isso importa porque autoria não muda: se sua esposa corrige o valor de um
+ * lançamento seu, o lançamento continua seu. Um `update` que reescrevesse
+ * `userId` faria a autoria virar "quem mexeu por último", que é outra coisa.
+ */
+export type TransactionDraft = Omit<Transaction, "id" | "userId">;
+export type TransactionPatch = Partial<Omit<Transaction, "id" | "currency" | "userId">>;
 
 interface Envelope {
   eventId: Ulid;
@@ -56,8 +72,12 @@ function envelopeToEvent(
   };
 }
 
-export function transactionCreated(args: Envelope & { draft: TransactionDraft }): DomainEvent {
-  return envelopeToEvent(args, "create", { ...args.draft });
+export function transactionCreated(
+  args: Envelope & { draft: TransactionDraft; userId: Ulid | null },
+): DomainEvent {
+  // `userId` entra separado do rascunho porque não vem da mesma origem: o
+  // rascunho vem do formulário, a autoria vem da sessão do aparelho.
+  return envelopeToEvent(args, "create", { ...args.draft, userId: args.userId });
 }
 
 export function transactionUpdated(args: Envelope & { patch: TransactionPatch }): DomainEvent {

@@ -26,7 +26,9 @@ const DRAFT: TransactionDraft = {
   occurredOn: "2026-08-07",
 };
 
-const CURRENT: Transaction = { id: ENVELOPE.entityId, ...DRAFT };
+const USER = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
+
+const CURRENT: Transaction = { id: ENVELOPE.entityId, ...DRAFT, userId: null };
 
 describe("construtores de evento", () => {
   it("create carrega o agregado inteiro", () => {
@@ -42,6 +44,7 @@ describe("construtores de evento", () => {
         cashbackMinor: null,
         occurredOn: "2026-08-07",
       },
+      userId: null,
     });
 
     expect(event.entity).toBe("transaction");
@@ -57,6 +60,7 @@ describe("construtores de evento", () => {
       paymentMethodId: null,
       cashbackMinor: null,
       occurredOn: "2026-08-07",
+      userId: null,
     });
   });
 
@@ -151,9 +155,38 @@ describe("campos de forma de pagamento e cashback", () => {
     const event = transactionCreated({
       ...ENVELOPE,
       draft: { ...DRAFT, paymentMethodId: "pm-1", cashbackMinor: 250 },
+      userId: null,
     });
 
     expect(event.data.paymentMethodId).toBe("pm-1");
     expect(event.data.cashbackMinor).toBe(250);
+  });
+});
+
+describe("autoria", () => {
+  it("create grava o userId recebido separado do rascunho", () => {
+    const event = transactionCreated({ ...ENVELOPE, draft: DRAFT, userId: USER });
+
+    expect(event.data).toMatchObject({ userId: USER });
+  });
+
+  it("create aceita autor nulo, para o aparelho ainda sem perfil", () => {
+    const event = transactionCreated({ ...ENVELOPE, draft: DRAFT, userId: null });
+
+    expect(event.data).toMatchObject({ userId: null });
+  });
+
+  it("o diff nunca emite userId: autoria nao e campo de formulario", () => {
+    // Se sua esposa corrige o valor de um lancamento seu, ele continua seu. Um
+    // update que reescrevesse userId faria a autoria virar "quem mexeu por
+    // ultimo", que e outra coisa. Aqui isso e garantido pelo tipo:
+    // TransactionDraft nao tem o campo, entao diffTransaction nao consegue
+    // compara-lo nem emiti-lo.
+    const meu: Transaction = { ...CURRENT, userId: USER };
+
+    const patch = diffTransaction(meu, { ...DRAFT, amountMinor: 999 });
+
+    expect(patch).not.toHaveProperty("userId");
+    expect(patch).toEqual({ amountMinor: 999 });
   });
 });

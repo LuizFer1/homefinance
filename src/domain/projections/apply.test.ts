@@ -286,6 +286,30 @@ describe("lançamento anterior à fatia de formulário", () => {
 
     expect(state.transactions[ENTITY]?.cashbackMinor).toBeNull();
   });
+
+  it("lancamento antigo sem userId continua valido, materializado e sem autor", () => {
+    // Mesma razao dos campos da fatia 3: o CREATE deste arquivo nao carrega
+    // userId, e e exatamente o que ja esta gravado. Autoria obrigatoria
+    // invalidaria o historico existente do usuario.
+    const state = fold([CREATE]);
+
+    expect(state.transactions[ENTITY]?.materialized).toBe(true);
+    expect(state.transactions[ENTITY]?.userId).toBeNull();
+  });
+
+  it("aceita update que acrescenta a autoria a um lancamento antigo", () => {
+    // Nao e o caminho da store — ela so grava autoria no create —, mas o dominio
+    // precisa aceitar, senao um import de backup corrigido nao teria como entrar.
+    const state = fold([
+      CREATE,
+      event({
+        hlc: `1754697600010-0000-${DEVICE_A}`,
+        data: { userId: "01J9F3K2M7QX8YB4TVWZ0DCEHU" },
+      }),
+    ]);
+
+    expect(state.transactions[ENTITY]?.userId).toBe("01J9F3K2M7QX8YB4TVWZ0DCEHU");
+  });
 });
 
 describe("apply com múltiplas entidades", () => {

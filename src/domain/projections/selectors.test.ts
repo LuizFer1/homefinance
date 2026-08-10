@@ -29,6 +29,7 @@ function record(overrides: Partial<TransactionRecord> & { id: string }): Transac
     paymentMethodId: null,
     cashbackMinor: null,
     occurredOn: "2026-08-07",
+    userId: null,
     deleted: false,
     materialized: true,
     fieldHlc: {},
