@@ -55,6 +55,18 @@ describe("isValidField", () => {
     expect(TRANSACTION_SPEC.isValidField("cor", "rose")).toBe(false);
   });
 
+  it("aceita forma de pagamento e cashback nulos, que e o estado do historico gravado", () => {
+    expect(TRANSACTION_SPEC.isValidField("paymentMethodId", null)).toBe(true);
+    expect(TRANSACTION_SPEC.isValidField("cashbackMinor", null)).toBe(true);
+  });
+
+  it("cashback e inteiro em centavos, nunca float nem string", () => {
+    expect(TRANSACTION_SPEC.isValidField("cashbackMinor", 1234)).toBe(true);
+    expect(TRANSACTION_SPEC.isValidField("cashbackMinor", 0)).toBe(true);
+    expect(TRANSACTION_SPEC.isValidField("cashbackMinor", 12.34)).toBe(false);
+    expect(TRANSACTION_SPEC.isValidField("cashbackMinor", "1234")).toBe(false);
+  });
+
   it("preserva a validação de data real herdada da fatia anterior", () => {
     expect(TRANSACTION_SPEC.isValidField("occurredOn", "2026-02-30")).toBe(false);
     expect(TRANSACTION_SPEC.isValidField("occurredOn", "2026-13-01")).toBe(false);

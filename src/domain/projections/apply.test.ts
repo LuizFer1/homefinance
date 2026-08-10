@@ -250,6 +250,44 @@ const CAT_CREATE = categoryEvent({
   data: { name: "Mercado", icon: "utensils", color: "emerald" },
 });
 
+describe("lançamento anterior à fatia de formulário", () => {
+  it("continua válido e materializado, com os campos novos nulos", () => {
+    // O CREATE deste arquivo nao carrega paymentMethodId nem cashbackMinor: ele
+    // modela exatamente o que ja esta gravado no aparelho do usuario. O log e
+    // eterno, entao este caso nunca deixa de existir.
+    const state = fold([CREATE]);
+
+    expect(state.transactions[ENTITY]?.materialized).toBe(true);
+    expect(state.transactions[ENTITY]?.paymentMethodId).toBeNull();
+    expect(state.transactions[ENTITY]?.cashbackMinor).toBeNull();
+    expect(state.transactions[ENTITY]?.description).toBe("Mercado");
+  });
+
+  it("aceita update que so acrescenta os campos novos", () => {
+    const state = fold([
+      CREATE,
+      event({
+        hlc: `1754697600010-0000-${DEVICE_A}`,
+        data: { paymentMethodId: "pm-1", cashbackMinor: 250 },
+      }),
+    ]);
+
+    expect(state.transactions[ENTITY]?.paymentMethodId).toBe("pm-1");
+    expect(state.transactions[ENTITY]?.cashbackMinor).toBe(250);
+    expect(state.transactions[ENTITY]?.amountMinor).toBe(12_345);
+  });
+
+  it("grava a limpeza do cashback como null, nao como ausencia", () => {
+    const state = fold([
+      CREATE,
+      event({ hlc: `1754697600010-0000-${DEVICE_A}`, data: { cashbackMinor: 500 } }),
+      event({ hlc: `1754697600020-0000-${DEVICE_A}`, data: { cashbackMinor: null } }),
+    ]);
+
+    expect(state.transactions[ENTITY]?.cashbackMinor).toBeNull();
+  });
+});
+
 describe("apply com múltiplas entidades", () => {
   it("projeta categoria no bucket de categorias", () => {
     const state = apply(EMPTY_STATE, CAT_CREATE);

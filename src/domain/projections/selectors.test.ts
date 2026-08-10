@@ -26,6 +26,8 @@ function record(overrides: Partial<TransactionRecord> & { id: string }): Transac
     amountMinor: 1000,
     currency: "BRL",
     categoryId: null,
+    paymentMethodId: null,
+    cashbackMinor: null,
     occurredOn: "2026-08-07",
     deleted: false,
     materialized: true,
@@ -80,6 +82,18 @@ describe("totals", () => {
 
   it("devolve zeros para lista vazia", () => {
     expect(totals([])).toEqual({ incomeMinor: 0, expenseMinor: 0, balanceMinor: 0 });
+  });
+
+  it("cashback nao entra no saldo nem nas despesas", () => {
+    // O cashback e atributo da despesa, nao receita. Somar ao saldo exigiria
+    // decidir quando o dinheiro entra de fato, o que varia por emissor e nao e
+    // observavel pelo app. Este teste deve passar SEM tocar em `totals` — se
+    // ele obrigar uma mudanca la, alguem somou cashback em algum lugar.
+    const soma = totals([record({ id: "a", amountMinor: 10_000, cashbackMinor: 500 })]);
+
+    expect(soma.expenseMinor).toBe(10_000);
+    expect(soma.balanceMinor).toBe(-10_000);
+    expect(soma.incomeMinor).toBe(0);
   });
 
   it("devolve saldo negativo quando a despesa supera a receita", () => {

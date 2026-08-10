@@ -14,6 +14,8 @@ const DRAFT: TransactionDraft = {
   amountMinor: 12_345,
   currency: "BRL",
   categoryId: null,
+  paymentMethodId: null,
+  cashbackMinor: null,
   occurredOn: "2026-08-07",
 };
 
@@ -87,5 +89,64 @@ describe("store sobre Dexie real", () => {
 
     expect(segunda.status.value).toBe("ready");
     expect(listTransactions(segunda.state.value)).toHaveLength(1);
+  });
+});
+
+describe("forma de pagamento e cashback sobre Dexie real", () => {
+  it("os tres campos voltam depois de fechar e reabrir", async () => {
+    const primeira = build();
+    await primeira.init();
+    await primeira.add({
+      ...DRAFT,
+      categoryId: "cat-1",
+      paymentMethodId: "pm-1",
+      cashbackMinor: 250,
+    });
+
+    db.close();
+    db = new HomeFinanceDb(dbName);
+    const segunda = build();
+    await segunda.init();
+
+    const [voltou] = listTransactions(segunda.state.value);
+    expect(voltou?.categoryId).toBe("cat-1");
+    expect(voltou?.paymentMethodId).toBe("pm-1");
+    expect(voltou?.cashbackMinor).toBe(250);
+  });
+
+  it("cashback limpo pela troca de forma nao volta no refold", async () => {
+    // A prova de que a limpeza sobreviveu ao log append-only: o null foi gravado
+    // como evento, e nao apenas apagado da memoria.
+    const store = build();
+    await store.init();
+    await store.add({ ...DRAFT, paymentMethodId: "pm-cartao", cashbackMinor: 500 });
+    const [criado] = listTransactions(store.state.value);
+
+    await store.edit(criado?.id ?? "", { paymentMethodId: "pm-dinheiro", cashbackMinor: null });
+
+    db.close();
+    db = new HomeFinanceDb(dbName);
+    const reaberta = build();
+    await reaberta.init();
+
+    const [voltou] = listTransactions(reaberta.state.value);
+    expect(voltou?.cashbackMinor).toBeNull();
+    expect(voltou?.paymentMethodId).toBe("pm-dinheiro");
+  });
+
+  it("lancamento sem os campos novos continua legivel apos reabrir", async () => {
+    const store = build();
+    await store.init();
+    await store.add(DRAFT);
+
+    db.close();
+    db = new HomeFinanceDb(dbName);
+    const reaberta = build();
+    await reaberta.init();
+
+    const [voltou] = listTransactions(reaberta.state.value);
+    expect(voltou?.description).toBe("Mercado");
+    expect(voltou?.paymentMethodId).toBeNull();
+    expect(voltou?.cashbackMinor).toBeNull();
   });
 });
