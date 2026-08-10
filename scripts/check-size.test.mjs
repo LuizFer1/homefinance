@@ -57,6 +57,6 @@ test("devolve total zero quando nao ha artefatos", async () => {
   expect(files).toEqual([]);
 });
 
-test("o teto esta declarado em 60kb", () => {
-  expect(LIMIT_BYTES).toBe(60 * 1024);
+test("o teto esta declarado em 66kb", () => {
+  expect(LIMIT_BYTES).toBe(66 * 1024);
 });

@@ -17,9 +17,13 @@ import { gzipSync } from "node:zlib";
  *           UI de cadastro (57.32kb medidos, sendo 6.11kb de CSS; os icones
  *           custam 4.88kb dos 7.94kb de aumento, medidos por sonda antes de
  *           qualquer arquivo depender da biblioteca)
+ *   66kb  — modal de lancamento, fila de acoes e barra com icones (60.10kb
+ *           medidos, sendo 6.9kb de CSS). Sem dependencia nova: o <dialog> e
+ *           nativo e os icones ja estavam no ICON_SET. A folga anterior era de
+ *           0.31kb, entao qualquer feature estouraria.
  * Alvo de projeto: ~140kb gzip, conforme o README.
  */
-export const LIMIT_BYTES = 60 * 1024;
+export const LIMIT_BYTES = 66 * 1024;
 
 const MEASURED = /\.(js|css)$/;
 
