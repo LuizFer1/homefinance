@@ -33,8 +33,16 @@ describe("BarChart", () => {
   });
 
   it("não renderiza nada quando a série inteira é zero", () => {
+    // Verifica que o componente devolve null, e não que as barras sumiram:
+    // um placeholder qualquer passaria na consulta por data-testid.
     const { container } = render(<BarChart data={[month("2026-07", 0, 0)]} />);
 
-    expect(container.querySelectorAll("[data-testid^='bar-']")).toHaveLength(0);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("não renderiza nada com a série vazia", () => {
+    const { container } = render(<BarChart data={[]} />);
+
+    expect(container.firstChild).toBeNull();
   });
 });
