@@ -181,3 +181,21 @@ describe("conclusao", () => {
     expect(screen.getByLabelText(/escolher foto/i)).toBeDefined();
   });
 });
+
+describe("regressao: avancar nao pode virar submit", () => {
+  it("ir da cor para a foto nao conclui o cadastro", () => {
+    // Era o sintoma mais grave dos tres: a etapa da foto nunca aparecia, porque
+    // o no de "Continuar" virava type="submit" sob o proprio clique e o
+    // navegador submetia o formulario. Ver o comentario em registry-wizard.tsx.
+    montar();
+    digitarNome("Luiz");
+    continuar();
+
+    const avancar = screen.getByRole("button", { name: "Continuar" });
+    fireEvent.click(avancar);
+
+    expect(avancar.getAttribute("type")).toBe("button");
+    expect(screen.getByLabelText(/escolher foto/i)).toBeDefined();
+    expect(screen.getByRole("button", { name: /começar/i })).not.toBe(avancar);
+  });
+});

@@ -306,12 +306,26 @@ export function RegistryWizard({
           </button>
         )}
 
+        {/*
+          As `key` distintas não são decoração: sem elas os dois botões ocupam a
+          mesma posição no JSX, o Preact reaproveita o nó e só troca o atributo
+          `type`. O navegador executa a activation behavior do botão **depois**
+          do handler — então o clique em "Continuar" avançava a etapa, o nó
+          virava `submit`, e o formulário era submetido, criando o item em vez de
+          ir para a última etapa. Com `key`, um nó é desmontado e o outro
+          montado, e o nó clicado continua sendo o de avançar.
+        */}
         {isLast ? (
-          <button type="submit" class={`${ACTION} flex-1 bg-primary text-primary-content`}>
+          <button
+            key="enviar"
+            type="submit"
+            class={`${ACTION} flex-1 bg-primary text-primary-content`}
+          >
             {editing === null ? "Adicionar" : "Salvar"}
           </button>
         ) : (
           <button
+            key="avancar"
             type="button"
             onClick={() => goTo(step + 1)}
             class={`${ACTION} flex-1 bg-primary text-primary-content`}

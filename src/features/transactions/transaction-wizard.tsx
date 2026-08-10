@@ -310,12 +310,23 @@ export function TransactionWizard({
           </button>
         )}
 
+        {/*
+          As `key` distintas não são decoração — ver o comentário gêmeo em
+          `registry-wizard.tsx`. Sem elas o Preact reaproveita o nó e só troca o
+          `type`; como o navegador executa a activation behavior depois do
+          handler, o clique em "Continuar" gravava o lançamento em vez de avançar.
+        */}
         {isLast ? (
-          <button type="submit" class={`${ACTION} flex-1 bg-primary text-primary-content`}>
+          <button
+            key="enviar"
+            type="submit"
+            class={`${ACTION} flex-1 bg-primary text-primary-content`}
+          >
             {editing === null ? "Adicionar" : "Salvar"}
           </button>
         ) : (
           <button
+            key="avancar"
             type="button"
             onClick={() => goTo(step + 1)}
             class={`${ACTION} flex-1 bg-primary text-primary-content`}

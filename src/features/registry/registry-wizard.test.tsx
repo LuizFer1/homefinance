@@ -147,6 +147,27 @@ describe("navegação entre etapas", () => {
 });
 
 describe("categoria", () => {
+  it("avancar nao pode transformar o proprio botao em submit", () => {
+    // Regressao. Os dois botoes ocupavam a mesma posicao no JSX, entao o Preact
+    // reaproveitava o no e so trocava o atributo `type`. O navegador executa a
+    // activation behavior do botao **depois** do handler: o clique em
+    // "Continuar" avancava a etapa, o no virava type="submit", e o navegador
+    // submetia o formulario — criando o item em vez de ir para a etapa 3.
+    //
+    // Clique sintetico nao reproduz (roda tudo sincrono, antes do re-render),
+    // entao o teste afirma a causa e nao o sintoma: o no clicado tem que
+    // continuar sendo o mesmo botao de avancar.
+    montar();
+    digitarNome("Mercado");
+    continuar();
+
+    const avancar = screen.getByRole("button", { name: "Continuar" });
+    fireEvent.click(avancar);
+
+    expect(avancar.getAttribute("type")).toBe("button");
+    expect(screen.getByRole("button", { name: /adicionar|salvar/i })).not.toBe(avancar);
+  });
+
   it("submete nome, ícone e cor", () => {
     const { onSubmit } = montar();
 

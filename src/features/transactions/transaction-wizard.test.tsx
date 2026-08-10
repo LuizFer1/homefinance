@@ -429,3 +429,25 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
     );
   });
 });
+
+describe("regressao: avancar nao pode virar submit", () => {
+  it("o botao de avancar nao se transforma em salvar sob o proprio clique", () => {
+    // Os dois botoes ocupavam a mesma posicao no JSX, entao o Preact
+    // reaproveitava o no e so trocava o atributo `type`. O navegador executa a
+    // activation behavior **depois** do handler: o clique em "Continuar"
+    // avancava a etapa, o no virava type="submit", e o lancamento era gravado
+    // em vez de a etapa 3 aparecer.
+    //
+    // Clique sintetico nao reproduz — roda tudo sincrono, antes do re-render.
+    // Por isso o teste afirma a causa, e nao o sintoma.
+    montar();
+    preencherDados();
+    continuar();
+
+    const avancar = screen.getByRole("button", { name: "Continuar" });
+    fireEvent.click(avancar);
+
+    expect(avancar.getAttribute("type")).toBe("button");
+    expect(screen.getByRole("button", { name: /adicionar|salvar/i })).not.toBe(avancar);
+  });
+});

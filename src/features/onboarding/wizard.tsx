@@ -221,8 +221,14 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
           </button>
         )}
 
+        {/*
+          As `key` distintas não são decoração — ver o comentário gêmeo em
+          `registry-wizard.tsx`. Sem elas, ir da cor para a foto concluía o
+          cadastro na hora: a etapa da foto nunca chegava a aparecer.
+        */}
         {isLast ? (
           <button
+            key="enviar"
             type="submit"
             disabled={saving}
             class={`${ACTION} flex-1 bg-primary text-primary-content disabled:opacity-60`}
@@ -231,6 +237,7 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
           </button>
         ) : (
           <button
+            key="avancar"
             type="button"
             onClick={() => goTo(step + 1)}
             class={`${ACTION} flex-1 bg-primary text-primary-content`}
