@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { EventStore } from "../../data/event-store";
+import { type FakeEventStore, fakeEventStore } from "../../data/event-store.fake";
 import type { TransactionDraft } from "../../domain/events/transaction";
-import type { DomainEvent } from "../../domain/events/types";
 import { listTransactions } from "../../domain/projections/selectors";
 import { createSession } from "../session/session";
 import { createTransactionsStore } from "./store";
@@ -17,30 +16,7 @@ const DRAFT: TransactionDraft = {
   occurredOn: "2026-08-07",
 };
 
-interface FakeStore extends EventStore {
-  events: DomainEvent[];
-  failNext: boolean;
-}
-
-function fakeEventStore(seed: DomainEvent[] = []): FakeStore {
-  const meta = new Map<string, string>();
-  const state: FakeStore = {
-    events: [...seed],
-    failNext: false,
-    append: async (event) => {
-      if (state.failNext) throw new Error("quota exceeded");
-      state.events = [...state.events.filter((item) => item.id !== event.id), event];
-    },
-    readAll: async () => [...state.events].sort((a, b) => (a.hlc < b.hlc ? -1 : 1)),
-    getMeta: async (key) => meta.get(key) ?? null,
-    setMeta: async (key, value) => {
-      meta.set(key, value);
-    },
-  };
-  return state;
-}
-
-function deps(events: FakeStore, startAt = 1_754_697_600_000) {
+function deps(events: FakeEventStore, startAt = 1_754_697_600_000) {
   let millis = startAt;
   return {
     events,
@@ -53,7 +29,7 @@ function deps(events: FakeStore, startAt = 1_754_697_600_000) {
 }
 
 /** A store não constrói mais relógio nem projeção: os dois vêm da sessão. */
-function session(events: FakeStore, startAt = 1_754_697_600_000) {
+function session(events: FakeEventStore, startAt = 1_754_697_600_000) {
   return createSession(deps(events, startAt));
 }
 

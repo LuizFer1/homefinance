@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { EventStore } from "../../data/event-store";
+import { type FakeEventStore, fakeEventStore } from "../../data/event-store.fake";
 import { compareHlc } from "../../domain/clock/hlc";
-import type { DomainEvent } from "../../domain/events/types";
 import { listCategories, listPaymentMethods } from "../../domain/projections/selectors";
 import { createSession, type Session } from "../session/session";
 import { createTransactionsStore } from "../transactions/store";
@@ -21,30 +20,7 @@ const TX_DRAFT = {
   occurredOn: "2026-08-07",
 } as const;
 
-interface FakeStore extends EventStore {
-  events: DomainEvent[];
-  failNext: boolean;
-}
-
-function fakeEventStore(): FakeStore {
-  const meta = new Map<string, string>();
-  const state: FakeStore = {
-    events: [],
-    failNext: false,
-    append: async (event) => {
-      if (state.failNext) throw new Error("quota exceeded");
-      state.events = [...state.events.filter((item) => item.id !== event.id), event];
-    },
-    readAll: async () => [...state.events].sort((a, b) => (a.hlc < b.hlc ? -1 : 1)),
-    getMeta: async (key) => meta.get(key) ?? null,
-    setMeta: async (key, value) => {
-      meta.set(key, value);
-    },
-  };
-  return state;
-}
-
-function newSession(events: FakeStore): Session {
+function newSession(events: FakeEventStore): Session {
   let millis = 1_754_697_600_000;
   return createSession({
     events,
@@ -56,7 +32,7 @@ function newSession(events: FakeStore): Session {
   });
 }
 
-async function ready(events: FakeStore) {
+async function ready(events: FakeEventStore) {
   const session = newSession(events);
   await session.init();
   return { session, registry: createRegistryStore(session) };

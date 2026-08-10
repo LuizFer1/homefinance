@@ -2,29 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "./app";
 import type { EventStore } from "./data/event-store";
-import type { DomainEvent } from "./domain/events/types";
+import { fakeEventStore } from "./data/event-store.fake";
 import { createRegistryStore, type RegistryStore } from "./features/registry/store";
 import { createSession } from "./features/session/session";
 import { createTransactionsStore, type TransactionsStore } from "./features/transactions/store";
 
 afterEach(cleanup);
-
-function fakeEventStore() {
-  const meta = new Map<string, string>();
-  const events: DomainEvent[] = [];
-  const store: EventStore & { events: DomainEvent[] } = {
-    events,
-    append: async (event) => {
-      events.push(event);
-    },
-    readAll: async () => [...events].sort((a, b) => (a.hlc < b.hlc ? -1 : 1)),
-    getMeta: async (key) => meta.get(key) ?? null,
-    setMeta: async (key, value) => {
-      meta.set(key, value);
-    },
-  };
-  return store;
-}
 
 /** As duas stores partilham a mesma sessao, como em producao. */
 function buildStores(events: EventStore): { store: TransactionsStore; registry: RegistryStore } {
