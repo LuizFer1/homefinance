@@ -10,10 +10,11 @@ import {
 const ENTITY = "01J9F3K2M7QX8YB4TVWZ0DCEH2";
 
 describe("ENTITY_SPECS", () => {
-  it("registra as quatro entidades projetadas", () => {
+  it("registra as entidades projetadas", () => {
     expect(Object.keys(ENTITY_SPECS).sort()).toEqual([
       "category",
       "paymentMethod",
+      "recurrence",
       "transaction",
       "user",
     ]);

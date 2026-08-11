@@ -25,7 +25,7 @@ const DEFAULT_METHODS: readonly PaymentMethodDraft[] = [
  *
  * A lista é curta de propósito. Um app que abre com trinta categorias obriga o
  * usuário a fazer faxina antes de lançar o primeiro gasto, e a faxina é trabalho
- * que ninguém pediu. Falta alguma? "Nova categoria" está na tela de Início.
+ * que ninguém pediu. Falta alguma? O cadastro está em Ajustes → Categorias.
  *
  * `both` só para investimento e transferência, que são genuinamente os dois
  * lados — não é o padrão desta lista, é a exceção que justifica o valor existir.

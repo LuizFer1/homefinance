@@ -3,7 +3,7 @@ import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
 import { ResetSection } from "./reset-section";
 
-export type SettingsSection = "category" | "paymentMethod";
+export type SettingsSection = "category" | "paymentMethod" | "profile";
 
 export interface SettingsPageProps {
   categoryCount: number;
@@ -83,15 +83,16 @@ export function SettingsPage({
         {profile === null ? (
           <PendingRow icon="baby" label="Seu perfil" reason="Nenhum perfil neste aparelho ainda." />
         ) : (
-          <div class={ROW}>
+          <button type="button" class={ENABLED} onClick={() => onOpen("profile")}>
             <Avatar name={profile.name} color={profile.color} avatar={profile.avatar} size={40} />
-            <span class="min-w-0 flex-1">
+            <span class="min-w-0 flex-1 text-left">
               <span class="block truncate">{profile.name}</span>
-              <span class="mt-0.5 block text-xs text-base-content/50">
-                Marca os lançamentos que você criar.
-              </span>
+              <span class="mt-0.5 block text-xs text-base-content/50">Nome, cor e foto.</span>
             </span>
-          </div>
+            <span aria-hidden="true" class="text-base-content/30">
+              &rsaquo;
+            </span>
+          </button>
         )}
       </Group>
 

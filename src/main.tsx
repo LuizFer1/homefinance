@@ -7,6 +7,8 @@ import { cryptoRandomChunk } from "./domain/ids/ulid";
 import { createOnboardingStore } from "./features/onboarding/store";
 import { processAvatar } from "./features/profile/avatar";
 import { browserAvatarDeps } from "./features/profile/avatar-canvas";
+import { createProfileStore } from "./features/profile/store";
+import { createRecurrenceStore } from "./features/recurrence/store";
 import { createRegistryStore } from "./features/registry/store";
 import { createSession } from "./features/session/session";
 import { type ResetDeps, resetDevice } from "./features/settings/reset";
@@ -67,12 +69,16 @@ const session = createSession({
 
 const store = createTransactionsStore(session);
 const registry = createRegistryStore(session);
+const profileStore = createProfileStore(session);
+const recurrence = createRecurrenceStore(session);
 const onboarding = createOnboardingStore(session);
 
 render(
   <App
     store={store}
     registry={registry}
+    profileStore={profileStore}
+    recurrence={recurrence}
     onboarding={onboarding}
     localUserId={session.localUserId}
     processFile={(file) => processAvatar(file, browserAvatarDeps)}

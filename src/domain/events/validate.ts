@@ -12,6 +12,7 @@ const ENTITIES: Record<EntityKind, true> = {
   category: true,
   paymentMethod: true,
   transaction: true,
+  recurrence: true,
   investment: true,
   reserve: true,
 };

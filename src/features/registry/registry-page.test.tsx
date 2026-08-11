@@ -28,6 +28,28 @@ const CATEGORIA = {
   fieldHlc: {},
 };
 
+const RECEITA = {
+  id: "cat-2",
+  name: "Salário",
+  icon: "banknote",
+  color: "emerald",
+  kind: "income",
+  deleted: false,
+  materialized: true,
+  fieldHlc: {},
+};
+
+const AMBAS = {
+  id: "cat-3",
+  name: "Investimentos",
+  icon: "chart",
+  color: "sky",
+  kind: "both",
+  deleted: false,
+  materialized: true,
+  fieldHlc: {},
+};
+
 const stateWith = (over: Partial<ProjectionState>): ProjectionState => ({
   ...EMPTY_STATE,
   ...over,
@@ -167,5 +189,63 @@ describe("RegistryPage", () => {
 
     expect(screen.getByText("Nubank")).toBeDefined();
     expect(screen.queryByText("Mercado")).toBeNull();
+  });
+
+  it("categorias abrem em despesas e separam receitas na outra aba", () => {
+    // Lista unica misturava Salario com Mercado e forçava rolar para achar o lado
+    // certo. A aba espelha o filtro do formulario de lancamento (`listCategoriesFor`).
+    const store = fakeStore();
+    render(
+      <RegistryPage
+        entity="category"
+        state={stateWith({
+          categories: {
+            "cat-1": CATEGORIA,
+            "cat-2": RECEITA,
+            "cat-3": AMBAS,
+          },
+        })}
+        store={store}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("radio", { name: "Despesas" })).toBeDefined();
+    expect(screen.getByRole("radio", { name: "Receitas" })).toBeDefined();
+
+    expect(screen.getByText("Mercado")).toBeDefined();
+    expect(screen.getByText("Investimentos")).toBeDefined();
+    expect(screen.queryByText("Salário")).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Receitas" }));
+
+    expect(screen.getByText("Salário")).toBeDefined();
+    expect(screen.getByText("Investimentos")).toBeDefined();
+    expect(screen.queryByText("Mercado")).toBeNull();
+  });
+
+  it("formas de pagamento nao ganham abas de receita e despesa", () => {
+    const store = fakeStore();
+    render(
+      <RegistryPage entity="paymentMethod" state={EMPTY_STATE} store={store} onBack={vi.fn()} />,
+    );
+
+    expect(screen.queryByRole("radio", { name: "Despesas" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Receitas" })).toBeNull();
+  });
+
+  it("mostra dica vazia do lado da aba ativa", () => {
+    const store = fakeStore();
+    render(
+      <RegistryPage
+        entity="category"
+        state={stateWith({ categories: { "cat-1": CATEGORIA } })}
+        store={store}
+        onBack={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "Receitas" }));
+    expect(screen.getByText("Nenhuma categoria de receita ainda.")).toBeDefined();
   });
 });

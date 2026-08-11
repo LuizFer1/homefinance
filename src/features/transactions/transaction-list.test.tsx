@@ -1,13 +1,28 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   EMPTY_STATE,
   type ProjectionState,
   type TransactionRecord,
 } from "../../domain/projections/apply";
-import { TransactionList } from "./transaction-list";
+import { HOLD_MS, TransactionList } from "./transaction-list";
 
 afterEach(cleanup);
+
+/*
+  Relógio falso: o botão de excluir só confirma depois de dois segundos de dedo
+  preso, e esperar isso de verdade custaria quatro segundos nesta suíte.
+*/
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
+
+/** `act` porque quem muda o estado é o callback do timer, e não um evento. */
+async function segurar(botao: HTMLElement, ms: number) {
+  fireEvent.pointerDown(botao);
+  await act(async () => {
+    vi.advanceTimersByTime(ms);
+  });
+}
 
 function record(overrides: Partial<TransactionRecord> & { id: string }): TransactionRecord {
   return {
@@ -20,6 +35,8 @@ function record(overrides: Partial<TransactionRecord> & { id: string }): Transac
     cashbackMinor: null,
     occurredOn: "2026-08-07",
     userId: null,
+    recurrenceId: null,
+    occurrenceKey: null,
     deleted: false,
     materialized: true,
     fieldHlc: {},
@@ -115,7 +132,7 @@ describe("TransactionList", () => {
     expect(onEdit).toHaveBeenCalledWith(ITEMS[1]);
   });
 
-  it("pede exclusão do registro clicado", () => {
+  it("nao exclui com um toque solto", async () => {
     const onDelete = vi.fn();
     render(
       <TransactionList
@@ -127,7 +144,34 @@ describe("TransactionList", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Excluir Mercado" }));
+    const botao = screen.getByRole("button", { name: "Excluir Mercado (segure para confirmar)" });
+    fireEvent.pointerDown(botao);
+    fireEvent.pointerUp(botao);
+    await act(async () => {
+      vi.advanceTimersByTime(HOLD_MS * 2);
+    });
+
+    // É este caso que a exclusão sem desfazer existe para impedir: o dedo que
+    // encostou no alvo errado e saiu.
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it("exclui o registro depois de segurar o botao", async () => {
+    const onDelete = vi.fn();
+    render(
+      <TransactionList
+        items={ITEMS}
+        state={STATE}
+        today="2026-08-08"
+        onEdit={vi.fn()}
+        onDelete={onDelete}
+      />,
+    );
+
+    await segurar(
+      screen.getByRole("button", { name: "Excluir Mercado (segure para confirmar)" }),
+      HOLD_MS,
+    );
 
     expect(onDelete).toHaveBeenCalledWith("a");
   });

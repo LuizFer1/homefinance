@@ -18,19 +18,16 @@ export interface QuickAction {
 }
 
 export interface QuickActionsProps {
-  /** Ação principal da tela. Recebe peso visual maior. */
-  primary: QuickAction[];
-  /** Ações de apoio, menores. */
-  secondary: QuickAction[];
+  /** Despesa e receita — o que o usuário faz todo dia nesta tela. */
+  actions: QuickAction[];
 }
 
 /**
- * Ações rápidas em dois níveis.
+ * Ações diárias da home: lançar despesa e receita.
  *
- * Lançar despesa e receita é o que o usuário faz todo dia; criar categoria é o
- * que ele faz de vez em quando. Dar o mesmo peso às quatro faria a ação diária
- * competir com a eventual, e é por isso que os primários levam ícone maior e
- * fundo preenchido enquanto os secundários ficam em contorno.
+ * Cadastro de categoria e forma de pagamento mora em Ajustes. Estar aqui
+ * competia com o fluxo diário e pedia peso visual de "evento" para uma ação
+ * ocasional — criação fica na gestão, não na fila de lançamento.
  */
 const PRIMARY =
   "hf-press rounded-box flex flex-1 items-center justify-center gap-2.5 border py-4 " +
@@ -40,18 +37,11 @@ const PRIMARY =
 /** Fundo tingido e não preenchido: a cor marca o sentido sem gritar na tela. */
 const NEUTRAL_TONE = "border-base-content/10 bg-base-100 hover:border-base-content/25";
 
-const SECONDARY =
-  "hf-press rounded-field flex flex-1 items-center justify-center gap-1.5 " +
-  "border border-dashed border-base-content/20 py-2.5 text-xs font-medium " +
-  "text-base-content/60 transition-colors duration-150 " +
-  "hover:border-base-content/35 hover:text-base-content " +
-  "focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:outline-none";
-
-export function QuickActions({ primary, secondary }: QuickActionsProps) {
+export function QuickActions({ actions }: QuickActionsProps) {
   return (
     <nav aria-label="Ações rápidas" class="mt-4">
       <div class="flex gap-3">
-        {primary.map((action) => (
+        {actions.map((action) => (
           <button
             key={action.id}
             type="button"
@@ -59,15 +49,6 @@ export function QuickActions({ primary, secondary }: QuickActionsProps) {
             class={`${PRIMARY} ${action.tone ?? NEUTRAL_TONE}`}
           >
             <Icon name={action.icon} size={22} />
-            {action.label}
-          </button>
-        ))}
-      </div>
-
-      <div class="mt-2.5 flex gap-2.5">
-        {secondary.map((action) => (
-          <button key={action.id} type="button" onClick={action.onSelect} class={SECONDARY}>
-            <Icon name={action.icon} size={15} />
             {action.label}
           </button>
         ))}

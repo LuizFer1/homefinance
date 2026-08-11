@@ -33,6 +33,16 @@ export interface Transaction {
    * existente. Lançamento sem autor renderiza com a cor neutra.
    */
   userId: Ulid | null;
+  /**
+   * Série recorrente que originou este lançamento, ou null se foi avulso.
+   * Anulável: o histórico anterior a esta fatia não tem o campo.
+   */
+  recurrenceId: Ulid | null;
+  /**
+   * Competência estável `${recurrenceId}:${YYYY-MM}`. Com o `entityId`
+   * determinístico, evita dois salários do mesmo mês após sync offline.
+   */
+  occurrenceKey: string | null;
 }
 
 /**
@@ -44,6 +54,10 @@ export interface Transaction {
  * Isso importa porque autoria não muda: se sua esposa corrige o valor de um
  * lançamento seu, o lançamento continua seu. Um `update` que reescrevesse
  * `userId` faria a autoria virar "quem mexeu por último", que é outra coisa.
+ */
+/**
+ * `userId` fora do rascunho (autoria da sessão). `recurrenceId`/`occurrenceKey`
+ * entram no draft quando a materialização preenche; o formulário avulso manda null.
  */
 export type TransactionDraft = Omit<Transaction, "id" | "userId">;
 export type TransactionPatch = Partial<Omit<Transaction, "id" | "currency" | "userId">>;
@@ -108,5 +122,7 @@ export function diffTransaction(current: Transaction, next: TransactionDraft): T
   // sempre — invisivel na tela, presente no export.
   if (current.cashbackMinor !== next.cashbackMinor) patch.cashbackMinor = next.cashbackMinor;
   if (current.occurredOn !== next.occurredOn) patch.occurredOn = next.occurredOn;
+  if (current.recurrenceId !== next.recurrenceId) patch.recurrenceId = next.recurrenceId;
+  if (current.occurrenceKey !== next.occurrenceKey) patch.occurrenceKey = next.occurrenceKey;
   return patch;
 }

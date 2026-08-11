@@ -35,6 +35,8 @@ const BASE = {
   currency: "BRL",
   categoryId: null,
   occurredOn: "2026-08-07",
+  recurrenceId: null,
+  occurrenceKey: null,
 };
 
 /** Log do dispositivo A: cria dois lançamentos e edita campos distintos. */

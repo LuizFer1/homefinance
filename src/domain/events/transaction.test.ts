@@ -24,6 +24,8 @@ const DRAFT: TransactionDraft = {
   paymentMethodId: null,
   cashbackMinor: null,
   occurredOn: "2026-08-07",
+  recurrenceId: null,
+  occurrenceKey: null,
 };
 
 const USER = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
@@ -43,6 +45,8 @@ describe("construtores de evento", () => {
         paymentMethodId: null,
         cashbackMinor: null,
         occurredOn: "2026-08-07",
+        recurrenceId: null,
+        occurrenceKey: null,
       },
       userId: null,
     });
@@ -60,6 +64,8 @@ describe("construtores de evento", () => {
       paymentMethodId: null,
       cashbackMinor: null,
       occurredOn: "2026-08-07",
+      recurrenceId: null,
+      occurrenceKey: null,
       userId: null,
     });
   });
@@ -90,6 +96,8 @@ describe("diffTransaction", () => {
       paymentMethodId: null,
       cashbackMinor: null,
       occurredOn: "2026-08-07",
+      recurrenceId: null,
+      occurrenceKey: null,
     });
 
     expect(patch).toEqual({ amountMinor: 500 });

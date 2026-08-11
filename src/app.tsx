@@ -18,7 +18,9 @@ import { Icon } from "./features/icons/icon";
 import type { OnboardingStore } from "./features/onboarding/store";
 import { OnboardingWizard } from "./features/onboarding/wizard";
 import { Avatar } from "./features/profile/avatar-view";
-import { RegistryFormModal } from "./features/registry/registry-form-modal";
+import { ProfilePage } from "./features/profile/profile-page";
+import type { ProfileStore } from "./features/profile/store";
+import type { RecurrenceStore } from "./features/recurrence/store";
 import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
 import { SettingsPage, type SettingsSection } from "./features/settings/settings-page";
@@ -26,7 +28,10 @@ import type { ThemeToggleProps } from "./features/theme/theme-toggle";
 import { ThemeToggle } from "./features/theme/theme-toggle";
 import type { TransactionsStore } from "./features/transactions/store";
 import { TransactionList } from "./features/transactions/transaction-list";
-import { TransactionWizard } from "./features/transactions/transaction-wizard";
+import {
+  type RecurrenceInput,
+  TransactionWizard,
+} from "./features/transactions/transaction-wizard";
 import { greetingFor } from "./features/ui/greeting";
 import { Modal } from "./features/ui/modal";
 import { QuickActions } from "./features/ui/quick-actions";
@@ -34,6 +39,8 @@ import { QuickActions } from "./features/ui/quick-actions";
 export interface AppProps {
   store: TransactionsStore;
   registry: RegistryStore;
+  profileStore: ProfileStore;
+  recurrence: RecurrenceStore;
   onboarding: OnboardingStore;
   /**
    * Só leitura. O App não escreve autoria; passar a `Session` inteira lhe daria
@@ -89,6 +96,8 @@ function Shell({ children }: { children: ComponentChildren }) {
 export function App({
   store,
   registry,
+  profileStore,
+  recurrence,
   onboarding,
   localUserId,
   processFile,
@@ -101,12 +110,13 @@ export function App({
   const [composing, setComposing] = useState<TransactionKind | null>(null);
   const [screen, setScreen] = useState<ScreenId>("inicio");
   const [section, setSection] = useState<SettingsSection | null>(null);
-  /** Cadastro aberto a partir das ações de Início, sem sair da tela. */
-  const [quickRegistry, setQuickRegistry] = useState<SettingsSection | null>(null);
 
   useEffect(() => {
-    void store.init();
-  }, [store]);
+    // Materializa depois do init: o boot e o "virar do mês" são o mesmo caminho.
+    // Sem isto, o salário de março só existiria se o usuário abrisse a tela de
+    // edição da série — o extrato ficaria mentindo por omissão.
+    void store.init().then(() => recurrence.materializeDue(today));
+  }, [store, recurrence, today]);
 
   if (store.status.value === "loading") {
     return (
@@ -156,9 +166,13 @@ export function App({
     setEditing(null);
   }
 
-  function handleSubmit(draft: TransactionDraft) {
+  function handleSubmit(draft: TransactionDraft, recurrenceRule: RecurrenceInput | null) {
     if (editing === null) {
-      void store.add(draft);
+      if (recurrenceRule !== null) {
+        void recurrence.createSeries(draft, recurrenceRule, today);
+      } else {
+        void store.add(draft);
+      }
       closeModal();
       return;
     }
@@ -207,10 +221,24 @@ export function App({
               A foto aparece aqui e nas configurações, e **não** na lista de
               lançamentos: lá o autor é a marca lateral colorida, porque o
               dinheiro é o único dado que importa naquela tela.
+
+              O toque abre a edição de perfil de qualquer tela — o atalho
+              existe porque mudar foto/nome/cor é o que se espera ao tocar
+              no próprio rosto, não um item escondido só em Ajustes.
             */}
             <div class="flex shrink-0 items-center gap-2">
               {profile !== null && (
-                <Avatar name={profile.name} color={profile.color} avatar={profile.avatar} />
+                <button
+                  type="button"
+                  aria-label="Editar perfil"
+                  class="hf-press hf-tap rounded-full"
+                  onClick={() => {
+                    setScreen("config");
+                    setSection("profile");
+                  }}
+                >
+                  <Avatar name={profile.name} color={profile.color} avatar={profile.avatar} />
+                </button>
               )}
               <ThemeToggle storage={theme.storage} doc={theme.doc} />
             </div>
@@ -236,7 +264,7 @@ export function App({
         {screen === "inicio" && (
           <>
             <QuickActions
-              primary={[
+              actions={[
                 {
                   id: "despesa",
                   label: "Despesa",
@@ -250,20 +278,6 @@ export function App({
                   icon: "banknote",
                   tone: "border-success/25 bg-success/10 text-success hover:border-success/45",
                   onSelect: () => setComposing("income"),
-                },
-              ]}
-              secondary={[
-                {
-                  id: "categoria",
-                  label: "Nova categoria",
-                  icon: "tag",
-                  onSelect: () => setQuickRegistry("category"),
-                },
-                {
-                  id: "pagamento",
-                  label: "Nova forma",
-                  icon: "wallet",
-                  onSelect: () => setQuickRegistry("paymentMethod"),
                 },
               ]}
             />
@@ -287,6 +301,15 @@ export function App({
               onOpen={setSection}
               onReset={onReset}
             />
+          ) : section === "profile" ? (
+            profile !== null ? (
+              <ProfilePage
+                profile={profile}
+                store={profileStore}
+                processFile={processFile}
+                onBack={() => setSection(null)}
+              />
+            ) : null
           ) : (
             <RegistryPage
               entity={section}
@@ -343,18 +366,6 @@ export function App({
           />
         )}
       </Modal>
-
-      {/* Cadastro disparado de Início, sem tirar o usuário da tela. */}
-      {quickRegistry !== null && (
-        <RegistryFormModal
-          entity={quickRegistry}
-          open
-          editing={null}
-          state={store.state.value}
-          store={registry}
-          onClose={() => setQuickRegistry(null)}
-        />
-      )}
     </div>
   );
 }

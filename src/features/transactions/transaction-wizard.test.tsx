@@ -20,6 +20,8 @@ const RECORD: TransactionRecord = {
   cashbackMinor: null,
   occurredOn: "2026-08-07",
   userId: null,
+  recurrenceId: null,
+  occurrenceKey: null,
   deleted: false,
   materialized: true,
   fieldHlc: {},
@@ -100,11 +102,17 @@ function enviar() {
   fireEvent.click(screen.getByRole("button", { name: /adicionar|salvar/i }));
 }
 
+/** Avança Continuar até sobrar só Adicionar/Salvar (3 ou 4 etapas conforme o fluxo). */
+function avancarAteOFim() {
+  for (let i = 0; i < 6 && screen.queryByRole("button", { name: "Continuar" }); i += 1) {
+    continuar();
+  }
+}
+
 /** Etapa 1 preenchida, depois avança até a etapa de pagamento. */
 function ateOPagamento(descricao = "Padaria", valor = "10,00") {
   preencherDados(descricao, valor);
-  continuar();
-  continuar();
+  avancarAteOFim();
 }
 
 describe("navegação entre etapas", () => {
@@ -121,9 +129,10 @@ describe("navegação entre etapas", () => {
     montar();
     preencherDados("Farmacia", "25,50");
 
-    continuar();
+    continuar(); // Repetir
+    continuar(); // Categoria
     escolher("Alimentacao");
-    fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+    fireEvent.click(screen.getByRole("button", { name: /Dados/ }));
 
     expect((screen.getByLabelText("Descrição") as HTMLInputElement).value).toBe("Farmacia");
     expect((screen.getByLabelText("Valor") as HTMLInputElement).value).toBe("25,50");
@@ -172,10 +181,13 @@ describe("navegação entre etapas", () => {
     preencherDados();
     expect(screen.queryByRole("button", { name: "Adicionar" })).toBeNull();
 
-    continuar();
+    continuar(); // Repetir
     expect(screen.queryByRole("button", { name: "Adicionar" })).toBeNull();
 
-    continuar();
+    continuar(); // Categoria
+    expect(screen.queryByRole("button", { name: "Adicionar" })).toBeNull();
+
+    continuar(); // Pagamento
     expect(screen.getByRole("button", { name: "Adicionar" })).toBeDefined();
   });
 
@@ -196,16 +208,21 @@ describe("emissão do rascunho", () => {
 
     enviar();
 
-    expect(onSubmit).toHaveBeenCalledWith({
-      kind: "expense",
-      description: "Padaria",
-      amountMinor: 1234,
-      currency: "BRL",
-      categoryId: null,
-      paymentMethodId: null,
-      cashbackMinor: null,
-      occurredOn: "2026-08-08",
-    });
+    expect(onSubmit).toHaveBeenCalledWith(
+      {
+        kind: "expense",
+        description: "Padaria",
+        amountMinor: 1234,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn: "2026-08-08",
+        recurrenceId: null,
+        occurrenceKey: null,
+      },
+      null,
+    );
   });
 
   it("categoria e forma de pagamento são opcionais", () => {
@@ -216,21 +233,24 @@ describe("emissão do rascunho", () => {
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ categoryId: null, paymentMethodId: null }),
+      null,
     );
   });
 
-  it("carrega as escolhas das etapas 2 e 3", () => {
+  it("carrega as escolhas de categoria e pagamento", () => {
     const { onSubmit } = montar();
     preencherDados();
-    continuar();
+    continuar(); // Repetir
+    continuar(); // Categoria
     escolher("Alimentacao");
-    continuar();
+    continuar(); // Pagamento
     escolher("Pix");
 
     enviar();
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ categoryId: "cat-1", paymentMethodId: "pm-pix" }),
+      null,
     );
   });
 
@@ -309,6 +329,7 @@ describe("limpeza do cashback", () => {
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ paymentMethodId: "pm-dinheiro", cashbackMinor: null }),
+      null,
     );
   });
 
@@ -322,7 +343,7 @@ describe("limpeza do cashback", () => {
     fireEvent.click(screen.getByRole("button", { name: /Pagamento/ }));
     enviar();
 
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ cashbackMinor: null }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ cashbackMinor: null }), null);
   });
 
   it("manter o cartão preserva o cashback digitado", () => {
@@ -332,7 +353,7 @@ describe("limpeza do cashback", () => {
     fireEvent.input(screen.getByLabelText(/cashback/i), { target: { value: "7,50" } });
     enviar();
 
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ cashbackMinor: 750 }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ cashbackMinor: 750 }), null);
   });
 });
 
@@ -351,7 +372,8 @@ describe("referências e listas vazias", () => {
   it("sem nada cadastrado mostra atalho em vez de dropdown vazio", () => {
     montar({ categories: [], paymentMethods: [] });
     preencherDados();
-    continuar();
+    continuar(); // Repetir
+    continuar(); // Categoria
 
     expect(screen.queryByRole("radio", { name: "Alimentacao" })).toBeNull();
     expect(screen.getByText(/Cadastre em Categorias/)).toBeDefined();
@@ -367,7 +389,8 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
 
   function ateACategoria() {
     preencherDados();
-    continuar();
+    continuar(); // Repetir
+    continuar(); // Categoria
   }
 
   it("despesa nao oferece categoria de receita", () => {
@@ -399,13 +422,13 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
     expect(opcoes()).toContain("Investimentos");
   });
 
-  it("trocar o tipo na etapa 1 troca a lista da etapa 2", () => {
+  it("trocar o tipo na etapa 1 troca a lista de categorias", () => {
     // O filtro e reativo: sem isso, quem abre pelo botao de despesa e muda para
     // receita continuaria vendo as categorias erradas.
     montar({ categories: TODAS, initialKind: "expense" });
     preencherDados();
     fireEvent.click(screen.getByRole("radio", { name: /receita/i }));
-    continuar();
+    ateACategoria();
 
     expect(opcoes()).toContain("Salario");
     expect(opcoes()).not.toContain("Alimentacao");
@@ -416,12 +439,11 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
     // "Categoria removida" seria mentira — ela existe, so nao serve a este lado
     // do lancamento.
     montar({ categories: TODAS, initialKind: "expense" });
-    preencherDados();
-    continuar();
+    ateACategoria();
     escolher("Alimentacao");
-    fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+    fireEvent.click(screen.getByRole("button", { name: /Dados/ }));
     fireEvent.click(screen.getByRole("radio", { name: /receita/i }));
-    continuar();
+    fireEvent.click(screen.getByRole("button", { name: /Categoria/ }));
 
     expect(screen.getByRole("radio", { name: "Alimentacao" })).toHaveProperty("checked", true);
     expect(screen.queryByRole("radio", { name: "Categoria removida" })).toBeNull();
@@ -432,18 +454,49 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
     // que sumiu da lista. Limpar aqui apagaria uma escolha do usuario por causa
     // de um toque no segmento de tipo.
     const { onSubmit } = montar({ categories: TODAS, initialKind: "expense" });
-    preencherDados();
-    continuar();
+    ateACategoria();
     escolher("Alimentacao");
-    fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+    fireEvent.click(screen.getByRole("button", { name: /Dados/ }));
     fireEvent.click(screen.getByRole("radio", { name: /receita/i }));
-    continuar();
-    continuar();
+    avancarAteOFim();
     enviar();
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "income", categoryId: "cat-desp" }),
+      null,
     );
+  });
+
+  it("emite regra de recorrencia na etapa Repetir", () => {
+    const { onSubmit } = montar({ today: "2026-08-11" });
+    preencherDados("Salário", "5000,00");
+    continuar();
+
+    expect(screen.getByRole("button", { name: /Repetir/ })).toBeDefined();
+    fireEvent.click(screen.getByRole("checkbox", { name: /repetir este lançamento/i }));
+    fireEvent.change(screen.getByLabelText(/frequência/i), { target: { value: "monthly" } });
+    fireEvent.change(screen.getByLabelText(/quando no período/i), {
+      target: { value: "nthBusinessDay" },
+    });
+    fireEvent.input(screen.getByLabelText(/nº do dia útil/i), { target: { value: "5" } });
+    avancarAteOFim();
+    enviar();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ description: "Salário", amountMinor: 500_000 }),
+      {
+        frequency: "monthly",
+        scheduleType: "nthBusinessDay",
+        scheduleN: 5,
+        endOn: null,
+      },
+    );
+  });
+
+  it("na edicao nao oferece a etapa de repetir", () => {
+    montar({ editing: RECORD });
+    expect(screen.queryByRole("button", { name: /^Repetir$/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Categoria/ })).toBeDefined();
   });
 });
 
@@ -459,12 +512,14 @@ describe("regressao: avancar nao pode virar submit", () => {
     // Por isso o teste afirma a causa, e nao o sintoma.
     montar();
     preencherDados();
-    continuar();
+    continuar(); // Ainda nao e a ultima etapa (falta Categoria e Pagamento)
 
     const avancar = screen.getByRole("button", { name: "Continuar" });
+    expect(avancar.getAttribute("type")).toBe("button");
     fireEvent.click(avancar);
 
-    expect(avancar.getAttribute("type")).toBe("button");
-    expect(screen.getByRole("button", { name: /adicionar|salvar/i })).not.toBe(avancar);
+    // Continuar de novo: se o no tivesse virado submit, gravaria aqui.
+    expect(screen.getByRole("button", { name: "Continuar" }).getAttribute("type")).toBe("button");
+    expect(screen.queryByRole("button", { name: /adicionar|salvar/i })).toBeNull();
   });
 });

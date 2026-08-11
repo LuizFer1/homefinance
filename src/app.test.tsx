@@ -1,27 +1,45 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app";
 import type { EventStore } from "./data/event-store";
 import { fakeEventStore } from "./data/event-store.fake";
 import { userCreated } from "./domain/events/user";
 import { createOnboardingStore } from "./features/onboarding/store";
+import { createProfileStore } from "./features/profile/store";
+import { createRecurrenceStore } from "./features/recurrence/store";
 import { createRegistryStore } from "./features/registry/store";
 import { createSession, LOCAL_USER_ID_KEY } from "./features/session/session";
 import { createTransactionsStore } from "./features/transactions/store";
+import { HOLD_MS } from "./features/transactions/transaction-list";
 
 afterEach(cleanup);
 
 const PERFIL_LOCAL = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
+const DEVICE_LOCAL = "01J9F3K2M7QX8YB4TVWZ0DCEHZ";
 
 /**
- * Duplo de aparelho **já cadastrado**: o meta traz `localUserId`, senão toda
- * suíte daqui cairia no wizard de primeiro uso em vez da tela sob teste.
+ * Duplo de aparelho **já cadastrado**: o meta traz `localUserId` e o log o
+ * `user.create` correspondente. Sem o evento, a linha de perfil em Ajustes
+ * ficaria desabilitada (perfil nulo) e os testes de edição não teriam o que
+ * abrir.
  */
 function fakeCadastrado(seed: Parameters<typeof fakeEventStore>[0] = []) {
-  return fakeEventStore(seed, { [LOCAL_USER_ID_KEY]: PERFIL_LOCAL });
+  const comPerfil =
+    seed.length > 0
+      ? seed
+      : [
+          userCreated({
+            eventId: "01J9F3K2M7QX8YB4TVWZ0DCEE1",
+            entityId: PERFIL_LOCAL,
+            deviceId: DEVICE_LOCAL,
+            hlc: `1754697500000-0000-${DEVICE_LOCAL}`,
+            draft: { name: "Luiz", color: "teal", avatar: null },
+          }),
+        ];
+  return fakeEventStore(comPerfil, { [LOCAL_USER_ID_KEY]: PERFIL_LOCAL });
 }
 
-/** As tres stores partilham a mesma sessao, como em producao. */
+/** As stores partilham a mesma sessao, como em producao. */
 function buildStores(events: EventStore) {
   let millis = 1_754_697_600_000;
   const session = createSession({
@@ -35,6 +53,8 @@ function buildStores(events: EventStore) {
   return {
     store: createTransactionsStore(session),
     registry: createRegistryStore(session),
+    profileStore: createProfileStore(session),
+    recurrence: createRecurrenceStore(session),
     onboarding: createOnboardingStore(session),
     localUserId: session.localUserId,
     processFile: () => Promise.resolve("data:image/webp;base64,AAAA"),
@@ -80,10 +100,11 @@ function irParaCadastro(nome: RegExp) {
   fireEvent.click(screen.getByRole("button", { name: nome }));
 }
 
-/** Avanca as tres etapas da wizard e salva. */
+/** Avanca todas as etapas da wizard (3 na edicao, 4 na criacao) e salva. */
 function concluirWizard() {
-  fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
-  fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+  for (let i = 0; i < 6 && screen.queryByRole("button", { name: "Continuar" }); i += 1) {
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+  }
   fireEvent.click(screen.getByRole("button", { name: /adicionar|salvar/i }));
 }
 
@@ -170,7 +191,18 @@ describe("App", () => {
     );
     await addTransaction("Mercado", "12,34");
 
-    fireEvent.click(screen.getByRole("button", { name: "Excluir Mercado" }));
+    /*
+      `shouldAdvanceTime` porque o `waitFor` logo abaixo depende do relógio
+      andar: com timers falsos parados ele esgotaria o tempo sem nunca reavaliar.
+    */
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Excluir Mercado (segure para confirmar)" }),
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(HOLD_MS);
+    });
+    vi.useRealTimers();
 
     await waitFor(() => expect(screen.getByText("Nenhum lançamento ainda.")).toBeDefined());
   });
@@ -228,7 +260,7 @@ describe("navegacao", () => {
 
     // O lancamento continua la, e os dois eventos foram para o mesmo log.
     expect(screen.getByText("Mercado")).toBeDefined();
-    expect(events.events.map((e) => e.entity).sort()).toEqual(["category", "transaction"]);
+    expect(events.events.map((e) => e.entity).sort()).toEqual(["category", "transaction", "user"]);
   });
 
   it("a tela de pagamentos oferece o tipo e a de categorias nao", async () => {
@@ -316,10 +348,10 @@ describe("fila de ações rápidas", () => {
     );
   }
 
-  it("saúda conforme a hora injetada", async () => {
+  it("saúda conforme a hora injetada e o nome do perfil", async () => {
     await pronto();
 
-    expect(screen.getByRole("heading", { name: "Bom dia" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: /bom dia, luiz/i })).toBeDefined();
   });
 
   it("Despesa abre o modal já em despesa", async () => {
@@ -341,14 +373,15 @@ describe("fila de ações rápidas", () => {
     expect((screen.getByRole("radio", { name: "Receita" }) as HTMLInputElement).checked).toBe(true);
   });
 
-  it("Nova categoria abre o cadastro sem sair de Início", async () => {
+  it("a fila de Inicio so oferece despesa e receita", async () => {
+    // Cadastro de categoria e forma fica em Ajustes: na home competia com o
+    // fluxo diario e pedia atalho para uma acao ocasional.
     await pronto();
 
-    fireEvent.click(naFila().getByRole("button", { name: "Nova categoria" }));
-
-    // Abre o cadastro sem tirar o usuario da tela de Inicio.
-    expect(screen.getByLabelText(/nome/i)).toBeDefined();
-    expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined();
+    expect(naFila().getByRole("button", { name: "Despesa" })).toBeDefined();
+    expect(naFila().getByRole("button", { name: "Receita" })).toBeDefined();
+    expect(naFila().queryByRole("button", { name: "Nova categoria" })).toBeNull();
+    expect(naFila().queryByRole("button", { name: /Nova forma/ })).toBeNull();
   });
 
   it("a fila some fora da tela de lançamentos", async () => {
@@ -425,19 +458,32 @@ describe("as tres telas", () => {
     expect(screen.getByRole("button", { name: /^Formas de pagamento/ })).toBeDefined();
   });
 
-  it("perfil e hub aparecem desabilitados, com o motivo", async () => {
-    // Mostrar desabilitado em vez de esconder comunica que a coisa existe no
-    // projeto e e opcional. Escondida, o usuario concluiria que o app nao a tem.
+  it("hub aparece desabilitado, com o motivo; perfil abre a edicao", async () => {
+    // Hub desabilitado comunica que sync existe no projeto e e opcional.
+    // Perfil e editavel: o cadastro ja aconteceu no wizard.
     await pronto();
 
     fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
 
-    expect(screen.getByText("Seu perfil")).toBeDefined();
+    expect(screen.getByRole("button", { name: /Luiz/ })).toBeDefined();
     expect(screen.getByText("Hub de sincronização")).toBeDefined();
     expect(
       screen.getByText(/roda no seu computador, nunca um servidor de terceiros/),
     ).toBeDefined();
-    expect(screen.queryByRole("button", { name: /Seu perfil/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Hub de sincronização/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Luiz/ }));
+    expect(screen.getByRole("region", { name: "Seu perfil" })).toBeDefined();
+  });
+
+  it("o avatar do cabecalho abre a edicao de perfil de qualquer tela", async () => {
+    // Mudar foto/nome/cor e o que se espera ao tocar no rosto — nao so a
+    // entrada em Ajustes. Sem isto o atalho do cabecalho seria so decoracao.
+    await pronto();
+
+    fireEvent.click(screen.getByRole("button", { name: "Editar perfil" }));
+
+    expect(screen.getByRole("region", { name: "Seu perfil" })).toBeDefined();
   });
 
   it("sair de Ajustes e voltar cai na raiz, não na sub-tela", async () => {
@@ -568,9 +614,10 @@ describe("primeiro uso", () => {
 
 describe("perfil e reset nas configuracoes", () => {
   async function emAjustes(onReset = () => {}) {
+    const events = fakeCadastrado();
     render(
       <App
-        {...buildStores(fakeCadastrado())}
+        {...buildStores(events)}
         onReset={onReset}
         today="2026-08-08"
         hour={9}
@@ -581,6 +628,7 @@ describe("perfil e reset nas configuracoes", () => {
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
     );
     fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
+    return events;
   }
 
   it("oferece resetar a conta atras da digitacao exata", async () => {
@@ -594,5 +642,20 @@ describe("perfil e reset nas configuracoes", () => {
     fireEvent.click(botao);
 
     expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it("edita nome e cor do perfil e volta para Ajustes", async () => {
+    const events = await emAjustes();
+
+    fireEvent.click(screen.getByRole("button", { name: /Luiz/ }));
+    fireEvent.input(screen.getByLabelText(/seu nome/i), { target: { value: "Ana" } });
+    fireEvent.click(screen.getByRole("radio", { name: "rose" }));
+    fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Configurações" })).toBeDefined(),
+    );
+    expect(screen.getByRole("button", { name: /Ana/ })).toBeDefined();
+    expect(events.events.some((e) => e.entity === "user" && e.action === "update")).toBe(true);
   });
 });

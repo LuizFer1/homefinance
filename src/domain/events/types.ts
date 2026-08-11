@@ -5,6 +5,7 @@ export type EntityKind =
   | "category"
   | "paymentMethod"
   | "transaction"
+  | "recurrence"
   | "investment"
   | "reserve";
 

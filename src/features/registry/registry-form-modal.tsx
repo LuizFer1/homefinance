@@ -36,13 +36,12 @@ export const REGISTRY_COPY = {
 } as const;
 
 /**
- * Modal de cadastro, separado da página que lista.
+ * Modal de cadastro da página de listagem.
  *
- * A separação existe porque duas telas o abrem: a de Configurações, que lista e
- * edita, e a de Início, cujos botões de ação rápida criam direto. Deixá-lo dentro
- * da página de listagem obrigaria o botão de Início a navegar para Configurações
- * e disparar a abertura de lá — um caminho tortuoso, e frágil porque dependeria
- * de ordem de renderização entre telas.
+ * Vive fora do `RegistryList` para a página montar o formulário por cima da
+ * lista sem misturar estado de edição com a renderização dos itens. Criação e
+ * edição passam por aqui; o atalho da home saiu — cadastro é manutenção e mora
+ * em Ajustes.
  */
 export function RegistryFormModal({
   entity,

@@ -14,6 +14,8 @@ const DRAFT: TransactionDraft = {
   paymentMethodId: null,
   cashbackMinor: null,
   occurredOn: "2026-08-07",
+  recurrenceId: null,
+  occurrenceKey: null,
 };
 
 function deps(events: FakeEventStore, startAt = 1_754_697_600_000) {

@@ -1,3 +1,9 @@
+/*
+ * A aritmética de dia mora em `domain/dates/calendar.ts` — havia uma cópia
+ * privada dela aqui, e duas cópias da regra de bissexto são uma a mais.
+ */
+import { shiftDay } from "../dates/calendar";
+
 /**
  * Mês é manipulado como o prefixo 'YYYY-MM' da própria string de data, nunca
  * por `Date`.
@@ -87,27 +93,6 @@ export function monthLabelLong(month: string): string {
 }
 
 /**
- * Dia anterior a uma data 'YYYY-MM-DD'.
- *
- * `Date.UTC` recebe **números**, não a string — ele não passa pelo parser que o
- * comentário do topo deste arquivo condena. E UTC não tem horário de verão,
- * então subtrair 24h é sempre exatamente um dia, inclusive na virada de mês,
- * ano e em anos bissextos. Fazer a conta à mão exigiria uma segunda cópia da
- * tabela de dias por mês e da regra de bissexto que `entities.ts` já carrega.
- */
-function previousDay(date: string): string {
-  const stamp =
-    Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))) -
-    86_400_000;
-  const previous = new Date(stamp);
-
-  const year = String(previous.getUTCFullYear()).padStart(4, "0");
-  const month = String(previous.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(previous.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-/**
  * Rótulo do cabeçalho de dia, relativo a `today`.
  *
  * "Hoje" e "Ontem" existem porque são os dois dias que o usuário reconhece sem
@@ -119,7 +104,7 @@ function previousDay(date: string): string {
  */
 export function dayLabel(occurredOn: string, today: string): string {
   if (occurredOn === today) return "Hoje";
-  if (occurredOn === previousDay(today)) return "Ontem";
+  if (occurredOn === shiftDay(today, -1)) return "Ontem";
 
   const name = labelFrom(LONG, occurredOn);
   // Data corrompida vinda do log prefere aparecer crua a derrubar o render.

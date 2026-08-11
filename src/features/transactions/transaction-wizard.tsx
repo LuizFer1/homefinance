@@ -1,7 +1,15 @@
 import { useState } from "preact/hooks";
+import {
+  FREQUENCY_LABELS,
+  RECURRENCE_FREQUENCIES,
+  type RecurrenceFrequency,
+  SCHEDULE_TYPE_LABELS,
+  SCHEDULE_TYPES,
+  type ScheduleType,
+} from "../../domain/events/recurrence";
 import type { TransactionDraft, TransactionKind } from "../../domain/events/transaction";
 import type { Ulid } from "../../domain/ids/ulid";
-import { parseBRL } from "../../domain/money/money";
+import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
 import type {
   CategoryRecord,
   PaymentMethodRecord,
@@ -9,12 +17,22 @@ import type {
 } from "../../domain/projections/apply";
 import { offersCashback } from "../../domain/transactions/cashback";
 import { EntityPicker } from "../registry/entity-picker";
+import { DateField } from "../ui/date-field";
+import { FIELD, FIELD_BOX, LABEL } from "../ui/field";
 import { StepIndicator } from "./step-indicator";
+
+/** Regra de série pedida na criação. Null = lançamento avulso. */
+export interface RecurrenceInput {
+  frequency: RecurrenceFrequency;
+  scheduleType: ScheduleType;
+  scheduleN: number;
+  endOn: string | null;
+}
 
 export interface TransactionWizardProps {
   /** Registro em edição, ou null para criação. Montado com `key` pelo App. */
   editing: TransactionRecord | null;
-  onSubmit: (draft: TransactionDraft) => void;
+  onSubmit: (draft: TransactionDraft, recurrence: RecurrenceInput | null) => void;
   onCancel: () => void;
   today: string;
   /** Tipo pré-selecionado na criação. Ignorado na edição, onde o registro manda. */
@@ -23,13 +41,14 @@ export interface TransactionWizardProps {
   paymentMethods: PaymentMethodRecord[];
 }
 
-const STEPS = ["Dados", "Categoria", "Pagamento"] as const;
+/**
+ * Criação tem etapa própria de recorrência; edição não — alterar a série não é
+ * o mesmo que editar uma ocorrência, e misturar os dois no mesmo fluxo esconderia
+ * qual decisão o usuário está tomando.
+ */
+const CREATE_STEPS = ["Dados", "Repetir", "Categoria", "Pagamento"] as const;
+const EDIT_STEPS = ["Dados", "Categoria", "Pagamento"] as const;
 
-const LABEL = "hf-caption block text-[0.6875rem] font-semibold uppercase text-base-content/45";
-const FIELD =
-  "rounded-field mt-1.5 w-full bg-base-200 px-3.5 py-2.5 text-base outline-none " +
-  "transition-[box-shadow,background-color] duration-150 " +
-  "focus-visible:bg-base-100 focus-visible:ring-2 focus-visible:ring-primary/45";
 const SEGMENT =
   "hf-press rounded-field flex-1 cursor-pointer py-2 text-center text-sm font-medium " +
   "transition-colors duration-150 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/45";
@@ -40,19 +59,65 @@ const KINDS = [
   { value: "income", label: "Receita", tone: "text-success" },
 ] as const satisfies ReadonlyArray<{ value: TransactionKind; label: string; tone: string }>;
 
-function toAmountInput(minor: number): string {
-  return (minor / 100).toFixed(2).replace(".", ",");
+interface MoneyFieldProps {
+  id: string;
+  label: string;
+  /** Dígitos crus, não o texto exibido — ver `domain/money/mask.ts`. */
+  digits: string;
+  onDigits: (digits: string) => void;
 }
 
 /**
- * Formulário de lançamento em três etapas.
+ * Campo de dinheiro com máscara de centavos.
+ *
+ * O "R$" é irmão do input, nunca parte do valor: dentro dele voltaria pelo
+ * `onlyDigits` a cada tecla e teria que ser removido de novo antes do draft.
+ *
+ * `inputMode="numeric"` e não `"decimal"` porque a vírgula deixou de existir
+ * para quem digita — um teclado que a ofereça convida a uma tecla que a máscara
+ * descarta.
+ */
+function MoneyField({ id, label, digits, onDigits }: MoneyFieldProps) {
+  return (
+    <div>
+      <label class={LABEL} for={id}>
+        {label}
+      </label>
+      <div class="relative mt-1.5">
+        <span
+          aria-hidden="true"
+          class="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm
+            text-base-content/45"
+        >
+          R$
+        </span>
+        <input
+          id={id}
+          name={id}
+          type="text"
+          inputMode="numeric"
+          autocomplete="off"
+          placeholder="0,00"
+          class={`${FIELD_BOX} hf-num pl-9`}
+          value={maskDigits(digits)}
+          onInput={(event) => onDigits(onlyDigits(event.currentTarget.value))}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Formulário de lançamento em etapas.
  *
  * A wizard guarda o rascunho inteiro e emite **um único submit**, no fim. Isso não
  * é preferência de estilo: a regra do cashback depende de dois eixos que vivem em
- * etapas diferentes — o tipo do lançamento na etapa 1, a forma de pagamento na 3.
- * Com submit por etapa, voltar à etapa 1 e trocar para receita deixaria de limpar
- * o cashback, que é exatamente o dado sujo permanente que a regra existe para
- * prevenir.
+ * etapas diferentes — o tipo do lançamento e a forma de pagamento. Com submit por
+ * etapa, voltar e trocar para receita deixaria de limpar o cashback, que é
+ * exatamente o dado sujo permanente que a regra existe para prevenir.
+ *
+ * Recorrência é etapa própria na criação: frequência e condição de data não
+ * cabem no "Dados" sem empurrar valor e calendário para baixo do dedo.
  */
 export function TransactionWizard({
   editing,
@@ -65,7 +130,8 @@ export function TransactionWizard({
 }: TransactionWizardProps) {
   const [step, setStep] = useState(0);
   const [description, setDescription] = useState(editing?.description ?? "");
-  const [amount, setAmount] = useState(editing === null ? "" : toAmountInput(editing.amountMinor));
+  // Dígitos, não texto formatado: a máscara é quem decide como o número aparece.
+  const [amount, setAmount] = useState(editing === null ? "" : String(editing.amountMinor));
   // Na edição o registro manda; na criação, o botão que abriu o modal.
   const [kind, setKind] = useState<TransactionKind>(editing?.kind ?? initialKind ?? "expense");
   const [occurredOn, setOccurredOn] = useState(editing?.occurredOn ?? today);
@@ -74,12 +140,25 @@ export function TransactionWizard({
     editing?.paymentMethodId ?? null,
   );
   const [cashback, setCashback] = useState(
-    editing?.cashbackMinor == null ? "" : toAmountInput(editing.cashbackMinor),
+    editing?.cashbackMinor == null ? "" : String(editing.cashbackMinor),
   );
+  // Série só na criação: editar ocorrência materializada não reescreve a regra.
+  const [repeats, setRepeats] = useState(false);
+  const [frequency, setFrequency] = useState<RecurrenceFrequency>("monthly");
+  const [scheduleType, setScheduleType] = useState<ScheduleType>("dayOfMonth");
+  const [scheduleN, setScheduleN] = useState(() => Number(occurredOn.slice(8, 10)) || 1);
+  const [hasEnd, setHasEnd] = useState(false);
+  const [endOn, setEndOn] = useState(today);
   const [problem, setProblem] = useState<string | null>(null);
 
   const selectedMethod = paymentMethods.find((method) => method.id === paymentMethodId) ?? null;
   const showsCashback = offersCashback(selectedMethod?.kind ?? null, kind);
+  const canConfigureRecurrence = editing === null;
+  const steps = canConfigureRecurrence ? CREATE_STEPS : EDIT_STEPS;
+  // Índices dependem do fluxo: na criação "Repetir" empurra categoria e pagamento.
+  const categoryStep = canConfigureRecurrence ? 2 : 1;
+  const paymentStep = canConfigureRecurrence ? 3 : 2;
+  const recurrenceStep = 1;
 
   /*
     Filtra pelo tipo do lançamento, e o filtro é reativo: trocar de despesa para
@@ -102,17 +181,18 @@ export function TransactionWizard({
       : offered;
 
   const trimmed = description.trim();
-  const amountMinor = parseBRL(amount);
-  const detailsValid = trimmed !== "" && amountMinor !== null && amountMinor > 0;
-  // Etapas 2 e 3 nunca bloqueiam: categoria e forma de pagamento são opcionais.
-  const maxReachable = detailsValid ? STEPS.length - 1 : 0;
+  // Valor inválido deixou de ser estado possível: a máscara só admite dígitos.
+  const amountMinor = minorOf(amount);
+  const detailsValid = trimmed !== "" && amountMinor > 0;
+  // Depois de "Dados", o resto não bloqueia: repetir, categoria e pagamento são opcionais.
+  const maxReachable = detailsValid ? steps.length - 1 : 0;
 
   function validateDetails(): boolean {
     if (trimmed === "") {
       setProblem("Informe uma descrição.");
       return false;
     }
-    if (amountMinor === null || amountMinor === 0) {
+    if (amountMinor === 0) {
       setProblem("Informe um valor maior que zero.");
       return false;
     }
@@ -128,30 +208,47 @@ export function TransactionWizard({
     setStep(index);
   }
 
+  function recurrenceInput(): RecurrenceInput {
+    const n = Math.min(31, Math.max(1, Math.trunc(scheduleN) || 1));
+    return {
+      frequency,
+      scheduleType,
+      scheduleN: n,
+      endOn: hasEnd ? endOn : null,
+    };
+  }
+
   function handleSubmit(event: Event) {
     event.preventDefault();
     if (!validateDetails()) {
       setStep(0);
       return;
     }
-    if (amountMinor === null) return;
 
-    onSubmit({
-      kind,
-      description: trimmed,
-      amountMinor,
-      currency: "BRL",
-      categoryId,
-      paymentMethodId,
-      // A limpeza acontece aqui, no draft, e não escondendo o campo. Um cashback
-      // pendurado numa despesa em dinheiro seria dado sujo permanente: invisível
-      // na tela, presente no export, imortal no log append-only.
-      cashbackMinor: showsCashback ? parseBRL(cashback) : null,
-      occurredOn,
-    });
+    onSubmit(
+      {
+        kind,
+        description: trimmed,
+        amountMinor,
+        currency: "BRL",
+        categoryId,
+        paymentMethodId,
+        // A limpeza acontece aqui, no draft, e não escondendo o campo. Um cashback
+        // pendurado numa despesa em dinheiro seria dado sujo permanente: invisível
+        // na tela, presente no export, imortal no log append-only.
+        // Campo vazio continua sendo `null`, não zero: "não houve cashback" e
+        // "voltou R$ 0,00" são coisas diferentes, e o log guarda as duas para sempre.
+        cashbackMinor: showsCashback && cashback !== "" ? minorOf(cashback) : null,
+        occurredOn,
+        // Avulso: a série e a competência só entram pela materialização.
+        recurrenceId: editing?.recurrenceId ?? null,
+        occurrenceKey: editing?.occurrenceKey ?? null,
+      },
+      canConfigureRecurrence && repeats ? recurrenceInput() : null,
+    );
   }
 
-  const isLast = step === STEPS.length - 1;
+  const isLast = step === steps.length - 1;
 
   return (
     <form onSubmit={handleSubmit} class="p-4">
@@ -170,10 +267,22 @@ export function TransactionWizard({
       </div>
 
       <div class="mt-4">
-        <StepIndicator steps={STEPS} current={step} maxReachable={maxReachable} onGo={goTo} />
+        <StepIndicator steps={steps} current={step} maxReachable={maxReachable} onGo={goTo} />
       </div>
 
-      <div class="mt-5">
+      {/*
+        A `key` no invólucro é o que faz a etapa remontar, e é a remontagem que
+        dispara o `@starting-style`. Sem ela o Preact reaproveitaria o nó e a
+        troca continuaria instantânea.
+
+        140ms e só 6px: lançar é o laço diário do app, e são duas trocas por
+        lançamento. Qualquer coisa mais longa vira imposto cobrado toda vez.
+      */}
+      <div
+        key={step}
+        class="mt-5 transition-[opacity,translate] duration-[140ms] ease-out-soft
+          starting:translate-x-1.5 starting:opacity-0"
+      >
         {step === 0 && (
           <>
             <fieldset>
@@ -216,40 +325,161 @@ export function TransactionWizard({
               />
             </div>
 
-            <div class="mt-3 grid grid-cols-2 gap-3">
-              <div>
-                <label class={LABEL} for="amount">
-                  Valor
-                </label>
-                <input
-                  id="amount"
-                  name="amount"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0,00"
-                  class={`${FIELD} hf-num`}
-                  value={amount}
-                  onInput={(event) => setAmount(event.currentTarget.value)}
-                />
-              </div>
-              <div>
-                <label class={LABEL} for="occurredOn">
-                  Data
-                </label>
-                <input
-                  id="occurredOn"
-                  name="occurredOn"
-                  type="date"
-                  class={`${FIELD} hf-num`}
-                  value={occurredOn}
-                  onInput={(event) => setOccurredOn(event.currentTarget.value)}
-                />
-              </div>
+            <div class="mt-3 grid grid-cols-2 items-start gap-3">
+              <MoneyField id="amount" label="Valor" digits={amount} onDigits={setAmount} />
+
+              {/*
+                O painel do calendário é irmão do gatilho e ocupa as duas
+                colunas: aberto, ele empurra o formulário em vez de flutuar sobre
+                ele — ver o comentário em `date-field.tsx`.
+              */}
+              <DateField
+                id="occurredOn"
+                label="Data"
+                value={occurredOn}
+                today={today}
+                onChange={(next) => {
+                  setOccurredOn(next);
+                  // Na etapa Repetir, o N default já acompanha o dia escolhido aqui.
+                  if (!repeats) setScheduleN(Number(next.slice(8, 10)) || 1);
+                }}
+              />
             </div>
+
+            {editing?.recurrenceId != null && (
+              <p class="mt-3 text-xs text-base-content/45">
+                Este lançamento faz parte de uma série. Alterar aqui muda só esta ocorrência.
+              </p>
+            )}
           </>
         )}
 
-        {step === 1 && (
+        {canConfigureRecurrence && step === recurrenceStep && (
+          <fieldset>
+            {/*
+              O indicador já diz "Repetir"; outro caption em caixa alta
+              ("RECORRÊNCIA") competia com o step e com o título do modal.
+              A pergunta em frase e o corpo em 15px são a hierarquia da etapa.
+            */}
+            <legend class="sr-only">Recorrência</legend>
+            <h3 class="hf-title text-base font-semibold leading-snug text-base-content">
+              Este lançamento se repete?
+            </h3>
+            <p class="mt-1.5 max-w-[22rem] text-[0.9375rem] leading-snug text-base-content/55">
+              Opcional. Sem repetir, ele acontece uma vez só na data escolhida.
+            </p>
+
+            <label class="mt-5 flex min-h-11 cursor-pointer items-center justify-between gap-3">
+              <span class="text-[0.9375rem] font-medium leading-snug text-base-content">
+                Repetir este lançamento
+              </span>
+              <input
+                type="checkbox"
+                checked={repeats}
+                onChange={(event) => {
+                  const on = event.currentTarget.checked;
+                  setRepeats(on);
+                  if (on) setScheduleN(Number(occurredOn.slice(8, 10)) || 1);
+                }}
+                class="size-4 shrink-0 accent-primary"
+              />
+            </label>
+
+            {repeats && (
+              /*
+                Disclosure dos campos: evita o salto seco de "apareceu um bloco".
+                Stagger curto (40ms) — legível, não coreográfico. `key` força a
+                remontagem se o usuário desligar e ligar de novo.
+              */
+              <div key="recurrence-fields" class="hf-disclose hf-disclose-stagger mt-5 space-y-4">
+                <div>
+                  <label class={LABEL} for="recurrence-frequency">
+                    Frequência
+                  </label>
+                  <select
+                    id="recurrence-frequency"
+                    class={FIELD}
+                    value={frequency}
+                    onChange={(event) =>
+                      setFrequency(event.currentTarget.value as RecurrenceFrequency)
+                    }
+                  >
+                    {RECURRENCE_FREQUENCIES.map((value) => (
+                      <option key={value} value={value}>
+                        {FREQUENCY_LABELS[value]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label class={LABEL} for="recurrence-schedule-type">
+                    Quando no período
+                  </label>
+                  <select
+                    id="recurrence-schedule-type"
+                    class={FIELD}
+                    value={scheduleType}
+                    onChange={(event) => setScheduleType(event.currentTarget.value as ScheduleType)}
+                  >
+                    {SCHEDULE_TYPES.map((value) => (
+                      <option key={value} value={value}>
+                        {SCHEDULE_TYPE_LABELS[value]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label class={LABEL} for="recurrence-schedule-n">
+                    {scheduleType === "nthBusinessDay" ? "Nº do dia útil" : "Dia do mês"}
+                  </label>
+                  <input
+                    id="recurrence-schedule-n"
+                    type="number"
+                    min={1}
+                    max={31}
+                    inputMode="numeric"
+                    class={FIELD}
+                    value={scheduleN}
+                    onInput={(event) => setScheduleN(Number(event.currentTarget.value) || 1)}
+                  />
+                  <p class="mt-1.5 text-sm leading-snug text-base-content/50">
+                    {scheduleType === "nthBusinessDay"
+                      ? "Dia útil = segunda a sexta (sem feriados nesta versão)."
+                      : "Se o mês for mais curto, usa o último dia."}
+                  </p>
+                </div>
+
+                <label class="flex min-h-11 cursor-pointer items-center justify-between gap-3">
+                  <span class="text-[0.9375rem] leading-snug text-base-content/80">
+                    Tem data final
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={hasEnd}
+                    onChange={(event) => setHasEnd(event.currentTarget.checked)}
+                    class="size-4 shrink-0 accent-primary"
+                  />
+                </label>
+
+                {hasEnd && (
+                  <div key="recurrence-end" class="hf-disclose">
+                    <DateField
+                      id="recurrence-end"
+                      label="Termina em"
+                      value={endOn}
+                      today={today}
+                      onChange={setEndOn}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </fieldset>
+        )}
+
+        {step === categoryStep && (
           <EntityPicker
             id="categoryId"
             label="Categoria"
@@ -262,7 +492,7 @@ export function TransactionWizard({
           />
         )}
 
-        {step === 2 && (
+        {step === paymentStep && (
           <>
             <EntityPicker
               id="paymentMethodId"
@@ -277,18 +507,11 @@ export function TransactionWizard({
 
             {showsCashback && (
               <div class="mt-3">
-                <label class={LABEL} for="cashback">
-                  Cashback
-                </label>
-                <input
+                <MoneyField
                   id="cashback"
-                  name="cashback"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0,00"
-                  class={`${FIELD} hf-num`}
-                  value={cashback}
-                  onInput={(event) => setCashback(event.currentTarget.value)}
+                  label="Cashback"
+                  digits={cashback}
+                  onDigits={setCashback}
                 />
                 <p class="mt-1.5 text-xs text-base-content/45">
                   Quanto voltou. Não entra no saldo — é um atributo da despesa.

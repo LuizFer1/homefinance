@@ -17,6 +17,8 @@ const DRAFT: TransactionDraft = {
   paymentMethodId: null,
   cashbackMinor: null,
   occurredOn: "2026-08-07",
+  recurrenceId: null,
+  occurrenceKey: null,
 };
 
 let db: HomeFinanceDb;

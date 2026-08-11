@@ -23,6 +23,8 @@ function record(overrides: Partial<TransactionRecord> & { id: string }): Transac
     cashbackMinor: null,
     occurredOn: TODAY,
     userId: null,
+    recurrenceId: null,
+    occurrenceKey: null,
     deleted: false,
     materialized: true,
     fieldHlc: {},

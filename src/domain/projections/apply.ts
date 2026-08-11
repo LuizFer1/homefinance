@@ -34,11 +34,32 @@ export interface UserRecord extends EntityRecordBase {
   avatar: string | null;
 }
 
+/**
+ * Série recorrente. Campos de regra são `string`/`number` alargados pelo mesmo
+ * motivo que `kind` em categoria: o fold rejeita o inválido e mantém o shell.
+ */
+export interface RecurrenceRecord extends EntityRecordBase {
+  kind: string;
+  description: string;
+  amountMinor: number;
+  currency: string;
+  categoryId: Ulid | null;
+  paymentMethodId: Ulid | null;
+  cashbackMinor: number | null;
+  frequency: string;
+  scheduleType: string;
+  scheduleN: number;
+  startOn: string;
+  endOn: string | null;
+  active: boolean;
+}
+
 export interface ProjectionState {
   transactions: Record<Ulid, TransactionRecord>;
   categories: Record<Ulid, CategoryRecord>;
   paymentMethods: Record<Ulid, PaymentMethodRecord>;
   users: Record<Ulid, UserRecord>;
+  recurrences: Record<Ulid, RecurrenceRecord>;
   /**
    * Maior HLC já aplicado, inclusive de eventos ignorados. É o que decide entre
    * aplicar incremental e refoldar. Avançar demais só força refold — que é sempre
@@ -52,6 +73,7 @@ export const EMPTY_STATE: ProjectionState = {
   categories: {},
   paymentMethods: {},
   users: {},
+  recurrences: {},
   lastHlc: null,
 };
 

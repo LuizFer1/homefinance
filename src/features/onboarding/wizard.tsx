@@ -116,7 +116,12 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
         <StepIndicator steps={STEPS} current={step} maxReachable={maxReachable} onGo={goTo} />
       </div>
 
-      <div class="mt-6">
+      {/* Mesma troca de etapa do lançamento — ver o comentário em `transaction-wizard.tsx`. */}
+      <div
+        key={step}
+        class="mt-6 transition-[opacity,translate] duration-[140ms] ease-out-soft
+          starting:translate-x-1.5 starting:opacity-0"
+      >
         {step === 0 && (
           <div>
             <label class={LABEL} for="onboarding-name">

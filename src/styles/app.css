@@ -238,6 +238,80 @@
   .hf-press:active {
     transform: scale(0.97);
   }
+
+  /*
+   * Folha que entra pela borda de baixo, e nao aparece do nada no meio da tela.
+   *
+   * `allow-discrete` em `display` e `overlay` e o que da **saida** a um
+   * `<dialog>`: sem ele o elemento deixa o top layer no mesmo quadro do
+   * `close()` e a transicao de saida nunca chega a rodar. `@starting-style`
+   * cobre a entrada, que sem ele ja comecaria no estado final.
+   *
+   * Tudo em CSS de proposito: o `<dialog>` nativo foi escolhido para nao pagar
+   * JavaScript por foco preso e Esc, e uma animacao em JS devolveria esse custo.
+   */
+  .hf-sheet {
+    opacity: 0;
+    /* Porcentagem, e nao pixel: a folha tem a altura do conteudo dela. */
+    transform: translateY(100%);
+    transition:
+      opacity 260ms var(--ease-out-soft),
+      transform 260ms var(--ease-out-soft),
+      display 260ms allow-discrete,
+      overlay 260ms allow-discrete;
+  }
+
+  .hf-sheet[open] {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @starting-style {
+    .hf-sheet[open] {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+  }
+
+  /*
+   * A partir de `sm` a folha deixa de ser folha: `sm:m-auto` a centraliza, e
+   * subir da borda de baixo passaria a ser um caminho que nao corresponde a
+   * lugar nenhum. Dialogo centrado entra no lugar, so crescendo.
+   */
+  @media (width >= 40rem) {
+    .hf-sheet {
+      transform: scale(0.97);
+    }
+
+    .hf-sheet[open] {
+      transform: scale(1);
+    }
+
+    @starting-style {
+      .hf-sheet[open] {
+        transform: scale(0.97);
+      }
+    }
+  }
+
+  /* A cor do backdrop vem do utilitario no JSX; aqui so a revelacao dela. */
+  .hf-sheet::backdrop {
+    opacity: 0;
+    transition:
+      opacity 260ms var(--ease-out-soft),
+      display 260ms allow-discrete,
+      overlay 260ms allow-discrete;
+  }
+
+  .hf-sheet[open]::backdrop {
+    opacity: 1;
+  }
+
+  @starting-style {
+    .hf-sheet[open]::backdrop {
+      opacity: 0;
+    }
+  }
 }
 
 /*
@@ -264,6 +338,120 @@
   position: absolute;
   inset-block: -6px;
   inset-inline: 0;
+}
+
+/*
+ * Disclosure embutido (calendário, campos de recorrência).
+ *
+ * **Keyframe no mount**, não `@starting-style` + transition: o painel do
+ * calendário monta com `{open && …}` do Preact, e em vários engines o
+ * `@starting-style` no primeiro paint do nó inserido é ignorado — o painel
+ * aparece já no estado final. `animation` roda no insert e é previsível.
+ *
+ * Origem no topo: o gatilho está acima; scale a partir do centro faria o painel
+ * "crescer do meio", o que não corresponde à folha que empurra o formulário.
+ */
+.hf-disclose {
+  transform-origin: top center;
+  animation: hf-disclose-in 320ms var(--ease-out-soft) both;
+}
+
+@keyframes hf-disclose-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/*
+ * Filhos em cascata: a lista de campos abre em sequência. Delay e duração
+ * acompanham o painel (320ms) para a leitura não terminar antes do pai.
+ */
+.hf-disclose-stagger > * {
+  animation: hf-disclose-item 280ms var(--ease-out-soft) both;
+}
+
+.hf-disclose-stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.hf-disclose-stagger > *:nth-child(2) {
+  animation-delay: 60ms;
+}
+.hf-disclose-stagger > *:nth-child(3) {
+  animation-delay: 120ms;
+}
+.hf-disclose-stagger > *:nth-child(4) {
+  animation-delay: 180ms;
+}
+.hf-disclose-stagger > *:nth-child(5) {
+  animation-delay: 240ms;
+}
+
+@keyframes hf-disclose-item {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hf-disclose {
+    animation: hf-disclose-fade 160ms ease both;
+  }
+
+  .hf-disclose-stagger > * {
+    animation: none;
+  }
+}
+
+@keyframes hf-disclose-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/*
+ * Segurar para confirmar.
+ *
+ * Existe porque excluir um lancamento e a unica acao de um toque so que nao tem
+ * desfazer: o log e append-only, e o evento de delete nasce eterno. O alvo fica
+ * a um dedo de distancia do proprio botao de editar a linha, entao o custo do
+ * escorregao e permanente.
+ *
+ * `clip-path` e nao `width` ou `scaleX`: largura reflui a cada quadro e escala
+ * distorceria a borda arredondada do preenchimento.
+ */
+@utility hf-hold {
+  position: relative;
+  overflow: hidden;
+}
+
+.hf-hold::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: color-mix(in oklab, var(--color-error) 20%, transparent);
+  clip-path: inset(0 100% 0 0);
+  /* Volta rapida ao soltar: o preenchimento tem que sumir junto com o dedo. */
+  transition: clip-path 200ms var(--ease-out-soft);
+}
+
+.hf-hold[data-holding="true"]::before {
+  clip-path: inset(0 0 0 0);
+  /* Linear e longo: o preenchimento **e** o cronometro, nao um enfeite. */
+  transition-duration: 2000ms;
+  transition-timing-function: linear;
 }
 
 /*
@@ -316,6 +504,19 @@
   .hf-press:active {
     transform: none;
     opacity: 0.7;
+  }
+
+  /*
+   * Excecao deliberada a regra acima, e a unica do arquivo.
+   *
+   * Aqui o preenchimento nao e enfeite: e a leitura de quanto falta para a
+   * exclusao disparar. Zerado, o botao apagaria o lancamento dois segundos
+   * depois do toque sem ter dado nenhum sinal — movimento reduzido viraria
+   * ausencia de aviso, e nao ausencia de deslocamento.
+   */
+  .hf-hold[data-holding="true"]::before {
+    /* biome-ignore lint/complexity/noImportantStyles: o preenchimento e o cronometro, ver acima */
+    transition-duration: 2000ms !important;
   }
 }
 

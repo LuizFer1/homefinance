@@ -1,7 +1,7 @@
 import type { EntityKind } from "../events/types";
 import type { Ulid } from "../ids/ulid";
 
-export type BucketName = "transactions" | "categories" | "paymentMethods" | "users";
+export type BucketName = "transactions" | "categories" | "paymentMethods" | "users" | "recurrences";
 
 /**
  * O que `apply` precisa saber de qualquer entidade.
@@ -113,6 +113,9 @@ function isValidTransactionField(field: string, value: unknown): boolean {
     case "categoryId":
     case "paymentMethodId":
     case "userId":
+    case "recurrenceId":
+      return value === null || typeof value === "string";
+    case "occurrenceKey":
       return value === null || typeof value === "string";
     case "cashbackMinor":
       return value === null || (typeof value === "number" && Number.isInteger(value));
@@ -147,6 +150,8 @@ export const TRANSACTION_SPEC: EntitySpec = {
     "cashbackMinor",
     "occurredOn",
     "userId",
+    "recurrenceId",
+    "occurrenceKey",
   ],
   isValidField: isValidTransactionField,
   shell: (id) => ({
@@ -160,6 +165,96 @@ export const TRANSACTION_SPEC: EntitySpec = {
     cashbackMinor: null,
     occurredOn: "",
     userId: null,
+    recurrenceId: null,
+    occurrenceKey: null,
+    deleted: false,
+    materialized: false,
+    fieldHlc: {},
+  }),
+};
+
+const RECURRENCE_FREQUENCIES = [
+  "monthly",
+  "bimonthly",
+  "quarterly",
+  "semiannual",
+  "annual",
+] as const;
+
+const SCHEDULE_TYPES = ["dayOfMonth", "nthBusinessDay"] as const;
+
+function isValidRecurrenceField(field: string, value: unknown): boolean {
+  switch (field) {
+    case "kind":
+      return value === "income" || value === "expense";
+    case "description":
+      return typeof value === "string";
+    case "amountMinor":
+      return typeof value === "number" && Number.isInteger(value);
+    case "currency":
+      return value === "BRL";
+    case "categoryId":
+    case "paymentMethodId":
+      return value === null || typeof value === "string";
+    case "cashbackMinor":
+      return value === null || (typeof value === "number" && Number.isInteger(value));
+    case "frequency":
+      return (
+        typeof value === "string" && (RECURRENCE_FREQUENCIES as readonly string[]).includes(value)
+      );
+    case "scheduleType":
+      return typeof value === "string" && (SCHEDULE_TYPES as readonly string[]).includes(value);
+    case "scheduleN":
+      return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 31;
+    case "startOn":
+      return typeof value === "string" && isRealDate(value);
+    case "endOn":
+      return value === null || (typeof value === "string" && isRealDate(value));
+    case "active":
+      return typeof value === "boolean";
+    default:
+      return false;
+  }
+}
+
+/**
+ * `frequency` e `scheduleType` validados contra lista: carregam regra de produto
+ * (materialização). Valor desconhecido cai no shell (`monthly` / `dayOfMonth`) —
+ * esconder a série faria o salário sumir do extrato.
+ */
+export const RECURRENCE_SPEC: EntitySpec = {
+  bucket: "recurrences",
+  fields: [
+    "kind",
+    "description",
+    "amountMinor",
+    "currency",
+    "categoryId",
+    "paymentMethodId",
+    "cashbackMinor",
+    "frequency",
+    "scheduleType",
+    "scheduleN",
+    "startOn",
+    "endOn",
+    "active",
+  ],
+  isValidField: isValidRecurrenceField,
+  shell: (id) => ({
+    id,
+    kind: "expense",
+    description: "",
+    amountMinor: 0,
+    currency: "BRL",
+    categoryId: null,
+    paymentMethodId: null,
+    cashbackMinor: null,
+    frequency: "monthly",
+    scheduleType: "dayOfMonth",
+    scheduleN: 1,
+    startOn: "",
+    endOn: null,
+    active: true,
     deleted: false,
     materialized: false,
     fieldHlc: {},
@@ -252,4 +347,5 @@ export const ENTITY_SPECS: Partial<Record<EntityKind, EntitySpec>> = {
   category: CATEGORY_SPEC,
   paymentMethod: PAYMENT_METHOD_SPEC,
   user: USER_SPEC,
+  recurrence: RECURRENCE_SPEC,
 };
