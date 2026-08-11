@@ -34,37 +34,37 @@ export default defineConfig({
         // opaco claro; maskable = glifo transparente (claro e escuro).
         icons: [
           {
-            src: "/img/icons/icon_ligth_not_maskable_192.png",
+            src: "/img/icons/icon_light_not_maskable_192.png",
             sizes: "192x204",
             type: "image/png",
             purpose: "any",
           },
           {
-            src: "/img/icons/icon_ligth_not_maskable_512.png",
+            src: "/img/icons/icon_light_not_maskable_512.png",
             sizes: "512x544",
             type: "image/png",
             purpose: "any",
           },
           {
-            src: "/img/icons/icon_ligth_maskable_192.png",
+            src: "/img/icons/icon_light_maskable_192.png",
             sizes: "192x204",
             type: "image/png",
             purpose: "maskable",
           },
           {
-            src: "/img/icons/icon_ligth_maskable_512.png",
+            src: "/img/icons/icon_light_maskable_512.png",
             sizes: "512x544",
             type: "image/png",
             purpose: "maskable",
           },
           {
-            src: "/img/icons/icon_darkmode_maskable_192.png",
+            src: "/img/icons/icon_dark_maskable_192.png",
             sizes: "192x204",
             type: "image/png",
             purpose: "maskable",
           },
           {
-            src: "/img/icons/icon_darkmode_maskable_512.png",
+            src: "/img/icons/icon_dark_maskable_512.png",
             sizes: "512x544",
             type: "image/png",
             purpose: "maskable",

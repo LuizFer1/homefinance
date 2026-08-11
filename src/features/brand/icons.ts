@@ -5,10 +5,10 @@
  * `dist/assets/`, fora do teto de shell). Paths em `public/img/icons/` ficam
  * para favicon e manifest PWA (`BRAND_PUBLIC_PATHS`).
  *
- * Os nomes com "ligth" são typo histórico no disco.
+ * Nome do arquivo = tema da app em que o asset aparece.
  */
-import darkMaskable192 from "./assets/icon_darkmode_maskable_192.png?url";
-import lightMaskable192 from "./assets/icon_ligth_maskable_192.png?url";
+import darkMaskable192 from "./assets/icon_dark_maskable_192.png?url";
+import lightMaskable192 from "./assets/icon_light_maskable_192.png?url";
 
 /** Par maskable 192 usado na UI (onboarding, Ajustes, shell). */
 export const BRAND_ICONS = {
@@ -23,16 +23,16 @@ export const BRAND_ICONS = {
 /** Paths estáticos em `public/` para HTML e manifest (não passar por Vite hash). */
 export const BRAND_PUBLIC_PATHS = {
   light: {
-    any192: "/img/icons/icon_ligth_not_maskable_192.png",
-    any512: "/img/icons/icon_ligth_not_maskable_512.png",
-    maskable192: "/img/icons/icon_ligth_maskable_192.png",
-    maskable512: "/img/icons/icon_ligth_maskable_512.png",
+    any192: "/img/icons/icon_light_not_maskable_192.png",
+    any512: "/img/icons/icon_light_not_maskable_512.png",
+    maskable192: "/img/icons/icon_light_maskable_192.png",
+    maskable512: "/img/icons/icon_light_maskable_512.png",
   },
   dark: {
-    any192: "/img/icons/icon_darkmode_maskable_192.png",
-    any512: "/img/icons/icon_darkmode_maskable_512.png",
-    maskable192: "/img/icons/icon_darkmode_maskable_192.png",
-    maskable512: "/img/icons/icon_darkmode_maskable_512.png",
+    any192: "/img/icons/icon_dark_maskable_192.png",
+    any512: "/img/icons/icon_dark_maskable_512.png",
+    maskable192: "/img/icons/icon_dark_maskable_192.png",
+    maskable512: "/img/icons/icon_dark_maskable_512.png",
   },
 } as const;
 

@@ -6,7 +6,7 @@ import { ThemeIllustration } from "./theme-illustration";
 afterEach(cleanup);
 
 describe("ThemeIllustration", () => {
-  it("home usa o par enter-payment-info (ligth / dark)", () => {
+  it("home usa o par enter-payment-info (light / dark)", () => {
     const { container } = render(<ThemeIllustration name="home" />);
     const imgs = container.querySelectorAll("img");
     expect(imgs).toHaveLength(2);

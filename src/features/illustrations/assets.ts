@@ -1,13 +1,13 @@
 /**
  * Ilustrações undraw em `public/img/undraw/`.
  *
- * Paths absolutos (Vite copia `public/`). Os nomes `ligth` / `light` seguem os
- * arquivos no disco — não renomear daqui sem renomear o SVG.
+ * Paths absolutos (Vite copia `public/`). Nome do arquivo = tema da app
+ * (`_light` / `_dark`) em que a variante deve aparecer.
  */
 export const ILLUSTRATIONS = {
   /** Home (Início): lançamento / pagamento. */
   home: {
-    light: "/img/undraw/undraw_enter-payment-info_ligth.svg",
+    light: "/img/undraw/undraw_enter-payment-info_light.svg",
     dark: "/img/undraw/undraw_enter-payment-info_dark.svg",
   },
   /** Dashboard: orçamento / visão de gastos. */
