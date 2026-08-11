@@ -6,6 +6,36 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f3f3" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0c0e" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="HomeFinance" />
+    <!--
+      Apple: not_maskable (fundo opaco). Favicon: maskable transparente por
+      tema — traço preto no claro, traço claro no escuro. sizes = canvas real
+      (192x204), nao o 192x192 ideal de PWA; reexportar quadrado e atualizar.
+    -->
+    <link rel="apple-touch-icon" href="/img/icons/icon_ligth_not_maskable_192.png" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="192x204"
+      href="/img/icons/icon_ligth_maskable_192.png"
+      media="(prefers-color-scheme: light)"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="192x204"
+      href="/img/icons/icon_darkmode_maskable_192.png"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="192x204"
+      href="/img/icons/icon_ligth_maskable_192.png"
+    />
     <title>HomeFinance</title>
     <script>
       // Aplica o tema antes do primeiro paint. Ler isto so no JS do app daria

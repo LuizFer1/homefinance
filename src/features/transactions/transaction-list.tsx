@@ -13,6 +13,7 @@ import {
 } from "../../domain/projections/selectors";
 import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
+import { EmptyHero } from "../illustrations/empty-hero";
 
 export interface TransactionListProps {
   /** Já filtrados e ordenados por `listTransactions`. */
@@ -294,10 +295,16 @@ function Row({
 
 export function TransactionList({ items, state, today, onEdit, onDelete }: TransactionListProps) {
   if (items.length === 0) {
+    // Ilustração só no vazio. `--hf-empty-chrome` desconta a fila de ações
+    // rápidas; o palco (hf-empty-stage) centraliza na área útil restante.
     return (
-      <p class="rounded-box mt-4 border border-base-content/10 bg-base-100/60 px-4 py-10 text-center text-sm text-base-content/45">
-        Nenhum lançamento ainda.
-      </p>
+      <div class="hf-empty-stage" style={{ "--hf-empty-chrome": "5.5rem" }}>
+        <EmptyHero
+          name="home"
+          title="Nenhum lançamento ainda"
+          description="Registre uma despesa ou receita pelos botões acima."
+        />
+      </div>
     );
   }
 

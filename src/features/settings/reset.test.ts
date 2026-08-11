@@ -32,8 +32,8 @@ describe("resetDevice", () => {
   });
 
   it("nao quebra quando nao ha service worker nem cache", async () => {
-    // Workbox nao esta instalado. As duas camadas entram como no-op seguro
-    // agora porque, escritas depois na fatia de PWA, seriam faceis de esquecer.
+    // Contextos sem Cache API / SW (sandbox de teste, browsers antigos):
+    // o reset ainda apaga o IndexedDB e recarrega.
     await expect(resetDevice({ db: novoDb(), reload: vi.fn() })).resolves.toBeUndefined();
   });
 

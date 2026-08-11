@@ -85,10 +85,13 @@ render(
     onReset={() => {
       void resetDevice({
         db,
-        // Só referenciar as duas APIs já lança em contexto sandbox, e nenhuma
-        // das duas existe hoje: Workbox não está instalado.
+        // Só referenciar as APIs já lança em contexto sandbox — por isso o
+        // typeof e o optional chaining, não um assert de presença.
         caches: typeof caches === "undefined" ? undefined : caches,
-        serviceWorker: navigator.serviceWorker as ResetDeps["serviceWorker"],
+        serviceWorker:
+          typeof navigator === "undefined" || !("serviceWorker" in navigator)
+            ? undefined
+            : (navigator.serviceWorker as ResetDeps["serviceWorker"]),
         reload: () => {
           window.location.reload();
         },

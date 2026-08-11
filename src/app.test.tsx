@@ -123,12 +123,16 @@ async function abrirEdicao(description: string) {
 }
 
 describe("App", () => {
-  it("mostra o nome do app como cabeçalho", async () => {
+  it("mostra saudacao e saldo no cabecalho", async () => {
     render(
       <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
 
-    await waitFor(() => expect(screen.getByRole("heading", { name: "HomeFinance" })).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /Bom dia/i })).toBeDefined(),
+    );
+    expect(screen.getByTestId("total-balance")).toBeDefined();
+    expect(screen.getByText("Saldo total")).toBeDefined();
   });
 
   it("adiciona um lançamento e atualiza os totais", async () => {
@@ -204,7 +208,9 @@ describe("App", () => {
     });
     vi.useRealTimers();
 
-    await waitFor(() => expect(screen.getByText("Nenhum lançamento ainda.")).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /Nenhum lançamento ainda/i })).toBeDefined(),
+    );
   });
 
   it("mostra erro quando o armazenamento não abre", async () => {

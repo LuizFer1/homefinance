@@ -41,9 +41,20 @@ function stateWith(categories: CategoryRecord[] = []): ProjectionState {
 
 describe("DashboardPage", () => {
   it("diz quando não há lançamento nenhum", () => {
-    render(<DashboardPage items={[]} state={stateWith()} today={TODAY} />);
+    const { container } = render(
+      <DashboardPage items={[]} state={stateWith()} today={TODAY} />,
+    );
 
-    expect(screen.getByText(/Nenhum lançamento ainda/)).toBeDefined();
+    expect(screen.getByRole("heading", { name: /Nenhum lançamento ainda/i })).toBeDefined();
+    expect(container.querySelector('img[src*="undraw_budgeting_light"]')).not.toBeNull();
+  });
+
+  it("com dados nao mostra a ilustracao de vazio", () => {
+    const { container } = render(
+      <DashboardPage items={[record({ id: "a" })]} state={stateWith()} today={TODAY} />,
+    );
+
+    expect(container.querySelector('img[src*="undraw_budgeting"]')).toBeNull();
   });
 
   it("anuncia o mês por extenso", () => {

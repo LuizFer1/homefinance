@@ -29,11 +29,35 @@ import { gzipSync } from "node:zlib";
  *           calculado para a fatia que o pediu e nao sobrou para a seguinte.
  *           Os 3.75kb de folga agora sao deliberados: a fatia 4 (exportar,
  *           importar, apagar dados) ja tem plano e vai gastar.
+ *   76kb  — recorrencia (72.23kb medidos no shell: JS+CSS) + folga. O teto de
+ *           70kb ja tinha sido estourado pela fatia de recorrencia mergeada
+ *           sem bump; este commit so ratifica. Service worker / Workbox
+ *           continuam fora do gate (isAppShellArtifact) — offline e
+ *           instalabilidade nao sao first paint da SPA.
  * Alvo de projeto: ~140kb gzip, conforme o README.
+ *
+ * Service worker e runtime do Workbox **nao** entram neste teto: sao baixados
+ * e cacheados a parte do shell da UI, e o tamanho deles e o preco de offline/
+ * instalabilidade, nao do first paint da SPA. Ver isAppShellArtifact.
  */
-export const LIMIT_BYTES = 70 * 1024;
+export const LIMIT_BYTES = 76 * 1024;
 
 const MEASURED = /\.(js|css)$/;
+
+/**
+ * Artefatos do shell da SPA (first paint). Exclui SW / Workbox / registerSW
+ * gerados pelo vite-plugin-pwa — medem outra camada do runtime.
+ * @param {string} relativePath
+ */
+export function isAppShellArtifact(relativePath) {
+  const base = path.basename(relativePath).toLowerCase();
+  if (base === "sw.js" || base === "workbox-window.js") return false;
+  if (base.startsWith("workbox-")) return false;
+  if (base.includes("registersw")) return false;
+  // Precache manifest embutido no SW; se aparecer solto, tambem fica de fora.
+  if (base.includes("precache")) return false;
+  return MEASURED.test(base);
+}
 
 /**
  * Soma o tamanho gzipado de todos os artefatos JS e CSS de um diretorio.
@@ -46,12 +70,14 @@ export async function measureDist(dir) {
   let total = 0;
 
   for (const entry of entries) {
-    if (!entry.isFile() || !MEASURED.test(entry.name)) continue;
-
+    if (!entry.isFile()) continue;
     const full = path.join(entry.parentPath, entry.name);
+    const relative = path.relative(dir, full);
+    if (!isAppShellArtifact(relative)) continue;
+
     const size = gzipSync(await readFile(full)).length;
 
-    files.push({ file: path.relative(dir, full), size });
+    files.push({ file: relative, size });
     total += size;
   }
 

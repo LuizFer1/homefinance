@@ -7,6 +7,7 @@ import {
 } from "../../domain/projections/breakdown";
 import { lastMonths, monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { totals } from "../../domain/projections/selectors";
+import { EmptyHero } from "../illustrations/empty-hero";
 import { BarChart } from "./bar-chart";
 import { DonutChart } from "./donut-chart";
 
@@ -44,9 +45,12 @@ const WINDOW = 6;
 export function DashboardPage({ items, state, today }: DashboardPageProps) {
   if (items.length === 0) {
     return (
-      <section aria-label="Dashboard">
-        <h2 class={`${CAPTION} mt-4`}>Resumo</h2>
-        <p class={`${EMPTY} mt-3`}>Nenhum lançamento ainda. Registre o primeiro em Início.</p>
+      <section aria-label="Dashboard" class="hf-empty-stage">
+        <EmptyHero
+          name="dashboard"
+          title="Nenhum lançamento ainda"
+          description="Registre o primeiro em Início para ver o resumo do mês."
+        />
       </section>
     );
   }

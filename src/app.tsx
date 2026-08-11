@@ -13,6 +13,7 @@ import {
   listTransactions,
   totals,
 } from "./domain/projections/selectors";
+import { BrandMark } from "./features/brand/brand-mark";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
 import { Icon } from "./features/icons/icon";
 import type { OnboardingStore } from "./features/onboarding/store";
@@ -121,7 +122,9 @@ export function App({
   if (store.status.value === "loading") {
     return (
       <Shell>
-        <h1 class={CAPTION}>HomeFinance</h1>
+        <div class="flex items-center gap-3">
+          <BrandMark size={36} />
+        </div>
         <p class="mt-2 text-base-content/50">Carregando...</p>
       </Shell>
     );
@@ -130,7 +133,9 @@ export function App({
   if (store.status.value === "error") {
     return (
       <Shell>
-        <h1 class={CAPTION}>HomeFinance</h1>
+        <div class="flex items-center gap-3">
+          <BrandMark size={36} />
+        </div>
         <p role="alert" class="rounded-box mt-3 bg-error/10 p-4 text-sm text-error">
           Não foi possível abrir o armazenamento local: {store.error.value}
         </p>
@@ -198,46 +203,53 @@ export function App({
   return (
     <div class={SHELL}>
       {/*
-        Cabeçalho translúcido e fixo: o conteúdo corre por baixo dele em vez de
-        o chrome comer uma faixa fixa da tela. O saldo é o único número que
-        merece ficar sempre visível — em todas as três telas.
+        Cabeçalho translúcido e sticky: o saldo fica sempre à vista em todas as
+        telas. A foto e o tema ficam agrupados à direita — o toque no avatar
+        abre o perfil (atalo natural; não esconder só em Ajustes).
       */}
-      <header class="hf-material hf-scroll-edge sticky top-0 z-10">
-        <div class="mx-auto w-full max-w-md px-5 pt-[max(0.875rem,env(safe-area-inset-top))] pb-3">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <h1 class={CAPTION}>{greetingFor(hour, profile?.name)}</h1>
+      <header class="hf-topbar hf-scroll-edge sticky top-0 z-10">
+        <div
+          class="mx-auto w-full max-w-md px-5
+            pt-[max(0.75rem,env(safe-area-inset-top))] pb-3.5"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div class="min-w-0 flex-1">
+              <h1 class={`${CAPTION} tracking-[0.04em]`}>
+                {greetingFor(hour, profile?.name)}
+              </h1>
               <p
                 data-testid="total-balance"
-                class={`hf-display mt-1 text-[2rem] font-semibold ${negative ? "text-error" : ""}`}
+                class={`hf-display mt-0.5 text-[1.875rem] font-semibold leading-none
+                  tabular-nums tracking-tight ${negative ? "text-error" : ""}`}
               >
                 {/* "total" e não só "saldo": o dashboard agora mostra o do mês,
                     e dois números com o mesmo nome na mesma sessão confundem. */}
                 <span class="sr-only">Saldo total: </span>
                 {formatBRL(summary.balanceMinor)}
               </p>
+              <p class="mt-1 text-[0.6875rem] text-base-content/40">Saldo total</p>
             </div>
-            {/*
-              A foto aparece aqui e nas configurações, e **não** na lista de
-              lançamentos: lá o autor é a marca lateral colorida, porque o
-              dinheiro é o único dado que importa naquela tela.
 
-              O toque abre a edição de perfil de qualquer tela — o atalho
-              existe porque mudar foto/nome/cor é o que se espera ao tocar
-              no próprio rosto, não um item escondido só em Ajustes.
-            */}
-            <div class="flex shrink-0 items-center gap-2">
+            <div
+              class="flex shrink-0 items-center gap-1 rounded-full border border-base-content/[0.06]
+                bg-base-200/55 p-1 shadow-[0_1px_0_0_color-mix(in_oklab,var(--color-base-content)_4%,transparent)]"
+            >
               {profile !== null && (
                 <button
                   type="button"
                   aria-label="Editar perfil"
-                  class="hf-press hf-tap rounded-full"
+                  class="hf-press hf-tap rounded-full ring-2 ring-base-100 ring-offset-0"
                   onClick={() => {
                     setScreen("config");
                     setSection("profile");
                   }}
                 >
-                  <Avatar name={profile.name} color={profile.color} avatar={profile.avatar} />
+                  <Avatar
+                    name={profile.name}
+                    color={profile.color}
+                    avatar={profile.avatar}
+                    size={38}
+                  />
                 </button>
               )}
               <ThemeToggle storage={theme.storage} doc={theme.doc} />

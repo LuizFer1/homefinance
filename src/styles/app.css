@@ -125,6 +125,12 @@
  */
 :root {
   --hf-nav-h: 3.75rem;
+  /*
+   * Cabeçalho sticky (saudação + saldo + safe-area). Usado pelo palco do
+   * empty state para centralizar na área útil, não na viewport inteira.
+   */
+  /* Saudação + saldo + legenda "Saldo total" + safe-area. */
+  --hf-header-h: 6.5rem;
   --color-tag-slate: oklch(55% 0.02 260);
   --color-tag-rose: oklch(58% 0.16 15);
   --color-tag-red: oklch(55% 0.19 27);
@@ -230,6 +236,59 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /*
+   * Par claro/escuro (BrandMark maskable + undraw): display mora SÓ aqui.
+   * Nao colocar utilitario Tailwind `block`/`hidden` nos imgs — no Tailwind v4
+   * as utilities vencem @layer base e os dois assets aparecem empilhados.
+   */
+  .hf-brand-mark-light {
+    display: block;
+  }
+
+  .hf-brand-mark-dark {
+    display: none;
+  }
+
+  html[data-theme="hf-dark"] .hf-brand-mark-light {
+    display: none;
+  }
+
+  html[data-theme="hf-dark"] .hf-brand-mark-dark {
+    display: block;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme]) .hf-brand-mark-light {
+      display: none;
+    }
+
+    html:not([data-theme]) .hf-brand-mark-dark {
+      display: block;
+    }
+  }
+
+  /*
+   * Palco do empty state (ilustração + título).
+   *
+   * Altura = viewport menos barra fixa, safe area e o que já ocupa o fluxo
+   * acima (cabeçalho sticky e, na home, a fila de ações). O calc mora aqui e
+   * não em arbitrary Tailwind: operadores sem espaço invalidam o calc e o
+   * bloco ficava colado no topo (dashboard).
+   *
+   * `--hf-empty-chrome` sobrescreve o desconto extra (default = só header).
+   */
+  .hf-empty-stage {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(
+      100dvh -
+        var(--hf-header-h) -
+        var(--hf-nav-h) -
+        env(safe-area-inset-bottom, 0px) -
+        var(--hf-empty-chrome, 0px)
+    );
+  }
+
   /* Feedback no pointer-down, nao no clique: esperar o release parece morto. */
   .hf-press {
     transition: transform 120ms var(--ease-out-soft);
@@ -322,6 +381,16 @@
   background-color: color-mix(in oklab, var(--color-base-100) 72%, transparent);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/*
+ * Top bar: um pouco mais opaca que o material generico e com vinheta inferior
+ * suave, para o saldo nao "flutuar" solto sobre a lista em rolagem.
+ */
+@utility hf-topbar {
+  background-color: color-mix(in oklab, var(--color-base-200) 78%, transparent);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
 }
 
 /*
@@ -521,7 +590,8 @@
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .hf-material {
+  .hf-material,
+  .hf-topbar {
     background-color: var(--color-base-100);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -529,7 +599,8 @@
 }
 
 @media (prefers-contrast: more) {
-  .hf-material {
+  .hf-material,
+  .hf-topbar {
     background-color: var(--color-base-100);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;

@@ -3,7 +3,7 @@ export interface ResetDeps {
   db: { delete: () => Promise<void> };
   /** `window.caches`, ausente onde o navegador não o expõe. */
   caches?: { keys: () => Promise<string[]>; delete: (key: string) => Promise<boolean> };
-  /** `navigator.serviceWorker`. Ausente hoje: Workbox não está instalado. */
+  /** `navigator.serviceWorker` — limpa o registro gerado pelo Workbox no build. */
   serviceWorker?: { getRegistrations: () => Promise<readonly { unregister: () => unknown }[]> };
   reload: () => void;
 }
@@ -13,10 +13,8 @@ export interface ResetDeps {
  * volta de lugar nenhum.
  *
  * Limpa as **três** camadas que o navegador guarda. Apagar só o IndexedDB
- * deixaria o app carregando de um cache que espera dados que não existem mais.
- * Hoje as duas camadas de service worker são no-op — Workbox não está instalado
- * —, e entram assim mesmo: escritas depois, na fatia de PWA, seriam fáceis de
- * esquecer, e o sintoma não se parece com a causa.
+ * deixaria o app carregando de um cache (service worker / Cache Storage) que
+ * espera dados que não existem mais.
  *
  * A recarga é o que garante que toda store reconstrua de um log vazio. Remendar
  * os sinais em memória para simular o estado inicial seria uma segunda

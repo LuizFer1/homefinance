@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import type { ColorToken } from "../../domain/events/reference";
 import type { UserDraft } from "../../domain/events/user";
+import { BrandMark } from "../brand/brand-mark";
 import { COLOR_TOKENS, cssVarForToken } from "../colors/color-token";
 import { Avatar } from "../profile/avatar-view";
 import { StepIndicator } from "../transactions/step-indicator";
@@ -13,12 +14,14 @@ export interface OnboardingWizardProps {
 
 const STEPS = ["Nome", "Cor", "Foto"] as const;
 
-const LABEL = "hf-caption block text-[0.6875rem] font-semibold uppercase text-base-content/45";
+// Tipografia um degrau acima do restante do app: o wizard e a primeira tela
+// que o usuario ve, em tela cheia, e captions de 11px leem pequenos demais.
+const LABEL = "hf-caption block text-xs font-semibold uppercase text-base-content/45";
 const FIELD =
-  "rounded-field mt-1.5 w-full bg-base-200 px-3.5 py-2.5 text-base outline-none " +
+  "rounded-field mt-1.5 w-full bg-base-200 px-3.5 py-3 text-base outline-none " +
   "transition-[box-shadow,background-color] duration-150 " +
   "focus-visible:bg-base-100 focus-visible:ring-2 focus-visible:ring-primary/45";
-const ACTION = "hf-press rounded-field px-4 py-2.5 font-medium";
+const ACTION = "hf-press rounded-field px-4 py-3 text-base font-medium";
 const SWATCH =
   "hf-press flex size-10 cursor-pointer items-center justify-center rounded-full " +
   "transition-transform duration-150 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/45";
@@ -107,8 +110,9 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
 
   return (
     <form onSubmit={handleSubmit} class="py-2">
-      <h1 class="hf-display text-2xl font-semibold">Bem-vindo ao HomeFinance</h1>
-      <p class="mt-1.5 text-sm text-base-content/55">
+      <BrandMark size={56} class="mb-4" />
+      <h1 class="hf-display text-3xl font-semibold">Bem-vindo ao HomeFinance</h1>
+      <p class="mt-2 text-base text-base-content/55">
         Seus dados ficam neste aparelho. Sem conta, sem cadastro, sem internet.
       </p>
 
@@ -143,7 +147,7 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
         {step === 1 && (
           <fieldset>
             <legend class={LABEL}>Sua cor</legend>
-            <p class="mt-1.5 text-xs text-base-content/45">
+            <p class="mt-1.5 text-sm text-base-content/45">
               Marca os lançamentos que você criar. Serve para diferenciar quem lançou quando o app
               for compartilhado.
             </p>
@@ -172,7 +176,7 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
         {step === 2 && (
           <div>
             <span class={LABEL}>Sua foto</span>
-            <p class="mt-1.5 text-xs text-base-content/45">
+            <p class="mt-1.5 text-sm text-base-content/45">
               Opcional. Sem foto, usamos suas iniciais sobre a cor escolhida.
             </p>
 
@@ -181,7 +185,7 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
 
               <div class="flex min-w-0 flex-col gap-2">
                 <label
-                  class={`${ACTION} cursor-pointer bg-base-200 text-center text-sm text-base-content/70
+                  class={`${ACTION} cursor-pointer bg-base-200 text-center text-base-content/70
                     has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/45`}
                 >
                   {avatar === null ? "Escolher foto" : "Trocar foto"}
@@ -198,7 +202,7 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
                   <button
                     type="button"
                     onClick={() => setAvatar(null)}
-                    class={`${ACTION} bg-transparent text-sm text-base-content/45`}
+                    class={`${ACTION} bg-transparent text-base-content/45`}
                   >
                     Remover foto
                   </button>
@@ -210,7 +214,7 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
       </div>
 
       {problem !== null && (
-        <p role="alert" class="mt-4 text-sm text-error">
+        <p role="alert" class="mt-4 text-base text-error">
           {problem}
         </p>
       )}

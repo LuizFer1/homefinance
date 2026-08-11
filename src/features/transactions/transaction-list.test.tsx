@@ -102,7 +102,7 @@ describe("TransactionList", () => {
   });
 
   it("avisa quando não há lançamentos", () => {
-    render(
+    const { container } = render(
       <TransactionList
         items={[]}
         state={STATE}
@@ -112,7 +112,8 @@ describe("TransactionList", () => {
       />,
     );
 
-    expect(screen.getByText("Nenhum lançamento ainda.")).toBeDefined();
+    expect(screen.getByRole("heading", { name: /Nenhum lançamento ainda/i })).toBeDefined();
+    expect(container.querySelector('img[src*="undraw_enter-payment-info"]')).not.toBeNull();
   });
 
   it("pede edição do registro clicado", () => {

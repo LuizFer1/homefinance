@@ -27,7 +27,7 @@ const OPTIONS = [
 ] as const satisfies ReadonlyArray<{ value: ThemePreference; label: string }>;
 
 const SEGMENT =
-  "hf-press hf-tap rounded-selector flex h-8 w-11 cursor-pointer items-center justify-center " +
+  "hf-press hf-tap rounded-full flex h-8 w-8 cursor-pointer items-center justify-center " +
   "transition-colors duration-150 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/45";
 
 const ICON = {
@@ -86,7 +86,7 @@ export function ThemeToggle({ storage, doc }: ThemeToggleProps) {
   }
 
   return (
-    <fieldset class="rounded-field flex gap-0.5 bg-base-200/70 p-0.5">
+    <fieldset class="flex items-center gap-0.5 p-0.5">
       <legend class="sr-only">Tema</legend>
       {OPTIONS.map(({ value, label }) => (
         <label
@@ -94,7 +94,7 @@ export function ThemeToggle({ storage, doc }: ThemeToggleProps) {
           class={`${SEGMENT} ${
             preference === value
               ? "bg-base-100 text-base-content shadow-sm"
-              : "text-base-content/40"
+              : "text-base-content/35"
           }`}
         >
           <input

@@ -1,4 +1,5 @@
 import type { UserRecord } from "../../domain/projections/apply";
+import { BrandMark } from "../brand/brand-mark";
 import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
 import { ResetSection } from "./reset-section";
@@ -105,9 +106,13 @@ export function SettingsPage({
         />
       </Group>
 
-      <p class="mt-4 px-1 text-xs text-base-content/40">
-        Seus dados ficam neste aparelho. O app funciona sem internet e não depende de nenhuma conta.
-      </p>
+      <div class="mt-4 flex items-start gap-2.5 px-1">
+        <BrandMark size={28} class="mt-0.5" />
+        <p class="text-xs text-base-content/40">
+          Seus dados ficam neste aparelho. O app funciona sem internet e não depende de nenhuma
+          conta.
+        </p>
+      </div>
 
       {/*
         Por último e visualmente separado do resto: é a única ação sem desfazer
