@@ -128,9 +128,7 @@ describe("App", () => {
       <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
 
-    await waitFor(() =>
-      expect(screen.getByRole("heading", { name: /Bom dia/i })).toBeDefined(),
-    );
+    await waitFor(() => expect(screen.getByRole("heading", { name: /Bom dia/i })).toBeDefined());
     expect(screen.getByTestId("total-balance")).toBeDefined();
     expect(screen.getByText("Saldo total")).toBeDefined();
   });
@@ -226,7 +224,79 @@ describe("App", () => {
   });
 });
 
+/** Gesto horizontal na `<main>` (arraste entre abas). */
+function arrastarHorizontal(main: Element, fromX: number, toX: number) {
+  fireEvent.pointerDown(main, {
+    pointerId: 1,
+    pointerType: "touch",
+    isPrimary: true,
+    clientX: fromX,
+    clientY: 200,
+    button: 0,
+  });
+  // Passo intermédio para travar o eixo horizontal (limiar ~10px).
+  fireEvent.pointerMove(main, {
+    pointerId: 1,
+    pointerType: "touch",
+    isPrimary: true,
+    clientX: fromX + (toX > fromX ? 20 : -20),
+    clientY: 200,
+  });
+  fireEvent.pointerMove(main, {
+    pointerId: 1,
+    pointerType: "touch",
+    isPrimary: true,
+    clientX: toX,
+    clientY: 200,
+  });
+  fireEvent.pointerUp(main, {
+    pointerId: 1,
+    pointerType: "touch",
+    isPrimary: true,
+    clientX: toX,
+    clientY: 200,
+  });
+}
+
 describe("navegacao", () => {
+  it("arrastar para a esquerda vai de Inicio para Ajustes", async () => {
+    render(
+      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
+
+    const main = document.querySelector("main.hf-swipe");
+    expect(main).not.toBeNull();
+    arrastarHorizontal(main as Element, 200, 100);
+
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Configurações" })).toBeDefined(),
+    );
+    expect(naBarra().getByRole("button", { name: "Ajustes" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+  });
+
+  it("arrastar para a direita vai de Inicio para Dashboard", async () => {
+    render(
+      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
+
+    const main = document.querySelector("main.hf-swipe");
+    expect(main).not.toBeNull();
+    arrastarHorizontal(main as Element, 100, 220);
+
+    await waitFor(() => expect(screen.getByRole("region", { name: "Dashboard" })).toBeDefined());
+    expect(naBarra().getByRole("button", { name: "Dashboard" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+  });
+
   it("troca para categorias e volta para lancamentos", async () => {
     render(
       <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,

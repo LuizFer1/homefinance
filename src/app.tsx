@@ -36,6 +36,7 @@ import {
 import { greetingFor } from "./features/ui/greeting";
 import { Modal } from "./features/ui/modal";
 import { QuickActions } from "./features/ui/quick-actions";
+import { useSwipeNav } from "./features/ui/use-swipe-nav";
 
 export interface AppProps {
   store: TransactionsStore;
@@ -82,6 +83,9 @@ const SCREENS = [
 
 type ScreenId = (typeof SCREENS)[number]["id"];
 
+/** Ordem esquerda → direita do arraste (Dashboard · Início · Ajustes). */
+const SCREEN_IDS: readonly ScreenId[] = SCREENS.map((s) => s.id);
+
 const TAB =
   "hf-press flex flex-1 flex-col items-center justify-center gap-1 text-xs font-medium " +
   "transition-colors duration-150";
@@ -118,6 +122,32 @@ export function App({
     // edição da série — o extrato ficaria mentindo por omissão.
     void store.init().then(() => recurrence.materializeDue(today));
   }, [store, recurrence, today]);
+
+  // Uma condição só para os dois casos: o modal está aberto para criar
+  // (`editing` nulo) ou para editar. Dois estados independentes permitiriam
+  // abrir os dois ao mesmo tempo.
+  const modalOpen = composing !== null || editing !== null;
+
+  function goToScreen(id: ScreenId) {
+    setScreen(id);
+    // Voltar para Ajustes depois sempre cai na raiz, e não na sub-tela de onde
+    // o usuário saiu — que ele já não lembra ter deixado aberta.
+    setSection(null);
+  }
+
+  // Hook antes de qualquer return: arraste só nas três abas raiz. Modal ou
+  // sub-tela de Ajustes (perfil/cadastro) desliga o gesto para não trocar de
+  // aba no meio de um formulário.
+  const swipe = useSwipeNav({
+    screens: SCREEN_IDS,
+    screen,
+    enabled:
+      store.status.value === "ready" &&
+      !onboarding.needsOnboarding.value &&
+      section === null &&
+      !modalOpen,
+    onChange: goToScreen,
+  });
 
   if (store.status.value === "loading") {
     return (
@@ -161,11 +191,6 @@ export function App({
   const categories = listCategories(store.state.value);
   const paymentMethods = listPaymentMethods(store.state.value);
 
-  // Uma condição só para os dois casos: o modal está aberto para criar
-  // (`editing` nulo) ou para editar. Dois estados independentes permitiriam
-  // abrir os dois ao mesmo tempo.
-  const modalOpen = composing !== null || editing !== null;
-
   function closeModal() {
     setComposing(null);
     setEditing(null);
@@ -193,13 +218,6 @@ export function App({
     void store.remove(entityId);
   }
 
-  function goToScreen(id: ScreenId) {
-    setScreen(id);
-    // Voltar para Ajustes depois sempre cai na raiz, e não na sub-tela de onde
-    // o usuário saiu — que ele já não lembra ter deixado aberta.
-    setSection(null);
-  }
-
   return (
     <div class={SHELL}>
       {/*
@@ -214,9 +232,7 @@ export function App({
         >
           <div class="flex items-center justify-between gap-4">
             <div class="min-w-0 flex-1">
-              <h1 class={`${CAPTION} tracking-[0.04em]`}>
-                {greetingFor(hour, profile?.name)}
-              </h1>
+              <h1 class={`${CAPTION} tracking-[0.04em]`}>{greetingFor(hour, profile?.name)}</h1>
               <p
                 data-testid="total-balance"
                 class={`hf-display mt-0.5 text-[1.875rem] font-semibold leading-none
@@ -262,7 +278,15 @@ export function App({
         O padding inferior reserva a altura da barra mais o safe area. Sem ele o
         último item da lista fica permanentemente sob a barra, inalcançável.
       */}
-      <main class="mx-auto w-full max-w-md px-5 pb-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+2rem)]">
+      <main
+        class={`hf-swipe mx-auto w-full max-w-md px-5 pb-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+2rem)]`}
+        onPointerDown={swipe.onPointerDown}
+        onPointerMove={swipe.onPointerMove}
+        onPointerUp={swipe.onPointerUp}
+        onPointerCancel={swipe.onPointerCancel}
+        data-swiping={swipe["data-swiping"]}
+        style={swipe.style}
+      >
         {store.error.value !== null && (
           <p role="alert" class="rounded-box mt-4 bg-error/10 p-3 text-sm text-error">
             {store.error.value}

@@ -289,6 +289,29 @@
     );
   }
 
+  /*
+   * Superfície das abas: scroll vertical livre; arraste horizontal vira troca
+   * de seção (ver `use-swipe-nav`). `pan-y` evita o browser roubar o eixo X
+   * antes do JS travar o gesto. Com `data-swiping` o transform segue o dedo
+   * sem transição; ao soltar, a volta/assento usa ease-out.
+   */
+  .hf-swipe {
+    touch-action: pan-y;
+    transition: transform 200ms var(--ease-out-soft);
+  }
+
+  .hf-swipe[data-swiping="true"] {
+    touch-action: none;
+    transition: none;
+    will-change: transform;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hf-swipe {
+      transition: none;
+    }
+  }
+
   /* Feedback no pointer-down, nao no clique: esperar o release parece morto. */
   .hf-press {
     transition: transform 120ms var(--ease-out-soft);
