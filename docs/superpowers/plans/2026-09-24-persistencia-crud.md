@@ -1101,6 +1101,16 @@ git commit -m "feat(session): sessao CRUD com mutate e lote atomico"
 
 Nada disto está ligado à UI; os 578 testes antigos continuam passando.
 
+### Errata (revisão do PR #3)
+
+O code review do PR #3 pediu correções de contrato depois deste texto ter sido escrito. As tasks seguintes devem ler os arquivos, não o trecho de código acima, nestes pontos:
+
+- `repository.update` agora sanitiza `changes` antes do merge: descarta as colunas de `BaseRow` (`id`, `createdAt`, `updatedAt`, `deletedAt`, `dirty`) e qualquer entrada `undefined`, para um `changes` acidentalmente completo (ex. `{ ...outraLinha, name: "X" }`) não roubar identidade de outro registro nem apagar coluna por omissão.
+- `repository.update` e `repository.remove` envolvem `load` + `put` numa transação (`table.db.transaction("rw", table, ...)`), para dois updates concorrentes na mesma linha não perderem um ao outro (lost update).
+- `crud-session.mutate` envolve `op(repo)` numa transação da tabela e documenta que `op` deve fazer **uma única** escrita — só a linha devolvida é publicada no `state`; `clock()` e a criação do repositório entram no `try`, então uma chamada antes do `init` concluir também preenche `error`.
+- `crud-session.putRows` restringe `meta` a `Partial<Record<typeof LOCAL_USER_ID_KEY, Ulid>>` (era `Record<string, string>`), para esse caminho não conseguir sobrescrever `deviceId`.
+- `app-state.TABLE_NAMES` agora deriva de `Object.keys` sobre um `Record<TableName, true>` checado pelo compilador (mesmo padrão de `ENTITIES` em `domain/events/validate.ts`), e `EMPTY_APP_STATE` é congelado (`Object.freeze`, um nível abaixo inclusive).
+
 ---
 
 ## Task 2: Categoria e forma de pagamento
