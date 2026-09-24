@@ -129,4 +129,16 @@ describe("createCrudSession", () => {
     const session = createCrudSession(testSessionDeps(db));
     expect(() => session.clock()).toThrow("Sessão não inicializada");
   });
+
+  it("putRows com localUserId undefined não grava meta nem publica (m3)", async () => {
+    const session = createCrudSession(testSessionDeps(db));
+    await session.init();
+    const category = buildRow<Category>(session.clock(), MERCADO);
+
+    await session.putRows({ categories: [category] }, { [LOCAL_USER_ID_KEY]: undefined });
+
+    expect(session.state.value.categories[category.id]).toEqual(category);
+    expect(session.localUserId.value).toBeNull();
+    expect(await db.meta.get(LOCAL_USER_ID_KEY)).toBeUndefined();
+  });
 });
