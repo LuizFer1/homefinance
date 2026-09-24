@@ -78,6 +78,12 @@ export interface CrudSession {
    * nenhum dos dois tem motivo para reescrever a identidade do aparelho.
    */
   putRows: (rows: RowsByTable, meta?: SessionMeta) => Promise<void>;
+  /**
+   * Insere só as linhas cujo id ainda não existe no banco — nunca sobrescreve.
+   * Para identidade determinística (materialização): o state em memória pode
+   * estar velho (outra aba, sync), então a checagem é feita dentro da transação.
+   */
+  insertMissing: <K extends TableName>(table: K, rows: RowOf<K>[]) => Promise<RowOf<K>[]>;
 }
 
 function describeError(cause: unknown): string {
@@ -243,5 +249,39 @@ export function createCrudSession(deps: CrudSessionDeps): CrudSession {
     });
   }
 
-  return { state, status, error, localUserId, init, clock, mutate, putRows };
+  async function insertMissing<K extends TableName>(
+    table: K,
+    rows: RowOf<K>[],
+  ): Promise<RowOf<K>[]> {
+    const table$ = tableOf(table);
+    let inserted: RowOf<K>[] = [];
+    let existing: RowOf<K>[] = [];
+    try {
+      // `bulkGet` + `bulkAdd` isolados numa transação: sem ela, duas chamadas
+      // concorrentes poderiam ver a mesma linha como ausente e as duas
+      // tentarem inserir. `bulkAdd` também rejeita se uma linha "ausente" na
+      // leitura já existir de fato — outra rede de segurança contra a corrida.
+      await table$.db.transaction("rw", table$, async () => {
+        const ids = rows.map((row) => row.id);
+        const current = await table$.bulkGet(ids);
+        inserted = rows.filter((_, index) => current[index] === undefined);
+        existing = current.filter((row): row is RowOf<K> => row !== undefined);
+        if (inserted.length > 0) await table$.bulkAdd(inserted);
+      });
+    } catch (cause) {
+      error.value = describeError(cause);
+      throw cause;
+    }
+
+    // Publica as inseridas e as que já existiam: uma sessão com o `state`
+    // desatualizado (outra aba, boot antigo) se atualiza com o que o banco
+    // realmente tem, em vez de continuar sem saber da linha.
+    batch(() => {
+      error.value = null;
+      state.value = withRows(state.value, { [table]: [...inserted, ...existing] } as RowsByTable);
+    });
+    return inserted;
+  }
+
+  return { state, status, error, localUserId, init, clock, mutate, putRows, insertMissing };
 }

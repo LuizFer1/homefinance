@@ -141,4 +141,63 @@ describe("createCrudSession", () => {
     expect(session.localUserId.value).toBeNull();
     expect(await db.meta.get(LOCAL_USER_ID_KEY)).toBeUndefined();
   });
+
+  it("insertMissing não sobrescreve linha existente, nem apagada (I1)", async () => {
+    const session = createCrudSession(testSessionDeps(db));
+    await session.init();
+    const created = await session.mutate("categories", (repo) => repo.create(MERCADO));
+    const removed = await session.mutate("categories", (repo) => repo.remove(created.id));
+
+    // Mesmo id, conteúdo diferente: se `insertMissing` sobrescrevesse, a
+    // linha voltaria viva com outro nome — exatamente o bug que ele evita.
+    const attempt = buildRow<Category>(session.clock(), { ...MERCADO, name: "Outra" }, created.id);
+    const inserted = await session.insertMissing("categories", [attempt]);
+
+    expect(inserted).toEqual([]);
+    expect(await db.categories.get(created.id)).toEqual(removed);
+    expect(session.state.value.categories[created.id]).toEqual(removed);
+  });
+
+  it("insertMissing publica no state a linha que já existia no banco (sessão desatualizada) (I1)", async () => {
+    const stale = createCrudSession(testSessionDeps(db));
+    await stale.init(); // Estado vazio: nasce antes da linha existir.
+
+    const fresh = createCrudSession(testSessionDeps(db));
+    await fresh.init();
+    const created = await fresh.mutate("categories", (repo) => repo.create(MERCADO));
+
+    expect(stale.state.value.categories[created.id]).toBeUndefined();
+
+    const attempt = buildRow<Category>(stale.clock(), { ...MERCADO, name: "Outra" }, created.id);
+    const inserted = await stale.insertMissing("categories", [attempt]);
+
+    expect(inserted).toEqual([]);
+    // A sessão desatualizada se atualiza com o que já está no banco, em vez
+    // de continuar sem saber da linha.
+    expect(stale.state.value.categories[created.id]).toEqual(created);
+  });
+
+  it("insertMissing grava as linhas realmente ausentes e as publica", async () => {
+    const session = createCrudSession(testSessionDeps(db));
+    await session.init();
+    const novo = buildRow<Category>(session.clock(), MERCADO);
+
+    const inserted = await session.insertMissing("categories", [novo]);
+
+    expect(inserted).toEqual([novo]);
+    expect(await db.categories.get(novo.id)).toEqual(novo);
+    expect(session.state.value.categories[novo.id]).toEqual(novo);
+  });
+
+  it("insertMissing preenche error e relança se a escrita falhar", async () => {
+    const session = createCrudSession(testSessionDeps(db));
+    await session.init();
+    const novo = buildRow<Category>(session.clock(), MERCADO);
+    vi.spyOn(db.categories, "bulkAdd").mockRejectedValueOnce(new Error("quota exceeded"));
+
+    await expect(session.insertMissing("categories", [novo])).rejects.toThrow("quota exceeded");
+    expect(await db.categories.count()).toBe(0);
+    expect(session.state.value.categories).toEqual({});
+    expect(session.error.value).toBe("quota exceeded");
+  });
 });
