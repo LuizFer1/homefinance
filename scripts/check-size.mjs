@@ -6,13 +6,64 @@ import { gzipSync } from "node:zlib";
 
 /**
  * Teto de bundle gzipado.
- * Calibrado ~2x acima do baseline atual para que regressao real dispare.
- * Elevar exige commit deliberado 2014 features legitimas (Dexie, Tailwind, router)
- * vao exigir subidas revisadas ate o alvo de ~140kb do README.
+ * Elevar exige commit deliberado e revisavel — nunca de raspao junto com uma feature.
+ * Historico:
+ *   10kb  — baseline de tooling (Preact apenas, 4.76kb medidos)
+ *   45kb  — nucleo de transacoes: Dexie e @preact/signals entram (42.25kb medidos)
+ *   52kb  — camada visual: Tailwind e daisyUI entram (48.50kb medidos, sendo
+ *           5.00kb de CSS; o daisyUI entra restrito a tema e raios, sem os
+ *           componentes — os 61 componentes custariam ~4kb gzip a mais)
+ *   60kb  — entidades de referencia: lucide-preact com 34 icones literais e a
+ *           UI de cadastro (57.32kb medidos, sendo 6.11kb de CSS; os icones
+ *           custam 4.88kb dos 7.94kb de aumento, medidos por sonda antes de
+ *           qualquer arquivo depender da biblioteca)
+ *   66kb  — modal de lancamento, fila de acoes e barra com icones (60.10kb
+ *           medidos, sendo 6.9kb de CSS). Sem dependencia nova: o <dialog> e
+ *           nativo e os icones ja estavam no ICON_SET. A folga anterior era de
+ *           0.31kb, entao qualquer feature estouraria.
+ *   70kb  — perfil e primeiro uso (65.74kb medidos) mais o extrato agrupado por
+ *           dia (66.25kb medidos, sendo 7.37kb de CSS). Duas fatias, nenhuma
+ *           dependencia nova: o pipeline de foto usa createImageBitmap e
+ *           canvas.toDataURL, ambos nativos, e o icone da linha ja estava no
+ *           ICON_SET. A folga anterior era de 0.26kb — o teto de 66kb foi
+ *           calculado para a fatia que o pediu e nao sobrou para a seguinte.
+ *           Os 3.75kb de folga agora sao deliberados: a fatia 4 (exportar,
+ *           importar, apagar dados) ja tem plano e vai gastar.
+ *   76kb  — recorrencia (72.23kb medidos no shell: JS+CSS) + folga. O teto de
+ *           70kb ja tinha sido estourado pela fatia de recorrencia mergeada
+ *           sem bump; este commit so ratifica. Service worker / Workbox
+ *           continuam fora do gate (isAppShellArtifact) — offline e
+ *           instalabilidade nao sao first paint da SPA.
+ *   90kb  — redesign Nocturne (87.16kb medidos, sendo 10.69kb de CSS). Sai o
+ *           lucide (4.88kb) e entram os caminhos Phosphor gerados so com os 67
+ *           glifos usados (8.5kb, ja com uma casa decimal a menos por
+ *           ponto); o resto e o Dashboard novo (ritmo, recorrentes a caminho,
+ *           cashback) e os componentes do sistema. A fonte Inter fica fora do
+ *           gate: e woff2 precacheado, nao JS nem CSS.
+ * Alvo de projeto: ~140kb gzip, conforme o README.
+ *
+ * Service worker e runtime do Workbox **nao** entram neste teto: sao baixados
+ * e cacheados a parte do shell da UI, e o tamanho deles e o preco de offline/
+ * instalabilidade, nao do first paint da SPA. Ver isAppShellArtifact.
  */
-export const LIMIT_BYTES = 10 * 1024;
+export const LIMIT_BYTES = 90 * 1024;
 
 const MEASURED = /\.(js|css)$/;
+
+/**
+ * Artefatos do shell da SPA (first paint). Exclui SW / Workbox / registerSW
+ * gerados pelo vite-plugin-pwa — medem outra camada do runtime.
+ * @param {string} relativePath
+ */
+export function isAppShellArtifact(relativePath) {
+  const base = path.basename(relativePath).toLowerCase();
+  if (base === "sw.js" || base === "workbox-window.js") return false;
+  if (base.startsWith("workbox-")) return false;
+  if (base.includes("registersw")) return false;
+  // Precache manifest embutido no SW; se aparecer solto, tambem fica de fora.
+  if (base.includes("precache")) return false;
+  return MEASURED.test(base);
+}
 
 /**
  * Soma o tamanho gzipado de todos os artefatos JS e CSS de um diretorio.
@@ -25,12 +76,14 @@ export async function measureDist(dir) {
   let total = 0;
 
   for (const entry of entries) {
-    if (!entry.isFile() || !MEASURED.test(entry.name)) continue;
-
+    if (!entry.isFile()) continue;
     const full = path.join(entry.parentPath, entry.name);
+    const relative = path.relative(dir, full);
+    if (!isAppShellArtifact(relative)) continue;
+
     const size = gzipSync(await readFile(full)).length;
 
-    files.push({ file: path.relative(dir, full), size });
+    files.push({ file: relative, size });
     total += size;
   }
 

@@ -1,0 +1,526 @@
+@import "tailwindcss";
+
+/*
+ * Inter servida pelo proprio app, e nao pelo Google Fonts do handoff: o produto
+ * nao fala com servico externo nenhum, nem para baixar fonte. So o subset latino
+ * (portugues inteiro cabe nele); o arquivo e precacheado pelo service worker e
+ * fica fora do teto de bundle, que mede JS e CSS.
+ */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin-wght-normal.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
+ * Sistema Nocturne (handoff do redesign).
+ *
+ * `--color-*: initial` apaga a paleta padrao do Tailwind: com ela viva, um
+ * `bg-red-500` perdido passaria no review e furaria a regra de que cor aqui so
+ * entra com significado. Toda cor da tela sai destes tokens.
+ *
+ * `static` porque os valores do escuro sao redefinidos fora do `@theme` (logo
+ * abaixo), e o Tailwind so emite a variavel que ele ve sendo usada numa classe.
+ * Sem `static`, um token usado so num `style=` do JSX sumiria do CSS.
+ *
+ * O bloco do `@theme` e o tema CLARO, derivado das rampas do escuro invertidas:
+ * o handoff so desenhou o escuro. `accent-900` continua querendo dizer "fundo de
+ * item selecionado" e `accent-300` "texto sobre acento" nos dois temas — o
+ * papel e o mesmo, o valor e que troca de ponta.
+ */
+@theme static {
+  --color-*: initial;
+  --color-black: #000;
+  --color-white: #fff;
+
+  --color-bg: #f4f5fa;
+  --color-surface: #ffffff;
+  --color-fg: #1d1f2b;
+  --color-divider: color-mix(in srgb, #1d1f2b 12%, transparent);
+  --color-accent: #7466cc;
+
+  --color-accent-100: #2b2556;
+  --color-accent-200: #3d3578;
+  --color-accent-300: #52479a;
+  --color-accent-400: #6a5ec0;
+  --color-accent-500: #8578d4;
+  --color-accent-600: #a59be6;
+  --color-accent-700: #c3bbf3;
+  --color-accent-800: #e0dcfb;
+  --color-accent-900: #efedfe;
+
+  --color-neutral-100: #292b33;
+  --color-neutral-200: #3d404c;
+  --color-neutral-300: #555968;
+  --color-neutral-400: #6f7387;
+  --color-neutral-500: #8a8ea3;
+  --color-neutral-600: #a9adc0;
+  --color-neutral-700: #c9ccda;
+  --color-neutral-800: #e2e4ee;
+  --color-neutral-900: #eceef5;
+
+  /* Receita e despesa: base (barras, pontos) e -fg (texto e icone). */
+  --color-income: oklch(0.64 0.13 158);
+  --color-income-fg: oklch(0.52 0.12 158);
+  --color-expense: oklch(0.64 0.16 22);
+  --color-expense-fg: oklch(0.54 0.17 22);
+
+  /*
+   * Paleta de categoria e da pessoa: 12 tokens de nome fixo, gravados na linha.
+   * O nome nunca muda (ver `color-token.ts`); so o valor, por tema.
+   */
+  --color-tag-slate: #75798c;
+  --color-tag-rose: oklch(0.6 0.15 10);
+  --color-tag-red: oklch(0.6 0.15 32);
+  --color-tag-orange: oklch(0.62 0.14 58);
+  --color-tag-amber: oklch(0.64 0.13 85);
+  --color-tag-lime: oklch(0.62 0.14 125);
+  --color-tag-emerald: oklch(0.6 0.13 155);
+  --color-tag-teal: oklch(0.6 0.11 185);
+  --color-tag-sky: oklch(0.6 0.12 230);
+  --color-tag-indigo: oklch(0.56 0.15 265);
+  --color-tag-violet: oklch(0.56 0.17 295);
+  --color-tag-fuchsia: oklch(0.58 0.17 335);
+
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Curva do sheet e da troca de passo (handoff: cubic-bezier(.2,.8,.2,1)). */
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/*
+ * Tema escuro, com os valores literais do handoff.
+ *
+ * Duas copias do mesmo bloco, e nao uma: `data-theme` ausente devolve a decisao
+ * ao `prefers-color-scheme` (o "Sistema" de Ajustes), e `hf-dark` explicito tem
+ * que valer mesmo com o sistema claro. CSS nao tem como nomear um bloco e
+ * reaproveita-lo nos dois seletores.
+ */
+[data-theme="hf-dark"] {
+  color-scheme: dark;
+  --color-bg: #161826;
+  --color-surface: #232532;
+  --color-fg: #e9e9ed;
+  --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --color-accent: #9184d9;
+  --color-accent-100: #f5f4ff;
+  --color-accent-200: #e7e5fe;
+  --color-accent-300: #d2cefd;
+  --color-accent-400: #b5abfc;
+  --color-accent-500: #968ae0;
+  --color-accent-600: #796cbf;
+  --color-accent-700: #5d5294;
+  --color-accent-800: #423a6a;
+  --color-accent-900: #2b2741;
+  --color-neutral-100: #f3f5fe;
+  --color-neutral-200: #e4e7f5;
+  --color-neutral-300: #cfd3e5;
+  --color-neutral-400: #b2b6ca;
+  --color-neutral-500: #9397ab;
+  --color-neutral-600: #75798c;
+  --color-neutral-700: #595d6c;
+  --color-neutral-800: #3f424d;
+  --color-neutral-900: #292b31;
+  --color-income: oklch(0.8 0.12 158);
+  --color-income-fg: oklch(0.82 0.12 158);
+  --color-expense: oklch(0.74 0.13 22);
+  --color-expense-fg: oklch(0.78 0.12 22);
+  --color-tag-slate: #b2b6ca;
+  --color-tag-rose: oklch(0.76 0.11 10);
+  --color-tag-red: oklch(0.76 0.11 32);
+  --color-tag-orange: oklch(0.77 0.11 58);
+  --color-tag-amber: oklch(0.8 0.11 85);
+  --color-tag-lime: oklch(0.8 0.11 125);
+  --color-tag-emerald: oklch(0.78 0.11 155);
+  --color-tag-teal: oklch(0.78 0.1 185);
+  --color-tag-sky: oklch(0.77 0.1 230);
+  --color-tag-indigo: oklch(0.74 0.11 265);
+  --color-tag-violet: oklch(0.74 0.12 295);
+  --color-tag-fuchsia: oklch(0.76 0.12 335);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="hf-light"]) {
+    color-scheme: dark;
+    --color-bg: #161826;
+    --color-surface: #232532;
+    --color-fg: #e9e9ed;
+    --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+    --color-accent: #9184d9;
+    --color-accent-100: #f5f4ff;
+    --color-accent-200: #e7e5fe;
+    --color-accent-300: #d2cefd;
+    --color-accent-400: #b5abfc;
+    --color-accent-500: #968ae0;
+    --color-accent-600: #796cbf;
+    --color-accent-700: #5d5294;
+    --color-accent-800: #423a6a;
+    --color-accent-900: #2b2741;
+    --color-neutral-100: #f3f5fe;
+    --color-neutral-200: #e4e7f5;
+    --color-neutral-300: #cfd3e5;
+    --color-neutral-400: #b2b6ca;
+    --color-neutral-500: #9397ab;
+    --color-neutral-600: #75798c;
+    --color-neutral-700: #595d6c;
+    --color-neutral-800: #3f424d;
+    --color-neutral-900: #292b31;
+    --color-income: oklch(0.8 0.12 158);
+    --color-income-fg: oklch(0.82 0.12 158);
+    --color-expense: oklch(0.74 0.13 22);
+    --color-expense-fg: oklch(0.78 0.12 22);
+    --color-tag-slate: #b2b6ca;
+    --color-tag-rose: oklch(0.76 0.11 10);
+    --color-tag-red: oklch(0.76 0.11 32);
+    --color-tag-orange: oklch(0.77 0.11 58);
+    --color-tag-amber: oklch(0.8 0.11 85);
+    --color-tag-lime: oklch(0.8 0.11 125);
+    --color-tag-emerald: oklch(0.78 0.11 155);
+    --color-tag-teal: oklch(0.78 0.1 185);
+    --color-tag-sky: oklch(0.77 0.1 230);
+    --color-tag-indigo: oklch(0.74 0.11 265);
+    --color-tag-violet: oklch(0.74 0.12 295);
+    --color-tag-fuchsia: oklch(0.76 0.12 335);
+  }
+}
+
+:root {
+  color-scheme: light;
+  /*
+   * Altura da barra inferior (80px no handoff, 18 deles de area segura
+   * desenhada). Tres lugares dependem dela e precisam concordar: a barra, o
+   * padding que a `main` reserva para o ultimo item e o sheet.
+   */
+  --hf-nav-h: 3.875rem;
+  /* Cor do brilho do topo. O Perfil troca pela cor da pessoa. */
+  --hf-glow: var(--color-accent);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    /*
+     * Corpo de 15px em rem, para respeitar quem aumenta a fonte do sistema.
+     * Campos de formulario ficam em 16px: abaixo disso o Safari do iOS da zoom
+     * ao focar e a pagina inteira salta.
+     */
+    font-size: 0.9375rem;
+    line-height: 1.4;
+  }
+
+  html,
+  body {
+    /* O overscroll do iOS revela o fundo do html, nao o do body. */
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    overscroll-behavior-y: none;
+    caret-color: var(--color-accent);
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+
+  /*
+   * Foco do handoff: contorno de acento afastado 2px, nunca o anel azul do
+   * navegador. So `:focus-visible` — o toque nao deixa rastro.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* Todo valor em dinheiro usa digito de largura fixa, ou as colunas dançam. */
+  .hf-num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * Superficie das abas: scroll vertical livre; arraste horizontal troca de
+   * secao (ver `use-swipe-nav`). `pan-y` evita o browser roubar o eixo X antes
+   * do JS travar o gesto.
+   */
+  .hf-swipe {
+    touch-action: pan-y;
+    transition: transform 200ms var(--ease-out-soft);
+  }
+
+  .hf-swipe[data-swiping="true"] {
+    touch-action: none;
+    transition: none;
+    will-change: transform;
+  }
+
+  /* Feedback no pointer-down, nao no clique: esperar o release parece morto. */
+  .hf-press {
+    transition:
+      transform 120ms var(--ease-out-soft),
+      background-color 150ms ease,
+      border-color 150ms ease,
+      color 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  .hf-press:active {
+    transform: scale(0.97);
+  }
+
+  /*
+   * Sheet que sobe da borda de baixo (280ms no handoff).
+   *
+   * `allow-discrete` em `display` e `overlay` e o que da **saida** a um
+   * `<dialog>`: sem ele o elemento deixa o top layer no mesmo quadro do
+   * `close()` e a transicao de saida nunca roda. `@starting-style` cobre a
+   * entrada. O arraste pelo grabber escreve `--hf-drag` durante o gesto.
+   */
+  .hf-sheet {
+    transform: translateY(100%);
+    transition:
+      transform 280ms var(--ease-out-soft),
+      display 280ms allow-discrete,
+      overlay 280ms allow-discrete;
+  }
+
+  .hf-sheet[open] {
+    transform: translateY(var(--hf-drag, 0px));
+  }
+
+  .hf-sheet[data-dragging="true"] {
+    transition: none;
+  }
+
+  @starting-style {
+    .hf-sheet[open] {
+      transform: translateY(100%);
+    }
+  }
+
+  /* Scrim do handoff: preto a 55%, com fade de 200ms. */
+  .hf-sheet::backdrop {
+    background-color: color-mix(in srgb, #000 55%, transparent);
+    opacity: 0;
+    transition:
+      opacity 200ms ease,
+      display 280ms allow-discrete,
+      overlay 280ms allow-discrete;
+  }
+
+  .hf-sheet[open]::backdrop {
+    opacity: 1;
+  }
+
+  @starting-style {
+    .hf-sheet[open]::backdrop {
+      opacity: 0;
+    }
+  }
+}
+
+/*
+ * Fundo das telas principais: o brilho de acento no canto superior esquerdo e a
+ * assinatura do Nocturne. A cor vem de `--hf-glow`, que o Perfil troca pela cor
+ * da pessoa — o topo acompanha a escolha ao vivo.
+ */
+@utility hf-backdrop {
+  background:
+    radial-gradient(
+      90% 38% at 0% 0%,
+      color-mix(in srgb, var(--hf-glow) 16%, transparent),
+      transparent 70%
+    ),
+    var(--color-bg);
+  background-attachment: local;
+}
+
+/* Rotulo em caixa alta (11px/500, 0.08em, 60%). */
+@utility hf-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-fg) 60%, transparent);
+}
+
+/* Brilho de acento do botao primario e da marca. */
+@utility hf-glow {
+  box-shadow: 0 0 28px -8px color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+
+/*
+ * Item selecionado numa grade (categoria, icone): fundo `accent-900`, contorno
+ * interno de acento e brilho. Uma utility so porque os dois sao `box-shadow`:
+ * em classes separadas, a ultima apaga a outra e o contorno sumia.
+ */
+@utility hf-selected {
+  background-color: var(--color-accent-900);
+  box-shadow:
+    inset 0 0 0 1px var(--color-accent),
+    0 0 28px -8px color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+
+/*
+ * Regua que esmaece a direita: separador de lista. As ultimas 48px somem para a
+ * linha nao bater seca na borda do card.
+ */
+@utility hf-rule {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    var(--color-divider),
+    var(--color-divider) calc(100% - 48px),
+    transparent
+  );
+}
+
+/* Regua solta: esmaece nas duas pontas. */
+@utility hf-rule-both {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--color-divider) 48px,
+    var(--color-divider) calc(100% - 48px),
+    transparent
+  );
+}
+
+/*
+ * Amplia a area de toque sem mexer no desenho. So no eixo vertical: crescer na
+ * horizontal faria alvos vizinhos se sobreporem.
+ */
+@utility hf-tap {
+  position: relative;
+}
+
+.hf-tap::after {
+  content: "";
+  position: absolute;
+  inset-block: -8px;
+  inset-inline: 0;
+}
+
+/*
+ * Disclosure embutido (calendario, campos de recorrencia).
+ *
+ * Keyframe no mount, nao `@starting-style`: o painel monta com `{open && …}`, e
+ * em varios engines o `@starting-style` no primeiro paint do no inserido e
+ * ignorado. `animation` roda no insert e e previsivel.
+ */
+.hf-disclose {
+  transform-origin: top center;
+  animation: hf-disclose-in 260ms var(--ease-out-soft) both;
+}
+
+@keyframes hf-disclose-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/*
+ * Troca de passo: desliza na horizontal (220ms no handoff). A direcao vem de
+ * `data-dir`, que o assistente escreve ao avancar ou voltar.
+ */
+.hf-step {
+  animation: hf-step-next 220ms var(--ease-out-soft) both;
+}
+
+.hf-step[data-dir="back"] {
+  animation-name: hf-step-back;
+}
+
+@keyframes hf-step-next {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+@keyframes hf-step-back {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+}
+
+/*
+ * Segurar para confirmar.
+ *
+ * Existe porque excluir e a unica acao sem desfazer: a linha ganha `deletedAt`,
+ * nao ha tela para restaura-la e o sync propaga a exclusao ao outro aparelho.
+ * `clip-path` e nao `width`: largura reflui a cada quadro e escala distorceria
+ * o raio do preenchimento.
+ */
+@utility hf-hold {
+  position: relative;
+  overflow: hidden;
+}
+
+.hf-hold::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: color-mix(in oklch, var(--color-expense) 30%, transparent);
+  clip-path: inset(100% 0 0 0);
+  /* Volta rapida ao soltar: o preenchimento tem que sumir junto com o dedo. */
+  transition: clip-path 200ms var(--ease-out-soft);
+}
+
+.hf-hold[data-holding="true"]::before {
+  clip-path: inset(0 0 0 0);
+  /* Linear e longo: o preenchimento **e** o cronometro, nao um enfeite. */
+  transition-duration: 2000ms;
+  transition-timing-function: linear;
+}
+
+/* Movimento reduzido nao e ausencia de resposta — e resposta sem deslocamento. */
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * `!important` aqui nao e preguica: as utilities de transition do Tailwind
+   * ficam na mesma camada e venceriam no cascade. Uma preferencia declarada do
+   * sistema tem que ganhar de toda classe utilitaria, sem excecao.
+   */
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: preferencia do sistema vence utility */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: preferencia do sistema vence utility */
+    animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: preferencia do sistema vence utility */
+    transition-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: preferencia do sistema vence utility */
+    scroll-behavior: auto !important;
+  }
+
+  .hf-press:active {
+    transform: none;
+    opacity: 0.7;
+  }
+
+  /*
+   * Excecao deliberada a regra acima, e a unica do arquivo: o preenchimento e
+   * a leitura de quanto falta para a exclusao disparar. Zerado, o botao
+   * apagaria o lancamento dois segundos depois do toque sem ter dado sinal.
+   */
+  .hf-hold[data-holding="true"]::before {
+    /* biome-ignore lint/complexity/noImportantStyles: o preenchimento e o cronometro, ver acima */
+    transition-duration: 2000ms !important;
+  }
+}

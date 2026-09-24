@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { LIMIT_BYTES, measureDist } from "./check-size.mjs";
+import { isAppShellArtifact, LIMIT_BYTES, measureDist } from "./check-size.mjs";
 
 async function fixture(files) {
   const dir = await mkdtemp(path.join(tmpdir(), "hf-size-"));
@@ -57,6 +57,22 @@ test("devolve total zero quando nao ha artefatos", async () => {
   expect(files).toEqual([]);
 });
 
-test("o teto esta declarado em 10kb", () => {
-  expect(LIMIT_BYTES).toBe(10 * 1024);
+test("o teto esta declarado em 90kb", () => {
+  expect(LIMIT_BYTES).toBe(90 * 1024);
+});
+
+test("service worker e workbox ficam fora do teto do shell", async () => {
+  // Offline/instalabilidade tem o proprio runtime; o gate mede first paint da SPA.
+  expect(isAppShellArtifact("sw.js")).toBe(false);
+  expect(isAppShellArtifact("workbox-abc123.js")).toBe(false);
+  expect(isAppShellArtifact("assets/index-xyz.js")).toBe(true);
+
+  const dir = await fixture({
+    "assets/app.js": "console.log('hello');",
+    "sw.js": "self.addEventListener('fetch', () => {});",
+    "workbox-deadbeef.js": "export const x = 1;",
+  });
+
+  const { files } = await measureDist(dir);
+  expect(files.map((f) => path.basename(f.file))).toEqual(["app.js"]);
 });

@@ -89,12 +89,11 @@ The computer only syncs when it's on. If you turn it off, the phones continue wo
 **Mobile (PWA)**
 - Preact + TypeScript (ultra-lightweight)
 - Vite
-- Pinia (state management)
+- `@preact/signals` (state management)
 - Dexie (IndexedDB wrapper)
-- TanStack Query (data fetching)
-- Automerge (sync & CRDT)
 - TailwindCSS + daisyUI
 - Workbox (Service Workers)
+- Biome (lint + format), Vitest (tests)
 
 **Desktop (Sync Hub)**
 - Tauri
@@ -102,7 +101,26 @@ The computer only syncs when it's on. If you turn it off, the phones continue wo
 - SQLite
 - TailwindCSS + daisyUI
 
-**Bundle Size**: ~140kb gzipped
+**Bundle Size**: ~140kb gzipped — this is a product requirement, enforced in CI.
+
+### Data model
+
+Your data lives locally in IndexedDB, **one table per entity** (`users`,
+`categories`, `paymentMethods`, `transactions`, `recurrences`, plus a `meta` table for
+device state). Each row is the current state of that record, written through a single
+repository. The app loads the tables into memory at boot and every write goes to disk
+first, then to the screen.
+
+Every row carries the columns the future sync with the hub needs:
+
+- `updatedAt` — a Hybrid Logical Clock stamp, not the raw wall clock, so a phone with a
+  clock running fast can't win every conflict. Conflicts are **last-write-wins per row**.
+- `deletedAt` — deletes are logical: the row stays, marked, so the hub can propagate
+  the deletion to the other phone.
+- `dirty` — indexed `0 | 1` flag for "changed since the last sync".
+
+Recurring transactions get deterministic ids per period, so two phones that generate
+March's salary offline produce the same row instead of two salaries.
 
 ---
 
@@ -121,4 +139,7 @@ The computer only syncs when it's on. If you turn it off, the phones continue wo
 ## Links
 
 - 📱 [Repository](https://github.com/LuizFer1/HomeFinance_Mobile)
-- 📄 [Detailed Architecture](docs/ARCHITECTURE.md)
+
+Detailed design documents (architecture, event model, implementation plans) are kept in
+the surrounding workspace under `docs/`, deliberately outside this repository — they are
+working notes, not part of the shipped app.
