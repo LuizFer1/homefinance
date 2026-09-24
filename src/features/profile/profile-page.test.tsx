@@ -1,19 +1,18 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { UserRecord } from "../../domain/projections/apply";
+import { ALIVE } from "../../domain/model/row.fake";
+import type { User, UserDraft } from "../../domain/model/user";
 import { ProfilePage } from "./profile-page";
 import type { ProfileStore } from "./store";
 
 afterEach(cleanup);
 
-const PERFIL: UserRecord = {
+const PERFIL: User = {
   id: "cat-user-1",
   name: "Luiz",
   color: "teal",
   avatar: null,
-  deleted: false,
-  materialized: true,
-  fieldHlc: {},
+  ...ALIVE,
 };
 
 const FOTO = "data:image/webp;base64,AAAA";
@@ -21,16 +20,22 @@ const ARQUIVO = new File(["x"], "eu.jpg", { type: "image/jpeg" });
 
 function fakeStore(): ProfileStore {
   return {
-    editProfile: vi.fn(async () => {}),
+    editProfile: vi.fn(
+      async (_id: string, draft: UserDraft): Promise<User> => ({
+        ...PERFIL,
+        ...draft,
+      }),
+    ),
   };
 }
 
 function montar(
   over: {
-    profile?: UserRecord;
+    profile?: User;
     store?: ProfileStore;
     processFile?: (file: Blob) => Promise<string>;
     onBack?: () => void;
+    onDismissGlobalError?: () => void;
   } = {},
 ) {
   const store = over.store ?? fakeStore();
@@ -42,6 +47,7 @@ function montar(
       store={store}
       processFile={processFile}
       onBack={onBack}
+      onDismissGlobalError={over.onDismissGlobalError}
     />,
   );
   return { store, onBack, processFile };
@@ -58,7 +64,7 @@ describe("ProfilePage", () => {
     );
   });
 
-  it("salva so o patch do que mudou", async () => {
+  it("salva o draft completo, nao um patch", async () => {
     const { store, onBack } = montar();
 
     fireEvent.input(screen.getByLabelText(/seu nome/i), { target: { value: "Luís" } });
@@ -69,18 +75,39 @@ describe("ProfilePage", () => {
       expect(store.editProfile).toHaveBeenCalledWith("cat-user-1", {
         name: "Luís",
         color: "rose",
+        avatar: null,
       }),
     );
     expect(onBack).toHaveBeenCalled();
   });
 
-  it("sem mudanca nao chama a store e volta", async () => {
+  it("sem mudanca ainda volta; quem ignora a escrita e o repositorio", async () => {
     const { store, onBack } = montar();
 
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
 
     await waitFor(() => expect(onBack).toHaveBeenCalled());
-    expect(store.editProfile).not.toHaveBeenCalled();
+    expect(store.editProfile).toHaveBeenCalledWith("cat-user-1", {
+      name: "Luiz",
+      color: "teal",
+      avatar: null,
+    });
+  });
+
+  it("falha ao salvar mostra o erro, fica na tela e limpa o alerta global", async () => {
+    const store: ProfileStore = {
+      editProfile: vi.fn(async (): Promise<User> => {
+        throw new Error("disco cheio");
+      }),
+    };
+    const onDismissGlobalError = vi.fn();
+    const { onBack } = montar({ store, onDismissGlobalError });
+
+    fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/disco cheio/);
+    expect(onBack).not.toHaveBeenCalled();
+    expect(onDismissGlobalError).toHaveBeenCalledTimes(1);
   });
 
   it("nome vazio bloqueia e nao grava", async () => {
@@ -106,8 +133,14 @@ describe("ProfilePage", () => {
     fireEvent.click(screen.getByRole("button", { name: /remover foto/i }));
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
 
-    // Removeu o que nunca foi salvo: avatar continua null e o patch nao inclui foto.
-    await waitFor(() => expect(store.editProfile).not.toHaveBeenCalled());
+    // Removeu o que nunca foi salvo: o draft sai com avatar null, igual ao perfil.
+    await waitFor(() =>
+      expect(store.editProfile).toHaveBeenCalledWith("cat-user-1", {
+        name: "Luiz",
+        color: "teal",
+        avatar: null,
+      }),
+    );
   });
 
   it("grava remocao de foto existente como avatar null", async () => {
@@ -119,7 +152,11 @@ describe("ProfilePage", () => {
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
 
     await waitFor(() =>
-      expect(store.editProfile).toHaveBeenCalledWith("cat-user-1", { avatar: null }),
+      expect(store.editProfile).toHaveBeenCalledWith("cat-user-1", {
+        name: "Luiz",
+        color: "teal",
+        avatar: null,
+      }),
     );
   });
 

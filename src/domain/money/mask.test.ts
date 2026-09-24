@@ -71,7 +71,7 @@ describe("colar", () => {
 });
 
 describe("conversão para centavos", () => {
-  it("devolve o inteiro que vai para o log", () => {
+  it("devolve o inteiro que vai para o banco", () => {
     expect(minorOf("")).toBe(0);
     expect(minorOf("1")).toBe(1);
     expect(minorOf("123456")).toBe(123456);

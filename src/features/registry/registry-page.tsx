@@ -1,13 +1,14 @@
 import { useState } from "preact/hooks";
-import type { PaymentKind } from "../../domain/events/reference";
-import type { TransactionKind } from "../../domain/events/transaction";
 import type { Ulid } from "../../domain/ids/ulid";
-import type { ProjectionState, TransactionRecord } from "../../domain/projections/apply";
+import type { AppState } from "../../domain/model/app-state";
+import type { PaymentKind } from "../../domain/model/payment-method";
+import type { Transaction, TransactionKind } from "../../domain/model/transaction";
 import { categoryUsage } from "../../domain/projections/insights";
 import { monthOf } from "../../domain/projections/periods";
 import { listCategoriesFor, listPaymentMethods } from "../../domain/projections/selectors";
 import { offersCashback } from "../../domain/transactions/cashback";
 import { Icon } from "../icons/icon";
+import { ignoreHandled } from "../session/session";
 import { PageHeader } from "../ui/page-header";
 import { Segmented } from "../ui/segmented";
 import { REGISTRY_COPY, RegistryFormModal, type RegistryRecord } from "./registry-form-modal";
@@ -17,9 +18,9 @@ import type { RegistryStore } from "./store";
 
 export interface RegistryPageProps {
   entity: RegistryEntity;
-  state: ProjectionState;
+  state: AppState;
   /** Lançamentos visíveis, para a meta de uso no mês. */
-  items: TransactionRecord[];
+  items: Transaction[];
   today: string;
   store: RegistryStore;
   onBack: () => void;
@@ -68,8 +69,9 @@ export function RegistryPage({ entity, state, items, today, store, onBack }: Reg
 
   function handleDelete(id: Ulid) {
     closeModal();
-    if (isPayment) void store.removePaymentMethod(id);
-    else void store.removeCategory(id);
+    // A falha aparece pelo `session.error`; aqui só não deixa a rejeição solta.
+    if (isPayment) void store.removePaymentMethod(id).catch(ignoreHandled);
+    else void store.removeCategory(id).catch(ignoreHandled);
   }
 
   return (

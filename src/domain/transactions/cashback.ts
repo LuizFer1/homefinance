@@ -1,4 +1,4 @@
-import type { TransactionKind } from "../events/transaction";
+import type { TransactionKind } from "../model/transaction";
 
 /**
  * Se o lançamento comporta cashback.
@@ -10,10 +10,11 @@ import type { TransactionKind } from "../events/transaction";
  * Pura e num lugar só de propósito. Repetida no JSX, a metade "esconder o campo"
  * e a metade "limpar o valor" acabam divergindo — e a segunda é a que importa,
  * porque um cashback pendurado numa despesa em dinheiro é dado sujo permanente:
- * invisível na tela, presente no export, imortal no log append-only.
+ * invisível na tela, presente no export, replicado pelo sync.
  *
- * `paymentKind` é `string` e não `PaymentKind` porque vem da projeção, que aceita
- * valor desconhecido de propósito. Tipo estreito aqui obrigaria um cast na UI.
+ * `paymentKind` é `string` e não `PaymentKind` porque a linha pode vir do sync
+ * com um valor que esta versão não conhece. Tipo estreito aqui obrigaria um cast
+ * na UI.
  */
 export function offersCashback(
   paymentKind: string | null,

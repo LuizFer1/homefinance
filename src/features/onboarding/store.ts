@@ -1,7 +1,7 @@
 import { computed, type ReadonlySignal } from "@preact/signals";
-import type { UserDraft } from "../../domain/events/user";
+import type { UserDraft } from "../../domain/model/user";
 import type { Session } from "../session/session";
-import { buildOnboardingBatch } from "./seed";
+import { buildOnboardingRows } from "./seed";
 
 export interface OnboardingStore {
   needsOnboarding: ReadonlySignal<boolean>;
@@ -9,27 +9,39 @@ export interface OnboardingStore {
 }
 
 /**
- * Primeiro uso é `meta.localUserId` vazio — **não** "não existe `user` no log".
- *
- * Depois de sincronizar com outra pessoa, o perfil dela estaria no log e este
- * aparelho pularia o cadastro; todo lançamento seguinte sairia sem autor, que é
- * exatamente o cenário para o qual a cor de autor existe.
- *
- * O `status === "ready"` importa: sem ele o wizard pisca antes de o disco
- * responder, e quem já se cadastrou vê a tela de boas-vindas por um frame.
+ * Primeiro uso é `localUserId` vazio, não "não existe user na tabela": depois
+ * do sync o perfil da outra pessoa estará lá. O `ready` evita o wizard piscar
+ * antes de o disco responder.
  */
 export function createOnboardingStore(session: Session): OnboardingStore {
+  // Promise em voo, guardada na closure. Um duplo toque no botão do wizard
+  // (ex. o segundo toque chega antes do primeiro `await` devolver) dispara
+  // duas chamadas a `complete` antes de `localUserId` ser publicado — checar
+  // só `localUserId.value !== null` não pega isso, porque as duas leituras
+  // acontecem quando o signal ainda está nulo. Guardando a promise, a segunda
+  // chamada devolve a mesma semeadura em vez de rodar `putRows` de novo.
+  let inFlight: Promise<void> | null = null;
+
+  async function complete(draft: UserDraft): Promise<void> {
+    if (session.localUserId.value !== null) return;
+    if (inFlight !== null) return inFlight;
+
+    const { rows, meta } = buildOnboardingRows(draft, session.clock());
+    // Uma transação só: falha não deixa app meio semeado, e `localUserId`
+    // continua nulo, então o usuário volta ao wizard.
+    inFlight = session.putRows(rows, meta).finally(() => {
+      // Limpa a referência sempre, sucesso ou falha: em sucesso, `localUserId`
+      // já barra uma nova semeadura pelo guard acima; em falha, uma nova
+      // tentativa precisa poder rodar `putRows` de novo.
+      inFlight = null;
+    });
+    return inFlight;
+  }
+
   return {
     needsOnboarding: computed(
       () => session.status.value === "ready" && session.localUserId.value === null,
     ),
-
-    async complete(draft: UserDraft): Promise<void> {
-      const { events, meta } = buildOnboardingBatch(draft, session.clock());
-      // Uma escrita só, atômica. Falha não deixa nada gravado, e
-      // `needsOnboarding` continua verdadeiro porque `localUserId` não mudou —
-      // o usuário volta ao wizard em vez de cair num app meio semeado.
-      await session.commitBatch(events, meta);
-    },
+    complete,
   };
 }

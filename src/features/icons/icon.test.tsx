@@ -13,7 +13,7 @@ describe("Icon", () => {
   });
 
   it("cai no ícone neutro para chave desconhecida", () => {
-    // O log é eterno: um aparelho de versão mais nova pode gravar uma chave que
+    // Via sync, um aparelho de versão mais nova pode gravar uma chave que
     // esta versão não conhece. Não renderizar nada deixaria o item sem âncora
     // visual e o usuário sem entender o que sumiu.
     render(<Icon name="chave-de-uma-versao-futura" />);
@@ -78,7 +78,7 @@ describe("Icon", () => {
     expect(filled.querySelector("path")?.getAttribute("d")).not.toBe(regular);
   });
 
-  it("aceita nome de interface do Phosphor além das chaves do log", () => {
+  it("aceita nome de interface do Phosphor além das chaves gravadas", () => {
     render(<Icon name="arrow-right" />);
 
     expect(screen.getByTestId("icon-arrow-right")).toBeDefined();

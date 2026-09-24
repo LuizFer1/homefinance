@@ -1,5 +1,4 @@
-import type { ColorToken } from "../../domain/events/reference";
-import { COLOR_TOKENS, NEUTRAL_TOKEN } from "../../domain/projections/entities";
+import { COLOR_TOKENS, type ColorToken, NEUTRAL_TOKEN } from "../../domain/model/tokens";
 
 export { COLOR_TOKENS };
 
@@ -11,8 +10,8 @@ export const FALLBACK_TOKEN = NEUTRAL_TOKEN;
 /**
  * Nome que a pessoa lê, por token.
  *
- * O token gravado no log é o nome técnico antigo (`red`, `indigo`…) e **não
- * muda**: renomear exigiria reescrever evento. O redesign recalculou o valor de
+ * O token gravado no banco é o nome técnico antigo (`red`, `indigo`…) e **não
+ * muda**: renomear exigiria reescrever as linhas de todo aparelho. O redesign recalculou o valor de
  * cada um — `red` virou um coral, `indigo` um azul —, então o nome exibido segue
  * o valor novo, não a chave.
  */
@@ -42,7 +41,7 @@ export function colorName(token: string): string {
  * Os valores moram no CSS e não num objeto TypeScript: é isso que faz o tema
  * escuro funcionar sem JavaScript e sem um segundo lugar para esquecer de
  * atualizar. Token desconhecido — vindo de uma versão futura via sync — cai no
- * neutro; o fold aceitou o valor de propósito, e descartar aqui perderia a
+ * neutro na tela; a linha guarda o valor como veio, e descartar aqui perderia a
  * informação para sempre.
  */
 export function cssVarForToken(token: string): string {

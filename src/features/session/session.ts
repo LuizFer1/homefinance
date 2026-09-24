@@ -1,109 +1,197 @@
 import { batch, type Signal, signal } from "@preact/signals";
-import type { EventStore } from "../../data/event-store";
-import { createDeviceClock, type DeviceClock } from "../../domain/clock/device-clock";
-import { compareHlc } from "../../domain/clock/hlc";
-import type { DomainEvent } from "../../domain/events/types";
-import { isValidEvent } from "../../domain/events/validate";
+import type { Table } from "dexie";
+import type { HomeFinanceDb } from "../../data/db";
+import { createRepository, type Repository } from "../../data/repository";
+import { compareHlc, parseHlc } from "../../domain/clock/hlc";
+import { createRowClock, type RowClock } from "../../domain/clock/row-clock";
 import { createUlidFactory, type RandomChunk, type Ulid } from "../../domain/ids/ulid";
-import { apply, EMPTY_STATE, fold, type ProjectionState } from "../../domain/projections/apply";
+import {
+  type AppState,
+  EMPTY_APP_STATE,
+  type RowOf,
+  type RowsByTable,
+  TABLE_NAMES,
+  type TableName,
+} from "../../domain/model/app-state";
+import type { BaseRow } from "../../domain/model/base";
 
 const DEVICE_ID_KEY = "deviceId";
 
 /**
- * Qual perfil sou **eu**, neste aparelho.
- *
- * Estado de dispositivo, fora do log e nunca sincronizado — mora ao lado do
- * `deviceId` pelo mesmo motivo: responde o que este aparelho é, não o que a base
- * contém. Derivar o primeiro uso de "existe algum `user` no log" quebraria assim
- * que houvesse sync: o perfil da outra pessoa estaria lá, este aparelho pularia
- * o cadastro, e todo lançamento seguinte nasceria sem autor.
+ * Qual perfil sou **eu** neste aparelho. Estado de dispositivo, nunca
+ * sincronizado: depois do sync o perfil da outra pessoa estará na tabela, e
+ * derivar o primeiro uso de "existe algum user" pularia o cadastro.
  */
 export const LOCAL_USER_ID_KEY = "localUserId";
+
+/**
+ * Formato de `meta` aceito por `putRows`: só `localUserId`, nunca `deviceId`.
+ * Exportado para quem monta o lote fora da sessão (ex. `buildOnboardingRows`)
+ * declarar o mesmo tipo em vez de reinventar um `Record<string, string>` que
+ * o compilador não amarraria a este contrato.
+ */
+export type SessionMeta = Partial<Record<typeof LOCAL_USER_ID_KEY, Ulid>>;
 
 export type SessionStatus = "loading" | "ready" | "error";
 
 export interface SessionDeps {
-  events: EventStore;
+  db: HomeFinanceDb;
   now: () => number;
   randomChunk: RandomChunk;
 }
 
 /**
- * O que as stores de domínio compartilham num aparelho.
- *
- * Uma projeção por store divergiria — a fatia 3 precisa ler categoria e
- * transação do mesmo estado — e um relógio por store entrelaçaria os HLCs,
- * forçando refold do log inteiro a cada escrita. Ambos moram aqui, criados uma
- * vez no bootstrap, e as stores só trazem os construtores de evento.
+ * Estado em memória e porta de escrita compartilhados por todas as stores.
+ * Grava primeiro, publica depois: se o banco rejeitar, a tela não muda.
  */
 export interface Session {
-  state: Signal<ProjectionState>;
+  state: Signal<AppState>;
   status: Signal<SessionStatus>;
   error: Signal<string | null>;
-  /** Nulo enquanto o wizard de primeiro uso não concluiu **neste** aparelho. */
+  /** Nulo enquanto o primeiro uso não concluiu **neste** aparelho. */
   localUserId: Signal<Ulid | null>;
   init: () => Promise<void>;
-  /** Persiste antes de exibir: se o append rejeitar, a projeção não muda. */
-  commit: (event: DomainEvent) => Promise<void>;
-  /**
-   * Escrita atômica de vários eventos mais chaves de `meta`. Se a persistência
-   * rejeitar, nada muda — nem o disco, nem a projeção, nem `localUserId`.
-   */
-  commitBatch: (events: DomainEvent[], meta: Record<string, string>) => Promise<void>;
   /** Lança se chamado antes de `init` concluir. */
-  clock: () => DeviceClock;
+  clock: () => RowClock;
+  /**
+   * Uma escrita atômica numa tabela: `op` deve fazer **uma única** chamada ao
+   * repositório (a linha que ela devolve é a única publicada no `state`). Se
+   * `op` gravar mais de uma vez, só a devolvida entra no estado em memória —
+   * mesmo que a transação grave as duas no banco. Falha (incluindo `clock()`
+   * chamado antes do `init` concluir) preenche `error` **e relança**; nada
+   * fica gravado, porque `op` roda dentro da transação da tabela.
+   *
+   * Dentro de `op`, só chamadas ao repositório — nenhum `await` de outra
+   * coisa. Qualquer `await` que não seja do IndexedDB (rede, `setTimeout`,
+   * processamento de imagem) encerra a transação do Dexie por inatividade
+   * (`TransactionInactiveError`), e uma subtransação que falha aborta a
+   * externa mesmo que quem chamou `mutate` capture o erro num `try/catch`.
+   */
+  mutate: <K extends TableName>(
+    table: K,
+    op: (repo: Repository<RowOf<K>>) => Promise<RowOf<K>>,
+  ) => Promise<RowOf<K>>;
+  /**
+   * Lote atômico de linhas prontas (`buildRow`) mais, opcionalmente,
+   * `localUserId`. Restrito a essa única chave — nunca `deviceId` — porque
+   * `putRows` é a porta de lotes usada por primeiro uso e materialização, e
+   * nenhum dos dois tem motivo para reescrever a identidade do aparelho.
+   */
+  putRows: (rows: RowsByTable, meta?: SessionMeta) => Promise<void>;
+  /**
+   * Insere só as linhas cujo id ainda não existe no banco — nunca sobrescreve.
+   * Para identidade determinística (materialização): o state em memória pode
+   * estar velho (outra aba, sync), então a checagem é feita dentro da transação.
+   *
+   * Ids em `rows` precisam ser únicos: repetido derruba o lote com
+   * ConstraintError.
+   */
+  insertMissing: <K extends TableName>(table: K, rows: RowOf<K>[]) => Promise<RowOf<K>[]>;
 }
 
-function describeError(cause: unknown): string {
+/** Mensagem legível de uma falha qualquer, para `error` e para as telas. */
+export function describeError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+/**
+ * Para chamadas fire-and-forget da UI. A falha já está em `session.error`, que
+ * a tela mostra; isto só impede a rejeição de virar "unhandled".
+ */
+export function ignoreHandled(): void {}
+
+function toRecord<T extends BaseRow>(rows: readonly T[]): Record<Ulid, T> {
+  return Object.fromEntries(rows.map((row) => [row.id, row]));
+}
+
+/**
+ * Semente do relógio: o maior HLC já gravado, para ele não regredir.
+ *
+ * `parseHlc` descarta qualquer valor que não seja um HLC bem formado — uma
+ * coluna corrompida ou de uma versão futura do schema não pode virar semente,
+ * porque `compareHlc` é comparação de string pura e um valor fora do formato
+ * de largura fixa compararia como maior ou menor sem relação com o instante
+ * real.
+ */
+function latestHlc(state: AppState): string | null {
+  let max: string | null = null;
+  for (const table of TABLE_NAMES) {
+    for (const row of Object.values(state[table])) {
+      for (const hlc of [row.updatedAt, row.deletedAt]) {
+        if (hlc !== null && parseHlc(hlc) !== null && (max === null || compareHlc(hlc, max) > 0)) {
+          max = hlc;
+        }
+      }
+    }
+  }
+  return max;
+}
+
+/**
+ * Substitui as linhas recebidas no estado. O cast existe porque a chave
+ * computada de um `TableName` em união não deixa o TypeScript provar que cada
+ * lista cai no bucket certo; `RowsByTable` garante isso por construção.
+ */
+function withRows(state: AppState, rows: RowsByTable): AppState {
+  let next = state;
+  for (const table of TABLE_NAMES) {
+    const list = rows[table];
+    if (list === undefined || list.length === 0) continue;
+    next = { ...next, [table]: { ...next[table], ...toRecord<BaseRow>(list) } } as AppState;
+  }
+  return next;
+}
+
 export function createSession(deps: SessionDeps): Session {
-  const state = signal<ProjectionState>(EMPTY_STATE);
+  const state = signal<AppState>(EMPTY_APP_STATE);
   const status = signal<SessionStatus>("loading");
   const error = signal<string | null>(null);
   const localUserId = signal<Ulid | null>(null);
+  let rowClock: RowClock | null = null;
 
-  let log: DomainEvent[] = [];
-  let device: DeviceClock | null = null;
+  function clock(): RowClock {
+    if (rowClock === null) throw new Error("Sessão não inicializada");
+    return rowClock;
+  }
+
+  function tableOf<K extends TableName>(table: K): Table<RowOf<K>, string> {
+    return deps.db.table<RowOf<K>, string>(table);
+  }
 
   async function init(): Promise<void> {
     try {
-      const nextUlid = createUlidFactory(deps.randomChunk);
-      const stored = await deps.events.getMeta(DEVICE_ID_KEY);
-      const deviceId: Ulid = stored ?? nextUlid(deps.now());
-      if (stored === null) await deps.events.setMeta(DEVICE_ID_KEY, deviceId);
+      const stored = await deps.db.meta.get(DEVICE_ID_KEY);
+      const deviceId = stored?.value ?? createUlidFactory(deps.randomChunk)(deps.now());
+      if (stored === undefined) await deps.db.meta.put({ key: DEVICE_ID_KEY, value: deviceId });
 
-      const perfilLocal = await deps.events.getMeta(LOCAL_USER_ID_KEY);
+      const perfil = (await deps.db.meta.get(LOCAL_USER_ID_KEY))?.value ?? null;
+      const [users, categories, paymentMethods, transactions, recurrences] = await Promise.all([
+        deps.db.users.toArray(),
+        deps.db.categories.toArray(),
+        deps.db.paymentMethods.toArray(),
+        deps.db.transactions.toArray(),
+        deps.db.recurrences.toArray(),
+      ]);
+      const loaded: AppState = {
+        users: toRecord(users),
+        categories: toRecord(categories),
+        paymentMethods: toRecord(paymentMethods),
+        transactions: toRecord(transactions),
+        recurrences: toRecord(recurrences),
+      };
 
-      const bruto = await deps.events.readAll();
-      log = bruto.filter(isValidEvent);
-
-      const descartados = bruto.length - log.length;
-      if (descartados > 0) {
-        // Descartar em silêncio faz um evento corrompido sumir do estado do usuário
-        // sem deixar rastro. O log append-only é eterno: isso vai acontecer um dia.
-        console.warn(`HomeFinance: ${descartados} evento(s) invalido(s) descartado(s) do log.`);
-      }
-
-      // O relógio é recuperado do próprio log: um estado persistido a menos para
-      // dessincronizar.
-      const latest = log.reduce<string | null>(
-        (max, event) => (max === null || compareHlc(event.hlc, max) > 0 ? event.hlc : max),
-        null,
-      );
-      device = createDeviceClock({
+      rowClock = createRowClock({
         deviceId,
-        initialHlc: latest,
+        initialHlc: latestHlc(loaded),
         now: deps.now,
         randomChunk: deps.randomChunk,
       });
 
-      // Uma atualização só: um render com `status` pronto e `state` ainda vazio
-      // faria a tela piscar "Nenhum lançamento ainda" antes dos dados do disco.
+      // Uma atualização só: `ready` com estado vazio faria a tela piscar
+      // "Nenhum lançamento ainda" antes dos dados do disco.
       batch(() => {
-        state.value = fold(log);
-        localUserId.value = perfilLocal;
+        state.value = loaded;
+        localUserId.value = perfil;
         status.value = "ready";
       });
     } catch (cause) {
@@ -114,59 +202,96 @@ export function createSession(deps: SessionDeps): Session {
     }
   }
 
-  async function commit(event: DomainEvent): Promise<void> {
+  async function mutate<K extends TableName>(
+    table: K,
+    op: (repo: Repository<RowOf<K>>) => Promise<RowOf<K>>,
+  ): Promise<RowOf<K>> {
+    let row: RowOf<K>;
     try {
-      await deps.events.append(event);
+      // `clock()` entra no try: chamar `mutate` antes do `init` concluir é um
+      // erro de uso, mas ainda precisa preencher `error` como qualquer outra
+      // falha de escrita — quem só observa o signal não pode perder o motivo.
+      const table$ = tableOf(table);
+      const repo = createRepository(table$, clock());
+      // A transação torna `op` atômico: se ela gravar e depois lançar, o
+      // Dexie desfaz a gravação. `repository.update`/`remove` reaproveitam
+      // esta mesma transação em vez de abrir uma própria.
+      row = await table$.db.transaction("rw", table$, () => op(repo));
     } catch (cause) {
       error.value = describeError(cause);
-      return;
+      throw cause;
     }
-
-    log = [...log, event];
-
-    const current = state.value;
-    const outOfOrder = current.lastHlc !== null && compareHlc(event.hlc, current.lastHlc) <= 0;
-    const next = outOfOrder ? fold(log) : apply(current, event);
-
     batch(() => {
       error.value = null;
-      state.value = next;
+      state.value = withRows(state.value, { [table]: [row] } as RowsByTable);
+    });
+    return row;
+  }
+
+  async function putRows(rows: RowsByTable, meta: SessionMeta = {}): Promise<void> {
+    const tables = TABLE_NAMES.filter((table) => (rows[table]?.length ?? 0) > 0);
+    try {
+      await deps.db.transaction(
+        "rw",
+        [...tables.map((table) => deps.db.table(table)), deps.db.meta],
+        async () => {
+          for (const table of tables) await deps.db.table(table).bulkPut(rows[table] ?? []);
+          // `value === undefined` é descartado: `{ localUserId: undefined }`
+          // compila (a chave é opcional) mas, sem este filtro, gravaria
+          // `{ key: "localUserId" }` sem `value` no IndexedDB — uma linha de
+          // `meta` corrompida em vez de simplesmente não escrever nada.
+          for (const [key, value] of Object.entries(meta)) {
+            if (value === undefined) continue;
+            await deps.db.meta.put({ key, value });
+          }
+        },
+      );
+    } catch (cause) {
+      error.value = describeError(cause);
+      throw cause;
+    }
+
+    const perfil = meta[LOCAL_USER_ID_KEY];
+    batch(() => {
+      error.value = null;
+      state.value = withRows(state.value, rows);
+      if (perfil !== undefined) localUserId.value = perfil;
     });
   }
 
-  async function commitBatch(events: DomainEvent[], meta: Record<string, string>): Promise<void> {
+  async function insertMissing<K extends TableName>(
+    table: K,
+    rows: RowOf<K>[],
+  ): Promise<RowOf<K>[]> {
+    const table$ = tableOf(table);
+    let inserted: RowOf<K>[] = [];
+    let existing: RowOf<K>[] = [];
     try {
-      await deps.events.appendBatch(events, meta);
+      // `bulkGet` + `bulkAdd` isolados numa transação: sem ela, duas chamadas
+      // concorrentes poderiam ver a mesma linha como ausente e as duas
+      // tentarem inserir. `bulkAdd` também rejeita se uma linha "ausente" na
+      // leitura já existir de fato — outra rede de segurança contra a corrida.
+      await table$.db.transaction("rw", table$, async () => {
+        const ids = rows.map((row) => row.id);
+        const current = await table$.bulkGet(ids);
+        inserted = rows.filter((_, index) => current[index] === undefined);
+        existing = current.filter((row): row is RowOf<K> => row !== undefined);
+        if (inserted.length > 0) await table$.bulkAdd(inserted);
+      });
     } catch (cause) {
       error.value = describeError(cause);
-      return;
+      throw cause;
     }
 
-    log = [...log, ...events];
-    // Refold em vez de `apply` em sequência: o lote é raro — primeiro uso e, na
-    // fatia 4, import de backup — e refoldar é sempre correto, enquanto aplicar
-    // N eventos aqui exigiria repetir a decisão de ordem que o `fold` já toma.
-    const next = fold(log);
-    const perfilLocal = meta[LOCAL_USER_ID_KEY];
-
+    // Publica as inseridas e as que já existiam: uma sessão com o `state`
+    // desatualizado (outra aba, boot antigo) se atualiza com o que o banco
+    // realmente tem, em vez de continuar sem saber da linha.
     batch(() => {
       error.value = null;
-      state.value = next;
-      if (perfilLocal !== undefined) localUserId.value = perfilLocal;
+      state.value = withRows(state.value, { [table]: [...inserted, ...existing] } as RowsByTable);
     });
+    return inserted;
   }
 
-  return {
-    state,
-    status,
-    error,
-    localUserId,
-    init,
-    commit,
-    commitBatch,
-    clock: () => {
-      if (device === null) throw new Error("Sessão não inicializada");
-      return device;
-    },
-  };
+  return { state, status, error, localUserId, init, clock, mutate, putRows, insertMissing };
 }

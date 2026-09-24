@@ -1,10 +1,11 @@
 import { useState } from "preact/hooks";
-import type { ColorToken } from "../../domain/events/reference";
-import type { UserDraft } from "../../domain/events/user";
+import type { ColorToken } from "../../domain/model/tokens";
+import type { UserDraft } from "../../domain/model/user";
 import { BrandMark } from "../brand/brand-mark";
 import { colorName, cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 import { Avatar, MiniAvatar } from "../profile/avatar-view";
+import { describeError } from "../session/session";
 import { Button, SECONDARY } from "../ui/button";
 import { HINT, LABEL } from "../ui/field";
 import { MINUS } from "../ui/money";
@@ -32,10 +33,6 @@ const SUPPORT = [
   "Ela marca os lançamentos que você criar — útil quando o app for compartilhado.",
   "Opcional. Sem foto, usamos sua inicial sobre a cor escolhida.",
 ] as const;
-
-function describeError(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
 
 /**
  * Boas-vindas em três decisões: nome, cor, foto.

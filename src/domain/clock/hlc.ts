@@ -46,9 +46,9 @@ export function compareHlc(a: string, b: string): number {
 }
 
 export interface HlcClock {
-  /** Avança o relógio e devolve o HLC de um novo evento local. */
+  /** Avança o relógio e devolve o HLC de uma nova escrita local. */
   tick: (wall: number) => string;
-  /** Salta para `max(local, remoto)` ao receber um evento de fora. */
+  /** Salta para `max(local, remoto)` ao receber uma linha de fora. */
   observe: (remote: string) => void;
   current: () => string;
 }
@@ -58,9 +58,9 @@ export function createHlcClock(deviceId: Ulid, initial?: string | null): HlcCloc
   let counter = 0;
 
   // `initial` inválido é ignorado e o relógio nasce em zero. Silêncio deliberado:
-  // a store deriva `initial` do maior HLC do log, e todo evento do log já passou
-  // por `isValidEvent`, que rejeita HLC que não parseia. Lançar aqui transformaria
-  // um `meta` corrompido em app que não abre, o que é pior que um relógio atrasado.
+  // a sessão deriva `initial` do maior HLC gravado nas tabelas, e já descarta ali
+  // o valor que não parseia. Lançar aqui transformaria uma coluna corrompida em
+  // app que não abre, o que é pior que um relógio atrasado.
   if (initial !== undefined && initial !== null) {
     const parsed = parseHlc(initial);
     if (parsed !== null) {

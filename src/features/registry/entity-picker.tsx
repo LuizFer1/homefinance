@@ -1,5 +1,6 @@
 import type { Ulid } from "../../domain/ids/ulid";
-import type { ReferenceRecord } from "../../domain/projections/apply";
+import type { Category } from "../../domain/model/category";
+import type { PaymentMethod } from "../../domain/model/payment-method";
 import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 
@@ -11,7 +12,7 @@ export interface EntityPickerProps {
   emptyLabel: string;
   /** Mostrado quando não há nenhuma entidade cadastrada. */
   emptyHint: string;
-  items: ReferenceRecord[];
+  items: (Category | PaymentMethod)[];
   value: Ulid | null;
   /** Rótulo do registro apagado que ainda está selecionado, se houver. */
   deadLabel: string;

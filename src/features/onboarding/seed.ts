@@ -1,13 +1,13 @@
-import type { DeviceClock } from "../../domain/clock/device-clock";
-import type { CategoryDraft, PaymentMethodDraft } from "../../domain/events/reference";
-import { categoryCreated, paymentMethodCreated } from "../../domain/events/reference";
-import type { DomainEvent } from "../../domain/events/types";
-import type { UserDraft } from "../../domain/events/user";
-import { userCreated } from "../../domain/events/user";
-import { LOCAL_USER_ID_KEY } from "../session/session";
+import { buildRow } from "../../data/repository";
+import type { RowClock } from "../../domain/clock/row-clock";
+import type { RowsByTable } from "../../domain/model/app-state";
+import type { Category, CategoryDraft } from "../../domain/model/category";
+import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
+import type { User, UserDraft } from "../../domain/model/user";
+import { LOCAL_USER_ID_KEY, type SessionMeta } from "../session/session";
 
 /**
- * Os quatro padrão são **eventos comuns**, não constantes: dá para renomear
+ * Os quatro padrão são cadastros comuns, não constantes: dá para renomear
  * "Pix" para "Pix Nubank", trocar a cor e apagar o que não usa. Constantes
  * embutidas virariam caso especial em toda tela e não sobreviveriam ao primeiro
  * usuário que quisesse dois cartões.
@@ -20,7 +20,7 @@ const DEFAULT_METHODS: readonly PaymentMethodDraft[] = [
 ];
 
 /**
- * Categorias padrão, pelo mesmo argumento dos métodos: eventos comuns, não
+ * Categorias padrão, pelo mesmo argumento dos métodos: cadastros comuns, não
  * constantes. São renomeáveis, recoloríveis e apagáveis.
  *
  * A lista é curta de propósito. Um app que abre com trinta categorias obriga o
@@ -45,36 +45,21 @@ const DEFAULT_CATEGORIES: readonly CategoryDraft[] = [
   { name: "Transferência", icon: "landmark", color: "slate", kind: "both" },
 ];
 
-export interface OnboardingBatch {
-  events: DomainEvent[];
-  meta: Record<string, string>;
+export interface OnboardingRows {
+  rows: RowsByTable;
+  /** Mesmo tipo de `putRows`, reaproveitado para o compilador amarrar os dois. */
+  meta: SessionMeta;
 }
 
-/**
- * Monta o lote; não escreve nada.
- *
- * Quem escreve é a store, com `commitBatch`. Separar assim é o que torna a ordem
- * e o conteúdo do lote testáveis sem `fake-indexeddb`, e é o que permite afirmar
- * num teste que todos os eventos nascem com HLCs distintos e crescentes — a
- * garantia que impede alguém contornar o relógio montando envelopes na mão.
- *
- * O perfil vem antes do resto porque um lote interrompido não pode deixar
- * cadastros existindo sem o perfil que os semeou. Na prática a escrita é atômica
- * e nunca chega interrompida; a ordem é a segunda linha de defesa.
- */
-export function buildOnboardingBatch(draft: UserDraft, clock: DeviceClock): OnboardingBatch {
-  const user = clock.newEntity();
-
+/** Monta o lote; não grava. Quem grava é a store, numa transação só. */
+export function buildOnboardingRows(draft: UserDraft, clock: RowClock): OnboardingRows {
+  const user = buildRow<User>(clock, draft);
   return {
-    events: [
-      userCreated({ ...user, draft }),
-      ...DEFAULT_METHODS.map((method) =>
-        paymentMethodCreated({ ...clock.newEntity(), draft: method }),
-      ),
-      ...DEFAULT_CATEGORIES.map((category) =>
-        categoryCreated({ ...clock.newEntity(), draft: category }),
-      ),
-    ],
-    meta: { [LOCAL_USER_ID_KEY]: user.entityId },
+    rows: {
+      users: [user],
+      paymentMethods: DEFAULT_METHODS.map((m) => buildRow<PaymentMethod>(clock, m)),
+      categories: DEFAULT_CATEGORIES.map((c) => buildRow<Category>(clock, c)),
+    },
+    meta: { [LOCAL_USER_ID_KEY]: user.id },
   };
 }

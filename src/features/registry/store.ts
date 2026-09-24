@@ -1,67 +1,35 @@
-import type {
-  CategoryDraft,
-  CategoryPatch,
-  PaymentMethodDraft,
-  PaymentMethodPatch,
-} from "../../domain/events/reference";
-import {
-  categoryCreated,
-  categoryDeleted,
-  categoryUpdated,
-  paymentMethodCreated,
-  paymentMethodDeleted,
-  paymentMethodUpdated,
-} from "../../domain/events/reference";
 import type { Ulid } from "../../domain/ids/ulid";
+import type { Category, CategoryDraft } from "../../domain/model/category";
+import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
 import type { Session } from "../session/session";
 
+/**
+ * Cadastro de categorias e formas de pagamento. `edit` recebe o draft inteiro:
+ * com LWW por linha não existe patch, e o repositório já ignora edição sem
+ * mudança.
+ */
 export interface RegistryStore {
-  addCategory: (draft: CategoryDraft) => Promise<void>;
-  editCategory: (entityId: Ulid, patch: CategoryPatch) => Promise<void>;
-  removeCategory: (entityId: Ulid) => Promise<void>;
-  addPaymentMethod: (draft: PaymentMethodDraft) => Promise<void>;
-  editPaymentMethod: (entityId: Ulid, patch: PaymentMethodPatch) => Promise<void>;
-  removePaymentMethod: (entityId: Ulid) => Promise<void>;
-}
-
-/** Patch vazio não vira evento: um log append-only não merece lixo permanente. */
-function isEmpty(patch: object): boolean {
-  return Object.keys(patch).length === 0;
+  addCategory: (draft: CategoryDraft) => Promise<Category>;
+  editCategory: (id: Ulid, draft: CategoryDraft) => Promise<Category>;
+  removeCategory: (id: Ulid) => Promise<Category>;
+  addPaymentMethod: (draft: PaymentMethodDraft) => Promise<PaymentMethod>;
+  editPaymentMethod: (id: Ulid, draft: PaymentMethodDraft) => Promise<PaymentMethod>;
+  removePaymentMethod: (id: Ulid) => Promise<PaymentMethod>;
 }
 
 /**
- * Porta de escrita única das entidades de referência.
- *
- * Não guarda estado próprio: relógio, projeção e persistência vêm da `Session`,
- * compartilhada com a store de transações. Uma projeção separada divergiria, e um
- * relógio separado entrelaçaria os HLCs.
+ * Não guarda estado próprio: relógio, estado em memória e persistência vêm da
+ * `Session`, compartilhada com a store de transações. Cada método faz uma
+ * única chamada ao repositório dentro de `mutate`, como o contrato exige.
  */
 export function createRegistryStore(session: Session): RegistryStore {
   return {
-    async addCategory(draft: CategoryDraft): Promise<void> {
-      await session.commit(categoryCreated({ ...session.clock().newEntity(), draft }));
-    },
-
-    async editCategory(entityId: Ulid, patch: CategoryPatch): Promise<void> {
-      if (isEmpty(patch)) return;
-      await session.commit(categoryUpdated({ ...session.clock().envelope(entityId), patch }));
-    },
-
-    async removeCategory(entityId: Ulid): Promise<void> {
-      await session.commit(categoryDeleted(session.clock().envelope(entityId)));
-    },
-
-    async addPaymentMethod(draft: PaymentMethodDraft): Promise<void> {
-      await session.commit(paymentMethodCreated({ ...session.clock().newEntity(), draft }));
-    },
-
-    async editPaymentMethod(entityId: Ulid, patch: PaymentMethodPatch): Promise<void> {
-      if (isEmpty(patch)) return;
-      await session.commit(paymentMethodUpdated({ ...session.clock().envelope(entityId), patch }));
-    },
-
-    async removePaymentMethod(entityId: Ulid): Promise<void> {
-      await session.commit(paymentMethodDeleted(session.clock().envelope(entityId)));
-    },
+    addCategory: (draft) => session.mutate("categories", (repo) => repo.create(draft)),
+    editCategory: (id, draft) => session.mutate("categories", (repo) => repo.update(id, draft)),
+    removeCategory: (id) => session.mutate("categories", (repo) => repo.remove(id)),
+    addPaymentMethod: (draft) => session.mutate("paymentMethods", (repo) => repo.create(draft)),
+    editPaymentMethod: (id, draft) =>
+      session.mutate("paymentMethods", (repo) => repo.update(id, draft)),
+    removePaymentMethod: (id) => session.mutate("paymentMethods", (repo) => repo.remove(id)),
   };
 }

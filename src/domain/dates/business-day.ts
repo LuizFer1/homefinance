@@ -34,7 +34,7 @@ export function lastDayOfMonth(month: string): string {
 /**
  * Dia civil `n` do mês, limitado ao último dia quando o mês é mais curto.
  * `n` inválido (≤0) cai no dia 1 — o formulário não deveria mandar isso, mas o
- * fold aceita lixo de versão futura e a materialização não pode explodir.
+ * sync pode trazer lixo de versão futura e a materialização não pode explodir.
  */
 export function dayOfMonthClamped(month: string, n: number): string {
   const last = lastDayOfMonth(month);

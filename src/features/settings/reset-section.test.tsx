@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ResetSection } from "./reset-section";
 
@@ -44,6 +44,38 @@ describe("ResetSection", () => {
     fireEvent.click(botao());
 
     expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it("falha no reset mostra o motivo no bloco, sem rejeicao solta", async () => {
+    // `db.delete()` pode rejeitar (outra aba segurando o banco). Sem o catch
+    // aqui, a promise escaparia como unhandled e a tela nao diria nada.
+    const onReset = vi.fn(async () => {
+      throw new Error("Banco bloqueado por outra aba");
+    });
+    render(<ResetSection onReset={onReset} />);
+
+    digitar("APAGAR");
+    fireEvent.click(botao());
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Banco bloqueado por outra aba",
+    );
+  });
+
+  it("nova tentativa limpa o erro anterior", async () => {
+    const onReset = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("Banco bloqueado por outra aba"))
+      .mockResolvedValueOnce(undefined);
+    render(<ResetSection onReset={onReset} />);
+
+    digitar("APAGAR");
+    fireEvent.click(botao());
+    await screen.findByRole("alert");
+    fireEvent.click(botao());
+
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(onReset).toHaveBeenCalledTimes(2);
   });
 
   it("volta a bloquear se o texto for corrigido para algo errado", () => {

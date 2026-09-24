@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { compareHlc } from "../domain/clock/hlc";
 import { createRowClock, type RowClock } from "../domain/clock/row-clock";
 import type { Category } from "../domain/model/category";
-import type { CrudDb } from "./crud-db";
+import type { HomeFinanceDb } from "./db";
 import { buildRow, createRepository, type Repository } from "./repository";
 import { openTestDb, TEST_DEVICE_ID, testSessionDeps } from "./test-db.fake";
 
 const MERCADO = { name: "Mercado", icon: "utensils", color: "emerald", kind: "expense" } as const;
 
-let db: CrudDb;
+let db: HomeFinanceDb;
 let clock: RowClock;
 let repo: Repository<Category>;
 

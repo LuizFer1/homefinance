@@ -2,7 +2,6 @@ import "./styles/app.css";
 import { render } from "preact";
 import { App } from "./app";
 import { HomeFinanceDb } from "./data/db";
-import { createEventStore } from "./data/event-store";
 import { cryptoRandomChunk } from "./domain/ids/ulid";
 import { createOnboardingStore } from "./features/onboarding/store";
 import { processAvatar } from "./features/profile/avatar";
@@ -58,11 +57,11 @@ if (!root) {
 // o `delete` ficaria bloqueado até o usuário fechar a aba.
 const db = new HomeFinanceDb();
 
-// Uma sessão por aparelho: relógio HLC, projeção e porta de escrita moram nela,
-// e todas as stores de domínio a compartilham. Um relógio por store entrelaçaria
-// os HLCs e forçaria refold do log inteiro a cada escrita.
+// Uma sessão por aparelho: relógio HLC, estado em memória e porta de escrita
+// moram nela, e todas as stores de domínio a compartilham. Um relógio por store
+// entrelaçaria os HLCs, e um estado por store divergiria.
 const session = createSession({
-  events: createEventStore(db),
+  db,
   now: () => Date.now(),
   randomChunk: cryptoRandomChunk,
 });
@@ -75,15 +74,15 @@ const onboarding = createOnboardingStore(session);
 
 render(
   <App
+    session={session}
     store={store}
     registry={registry}
     profileStore={profileStore}
     recurrence={recurrence}
     onboarding={onboarding}
-    localUserId={session.localUserId}
     processFile={(file) => processAvatar(file, browserAvatarDeps)}
-    onReset={() => {
-      void resetDevice({
+    onReset={() =>
+      resetDevice({
         db,
         // Só referenciar as APIs já lança em contexto sandbox — por isso o
         // typeof e o optional chaining, não um assert de presença.
@@ -95,8 +94,8 @@ render(
         reload: () => {
           window.location.reload();
         },
-      });
-    }}
+      })
+    }
     today={todayISO()}
     hour={new Date().getHours()}
     theme={{ storage: safeStorage(), doc: document }}

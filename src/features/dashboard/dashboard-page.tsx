@@ -1,8 +1,9 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import { shiftMonth } from "../../domain/dates/calendar";
+import type { AppState } from "../../domain/model/app-state";
+import type { Transaction } from "../../domain/model/transaction";
 import { formatBRL } from "../../domain/money/money";
-import type { ProjectionState, TransactionRecord } from "../../domain/projections/apply";
 import { filterByMonth, monthlyTotals } from "../../domain/projections/breakdown";
 import {
   averageSurplus,
@@ -32,9 +33,9 @@ import { PaceChart } from "./pace-chart";
 
 export interface DashboardPageProps {
   /** Já filtrados por `listTransactions`: o App calcula uma vez e reusa. */
-  items: TransactionRecord[];
+  items: Transaction[];
   /** Resolve categorias, formas de pagamento e séries recorrentes. */
-  state: ProjectionState;
+  state: AppState;
   /** Hoje em 'YYYY-MM-DD'. Vem de fora pelo mesmo motivo que no App. */
   today: string;
   /** Botão do estado vazio. */

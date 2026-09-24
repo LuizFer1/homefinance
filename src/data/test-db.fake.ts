@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import type { RandomChunk } from "../domain/ids/ulid";
-import { CrudDb } from "./crud-db";
+import { HomeFinanceDb } from "./db";
 
 /**
  * Banco real sobre `fake-indexeddb`, um nome por chamada para as suítes não se
@@ -8,16 +8,16 @@ import { CrudDb } from "./crud-db";
  */
 let counter = 0;
 
-export function openTestDb(): CrudDb {
+export function openTestDb(): HomeFinanceDb {
   counter += 1;
-  return new CrudDb(`homefinance-test-${counter}-${Date.now()}`);
+  return new HomeFinanceDb(`homefinance-test-${counter}-${Date.now()}`);
 }
 
 export const TEST_DEVICE_ID = "01J9F3K2M7QX8YB4TVWZ0DCEHZ";
 
 /** Relógio que anda 1ms por chamada e aleatoriedade fixa: ids e HLCs reprodutíveis. */
-export function testSessionDeps(db: CrudDb): {
-  db: CrudDb;
+export function testSessionDeps(db: HomeFinanceDb): {
+  db: HomeFinanceDb;
   now: () => number;
   randomChunk: RandomChunk;
 } {

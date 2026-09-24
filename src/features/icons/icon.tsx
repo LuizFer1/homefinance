@@ -3,7 +3,7 @@ import { PHOSPHOR, type PhosphorName } from "./phosphor-paths";
 
 export interface IconProps {
   /**
-   * Chave persistida no log (ver `icon-set.ts`) ou nome Phosphor de interface.
+   * Chave persistida na linha (ver `icon-set.ts`) ou nome Phosphor de interface.
    * String livre de propósito: vem de dado sincronizado.
    */
   name: string;
@@ -18,7 +18,7 @@ export interface IconProps {
 /**
  * Resolve primeiro a chave de domínio, depois o nome de interface.
  *
- * `Object.hasOwn` e não `in`: um `name="constructor"` vindo do log acharia uma
+ * `Object.hasOwn` e não `in`: um `name="constructor"` vindo do banco acharia uma
  * função no protótipo e o render explodiria.
  */
 function resolve(name: string): { glyph: PhosphorName; known: boolean } {

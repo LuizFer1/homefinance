@@ -24,8 +24,8 @@ export interface HoldToDeleteProps {
 /**
  * Lixeira 36×36 que exclui só depois de segurar.
  *
- * Excluir é a única ação sem desfazer do app: o log é append-only e o evento de
- * delete nasce eterno. O redesign tirou a lixeira de cada linha e a trouxe para
+ * Excluir é a única ação sem desfazer do app: não há tela para restaurar uma
+ * linha apagada, e o sync propaga o `deletedAt` para o outro aparelho. O redesign tirou a lixeira de cada linha e a trouxe para
  * o sheet de edição, mas manteve o segurar — um toque só, ao lado do "Fechar",
  * seria o mesmo escorregão permanente de antes, em outro lugar.
  *

@@ -4,7 +4,7 @@
  * Tudo que entra é lido como centavos, da direita para a esquerda. Não existe
  * entrada inválida a recusar porque não existe entrada inválida a fazer, e é
  * isso que remove o passo de adivinhação entre o que foi digitado e o que vai
- * para o log — que é eterno. O campo livre aceitava "12.5" e só contava que não
+ * para o banco. O campo livre aceitava "12.5" e só contava que não
  * tinha entendido uma tela depois, na validação.
  */
 
@@ -32,7 +32,7 @@ export function onlyDigits(input: string): string {
   return input.replace(/\D/g, "").replace(/^0+/, "").slice(0, MAX_DIGITS);
 }
 
-/** Dígitos → centavos inteiros, do jeito que o log guarda. */
+/** Dígitos → centavos inteiros, do jeito que o banco guarda. */
 export function minorOf(digits: string): number {
   return digits === "" ? 0 : Number(digits);
 }

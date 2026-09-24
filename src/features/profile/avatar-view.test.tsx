@@ -35,7 +35,7 @@ describe("isDisplayableAvatar", () => {
   });
 
   it("recusa svg, que carrega script", () => {
-    // A string vem do log, e o log vem do aparelho da outra pessoa via sync:
+    // A string vem do banco, e a linha vem do aparelho da outra pessoa via sync:
     // e entrada nao confiavel. Num <img> o script do SVG nao executa, entao
     // isto nao corrige um furo conhecido — recusa um formato que carrega script
     // quando tres formatos rasterizados ja resolvem o caso inteiro.
@@ -44,7 +44,7 @@ describe("isDisplayableAvatar", () => {
 
   it("recusa url remota, esquema perigoso e lixo", () => {
     // Nenhuma requisicao de rede sai deste app: uma url remota no avatar seria
-    // a primeira, e chegaria pelo log de outro aparelho.
+    // a primeira, e chegaria pelo sync de outro aparelho.
     expect(isDisplayableAvatar("https://exemplo.com/foto.png")).toBe(false);
     expect(isDisplayableAvatar("javascript:alert(1)")).toBe(false);
     expect(isDisplayableAvatar("data:text/html;base64,AAAA")).toBe(false);

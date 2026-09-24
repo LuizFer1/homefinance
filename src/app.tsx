@@ -1,10 +1,8 @@
-import type { ReadonlySignal } from "@preact/signals";
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { TransactionKind } from "./domain/events/transaction";
-import { diffTransaction, type TransactionDraft } from "./domain/events/transaction";
 import type { Ulid } from "./domain/ids/ulid";
-import type { TransactionRecord } from "./domain/projections/apply";
+import type { RecurrenceRule } from "./domain/model/recurrence";
+import type { Transaction, TransactionDraft, TransactionKind } from "./domain/model/transaction";
 import {
   findUser,
   listCategories,
@@ -23,31 +21,30 @@ import type { ProfileStore } from "./features/profile/store";
 import type { RecurrenceStore } from "./features/recurrence/store";
 import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
+import { ignoreHandled, type Session } from "./features/session/session";
 import { SettingsPage, type SettingsSection } from "./features/settings/settings-page";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
 import type { TransactionsStore } from "./features/transactions/store";
-import {
-  type RecurrenceInput,
-  TransactionWizard,
-} from "./features/transactions/transaction-wizard";
+import { TransactionWizard } from "./features/transactions/transaction-wizard";
 import { Modal } from "./features/ui/modal";
 import { useSwipeNav } from "./features/ui/use-swipe-nav";
 
 export interface AppProps {
+  /**
+   * Estado, status, erro e boot. O App só lê a sessão e chama `init`; toda
+   * escrita passa pelas stores. Ler `localUserId` **dentro** do componente é o
+   * que faz o cabeçalho reagir ao perfil recém-criado pelo wizard.
+   */
+  session: Session;
   store: TransactionsStore;
   registry: RegistryStore;
   profileStore: ProfileStore;
   recurrence: RecurrenceStore;
   onboarding: OnboardingStore;
-  /**
-   * Só leitura. O App não escreve autoria; passar a `Session` inteira lhe daria
-   * um poder que ele não usa. Ler o sinal **dentro** do componente é o que faz o
-   * cabeçalho reagir ao perfil recém-criado pelo wizard.
-   */
-  localUserId: ReadonlySignal<Ulid | null>;
   /** Pipeline da foto já ligado ao canvas. Injetado: `happy-dom` não tem um. */
   processFile: (file: Blob) => Promise<string>;
-  onReset: () => void;
+  /** Rejeita se o banco não apagou; a tela de reset mostra o motivo. */
+  onReset: () => Promise<void>;
   /** Data de hoje em 'YYYY-MM-DD'. Vem de fora para o teste não depender do relógio. */
   today: string;
   /** Hora local 0..23, injetada pelo mesmo motivo que `today`. */
@@ -89,19 +86,19 @@ function Shell({ children }: { children: ComponentChildren }) {
 }
 
 export function App({
+  session,
   store,
   registry,
   profileStore,
   recurrence,
   onboarding,
-  localUserId,
   processFile,
   onReset,
   today,
   hour,
   theme,
 }: AppProps) {
-  const [editing, setEditing] = useState<TransactionRecord | null>(null);
+  const [editing, setEditing] = useState<Transaction | null>(null);
   const [composing, setComposing] = useState<TransactionKind | null>(null);
   const [screen, setScreen] = useState<ScreenId>("inicio");
   const [section, setSection] = useState<SettingsSection | null>(null);
@@ -113,8 +110,11 @@ export function App({
     // Materializa depois do init: o boot e o "virar do mês" são o mesmo caminho.
     // Sem isto, o salário de março só existiria se o usuário abrisse a tela de
     // edição da série — o extrato ficaria mentindo por omissão.
-    void store.init().then(() => recurrence.materializeDue(today));
-  }, [store, recurrence, today]);
+    void session
+      .init()
+      .then(() => recurrence.materializeDue(today))
+      .catch(ignoreHandled);
+  }, [session, recurrence, today]);
 
   // Uma condição só para os dois casos: o modal está aberto para criar
   // (`editing` nulo) ou para editar. Dois estados independentes permitiriam
@@ -135,14 +135,14 @@ export function App({
     screens: SCREEN_IDS,
     screen,
     enabled:
-      store.status.value === "ready" &&
+      session.status.value === "ready" &&
       !onboarding.needsOnboarding.value &&
       section === null &&
       !modalOpen,
     onChange: goToScreen,
   });
 
-  if (store.status.value === "loading") {
+  if (session.status.value === "loading") {
     return (
       <Shell>
         <BrandMark size={44} />
@@ -151,12 +151,12 @@ export function App({
     );
   }
 
-  if (store.status.value === "error") {
+  if (session.status.value === "error") {
     return (
       <Shell>
         <BrandMark size={44} />
         <p role="alert" class="mt-4 rounded-lg bg-expense/10 p-4 text-sm text-expense-fg">
-          Não foi possível abrir o armazenamento local: {store.error.value}
+          Não foi possível abrir o armazenamento local: {session.error.value}
         </p>
       </Shell>
     );
@@ -173,36 +173,38 @@ export function App({
     );
   }
 
-  const profile = findUser(store.state.value, localUserId.value);
-  const items = listTransactions(store.state.value);
-  const categories = listCategories(store.state.value);
-  const paymentMethods = listPaymentMethods(store.state.value);
+  const state = session.state.value;
+  const profile = findUser(state, session.localUserId.value);
+  const items = listTransactions(state);
+  const categories = listCategories(state);
+  const paymentMethods = listPaymentMethods(state);
 
   function closeModal() {
     setComposing(null);
     setEditing(null);
   }
 
-  function handleSubmit(draft: TransactionDraft, recurrenceRule: RecurrenceInput | null) {
+  // Escritas fire-and-forget: a falha já aparece pelo `session.error`, no
+  // alerta logo abaixo do cabeçalho; `ignoreHandled` só evita a rejeição solta.
+  function handleSubmit(draft: TransactionDraft, recurrenceRule: RecurrenceRule | null) {
     if (editing === null) {
       if (recurrenceRule !== null) {
-        void recurrence.createSeries(draft, recurrenceRule, today);
+        void recurrence.createSeries(draft, recurrenceRule, today).catch(ignoreHandled);
       } else {
-        void store.add(draft);
+        void store.add(draft).catch(ignoreHandled);
       }
       closeModal();
       return;
     }
 
-    const patch = diffTransaction(editing, draft);
-    // Patch vazio não vira evento: um log append-only não merece lixo permanente.
-    if (Object.keys(patch).length > 0) void store.edit(editing.id, patch);
+    // O draft vai inteiro: o repositório não grava quando nada mudou.
+    void store.edit(editing.id, draft).catch(ignoreHandled);
     closeModal();
   }
 
-  function handleDelete(entityId: Ulid) {
-    if (editing?.id === entityId) closeModal();
-    void store.remove(entityId);
+  function handleDelete(id: Ulid) {
+    if (editing?.id === id) closeModal();
+    void store.remove(id).catch(ignoreHandled);
   }
 
   function openSection(next: SettingsSection) {
@@ -211,7 +213,7 @@ export function App({
     if (next !== "profile") setGlow(null);
   }
 
-  const editingAuthor = editing === null ? null : findUser(store.state.value, editing.userId);
+  const editingAuthor = editing === null ? null : findUser(state, editing.userId);
 
   return (
     <div class={SHELL} style={glow === null ? undefined : { "--hf-glow": cssVarForToken(glow) }}>
@@ -229,16 +231,16 @@ export function App({
         data-swiping={swipe["data-swiping"]}
         style={swipe.style}
       >
-        {store.error.value !== null && (
+        {session.error.value !== null && (
           <p role="alert" class="mb-4 rounded-lg bg-expense/10 p-3 text-sm text-expense-fg">
-            {store.error.value}
+            {session.error.value}
           </p>
         )}
 
         {screen === "dashboard" && (
           <DashboardPage
             items={items}
-            state={store.state.value}
+            state={state}
             today={today}
             onGoHome={() => goToScreen("inicio")}
           />
@@ -247,7 +249,7 @@ export function App({
         {screen === "inicio" && (
           <HomePage
             items={items}
-            state={store.state.value}
+            state={state}
             profile={profile}
             today={today}
             hour={hour}
@@ -274,6 +276,9 @@ export function App({
                 store={profileStore}
                 processFile={processFile}
                 onColorPreview={setGlow}
+                onDismissGlobalError={() => {
+                  session.error.value = null;
+                }}
                 onBack={() => {
                   setGlow(null);
                   setSection(null);
@@ -283,7 +288,7 @@ export function App({
           ) : (
             <RegistryPage
               entity={section}
-              state={store.state.value}
+              state={state}
               items={items}
               today={today}
               store={registry}

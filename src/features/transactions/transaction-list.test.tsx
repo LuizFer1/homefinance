@@ -1,16 +1,14 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  EMPTY_STATE,
-  type ProjectionState,
-  type TransactionRecord,
-} from "../../domain/projections/apply";
+import { type AppState, EMPTY_APP_STATE } from "../../domain/model/app-state";
+import { ALIVE, DELETED_AT } from "../../domain/model/row.fake";
+import type { Transaction } from "../../domain/model/transaction";
 import { MINUS } from "../ui/money";
 import { TransactionList } from "./transaction-list";
 
 afterEach(cleanup);
 
-function record(overrides: Partial<TransactionRecord> & { id: string }): TransactionRecord {
+function record(overrides: Partial<Transaction> & { id: string }): Transaction {
   return {
     kind: "expense",
     description: "Mercado",
@@ -23,17 +21,15 @@ function record(overrides: Partial<TransactionRecord> & { id: string }): Transac
     userId: null,
     recurrenceId: null,
     occurrenceKey: null,
-    deleted: false,
-    materialized: true,
-    fieldHlc: {},
+    ...ALIVE,
     ...overrides,
   };
 }
 
 const ITEMS = [record({ id: "a" }), record({ id: "b", description: "Salário", kind: "income" })];
 
-const STATE: ProjectionState = {
-  ...EMPTY_STATE,
+const STATE: AppState = {
+  ...EMPTY_APP_STATE,
   categories: {
     "cat-viva": {
       id: "cat-viva",
@@ -41,9 +37,7 @@ const STATE: ProjectionState = {
       icon: "utensils",
       color: "emerald",
       kind: "expense",
-      deleted: false,
-      materialized: true,
-      fieldHlc: {},
+      ...ALIVE,
     },
     "cat-apagada": {
       id: "cat-apagada",
@@ -51,9 +45,8 @@ const STATE: ProjectionState = {
       icon: "tag",
       color: "slate",
       kind: "expense",
-      deleted: true,
-      materialized: true,
-      fieldHlc: {},
+      ...ALIVE,
+      deletedAt: DELETED_AT,
     },
   },
   paymentMethods: {
@@ -63,9 +56,7 @@ const STATE: ProjectionState = {
       icon: "credit-card",
       color: "violet",
       kind: "credit",
-      deleted: false,
-      materialized: true,
-      fieldHlc: {},
+      ...ALIVE,
     },
   },
 };
@@ -119,7 +110,7 @@ describe("TransactionList", () => {
 describe("rotulos de categoria, forma de pagamento e cashback", () => {
   const BASE_ITEM = ITEMS[0] ?? record({ id: "a" });
 
-  function comAtributos(over: Partial<TransactionRecord>) {
+  function comAtributos(over: Partial<Transaction>) {
     render(
       <TransactionList
         items={[{ ...BASE_ITEM, ...over }]}
@@ -170,7 +161,7 @@ describe("rotulos de categoria, forma de pagamento e cashback", () => {
 describe("autoria", () => {
   const AUTOR = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
 
-  const COM_AUTOR: ProjectionState = {
+  const COM_AUTOR: AppState = {
     ...STATE,
     users: {
       [AUTOR]: {
@@ -178,9 +169,7 @@ describe("autoria", () => {
         name: "Luiz",
         color: "teal",
         avatar: "data:image/webp;base64,AAAA",
-        deleted: false,
-        materialized: true,
-        fieldHlc: {},
+        ...ALIVE,
       },
     },
   };
@@ -241,7 +230,7 @@ describe("autoria", () => {
 describe("agrupamento por dia", () => {
   const HOJE = "2026-08-10";
 
-  function comItens(items: TransactionRecord[]) {
+  function comItens(items: Transaction[]) {
     render(<TransactionList items={items} state={STATE} today={HOJE} onEdit={vi.fn()} />);
   }
 
@@ -287,7 +276,7 @@ describe("agrupamento por dia", () => {
 });
 
 describe("ancora visual da linha", () => {
-  function comCategoria(over: Partial<TransactionRecord>) {
+  function comCategoria(over: Partial<Transaction>) {
     render(
       <TransactionList
         items={[record({ id: "a", ...over })]}
@@ -343,7 +332,7 @@ describe("ancora visual da linha", () => {
       />,
     );
 
-    // Serie que nao esta na projecao cai no rotulo generico.
+    // Serie que nao esta no estado cai no rotulo generico.
     expect(screen.getByText("Recorrente")).toBeDefined();
   });
 });

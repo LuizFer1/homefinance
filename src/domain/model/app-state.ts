@@ -26,8 +26,7 @@ export type RowsByTable = { [K in TableName]?: RowMap[K][] };
  * `Record<TableName, true>`, e não um array literal, porque um array não é
  * checado pelo compilador contra `RowMap`: uma tabela nova em `RowMap` sem
  * entrada aqui compilaria assim mesmo, e ficaria de fora do boot, do `mutate`
- * e do `putRows` em silêncio. Mesmo padrão de `ENTITIES` em
- * `domain/events/validate.ts`.
+ * e do `putRows` em silêncio.
  */
 const TABLES: Record<TableName, true> = {
   users: true,

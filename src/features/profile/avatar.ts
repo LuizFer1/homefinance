@@ -2,8 +2,8 @@
  * Lado final do avatar, em pixels.
  *
  * O avatar é exibido em 36–72px e sempre circular. 96 cobre telas de 2x sem
- * gastar bytes num detalhe que ninguém enxerga — e cada byte aqui é permanente,
- * porque a foto vive dentro de um log append-only.
+ * gastar bytes num detalhe que ninguém enxerga — e cada byte aqui viaja na linha
+ * do perfil em todo sync.
  */
 export const AVATAR_SIZE = 96;
 
@@ -11,7 +11,7 @@ export const AVATAR_SIZE = 96;
  * Teto do data URI, em caracteres.
  *
  * O data URI é ASCII, então caractere e byte coincidem, e é o comprimento desta
- * string que de fato entra no log e viaja em todo handshake de sync.
+ * string que de fato entra na linha do perfil e viaja em todo sync.
  */
 export const AVATAR_MAX_CHARS = 6 * 1024;
 
@@ -63,9 +63,8 @@ export function squareCrop(width: number, height: number): Crop {
  * Devolve o data URI pronto para gravar, ou lança.
  *
  * Lançar é a resposta certa para a foto que não cabe: gravar a versão gigante
- * inflaria o log para sempre — o evento é append-only e o `create` original fica
- * lá —, e devolver `null` em silêncio faria o usuário concluir que a foto foi
- * salva.
+ * incharia a linha do perfil, que viaja inteira em todo sync (LWW por linha), e
+ * devolver `null` em silêncio faria o usuário concluir que a foto foi salva.
  *
  * Decodifica **uma vez** e reusa a fonte nas três tentativas: decodificar por
  * qualidade multiplicaria por três o trabalho mais caro do pipeline.

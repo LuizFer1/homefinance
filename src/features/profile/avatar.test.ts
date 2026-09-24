@@ -69,8 +69,8 @@ describe("processAvatar", () => {
   });
 
   it("rejeita quando nem a menor qualidade cabe, sem devolver nada gravavel", async () => {
-    // Melhor ficar sem foto do que inchar o log de forma irreversivel: o evento
-    // e append-only e o create original fica la para sempre.
+    // Melhor ficar sem foto do que inchar a linha do perfil, que viaja inteira
+    // em todo sync.
     const encode = encoderDe({ 0.8: 99_999, 0.6: 99_999, 0.45: 99_999 });
 
     await expect(processAvatar(FILE, deps(encode))).rejects.toThrow(/grande demais/i);

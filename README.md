@@ -105,16 +105,22 @@ The computer only syncs when it's on. If you turn it off, the phones continue wo
 
 ### Data model
 
-Your data is an **append-only event log**, stored locally. Every change — creating a
-transaction, editing a category — is a new immutable event. The app's state is rebuilt
-by replaying that log.
+Your data lives locally in IndexedDB, **one table per entity** (`users`,
+`categories`, `paymentMethods`, `transactions`, `recurrences`, plus a `meta` table for
+device state). Each row is the current state of that record, written through a single
+repository. The app loads the tables into memory at boot and every write goes to disk
+first, then to the screen.
 
-This is what makes offline sync work without a coordinating server: an append-only log
-is itself a CRDT. Two phones that edited for days while apart converge simply by
-exchanging the events the other hasn't seen. No merge prompts, no server arbitrating.
+Every row carries the columns the future sync with the hub needs:
 
-It is also why there is no Automerge here despite the CRDT requirement — it ships ~1MB
-of WASM, which alone would blow the entire bundle budget.
+- `updatedAt` — a Hybrid Logical Clock stamp, not the raw wall clock, so a phone with a
+  clock running fast can't win every conflict. Conflicts are **last-write-wins per row**.
+- `deletedAt` — deletes are logical: the row stays, marked, so the hub can propagate
+  the deletion to the other phone.
+- `dirty` — indexed `0 | 1` flag for "changed since the last sync".
+
+Recurring transactions get deterministic ids per period, so two phones that generate
+March's salary offline produce the same row instead of two salaries.
 
 ---
 

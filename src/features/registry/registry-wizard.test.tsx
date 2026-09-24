@@ -1,22 +1,22 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CategoryRecord, PaymentMethodRecord } from "../../domain/projections/apply";
+import type { Category } from "../../domain/model/category";
+import type { PaymentMethod } from "../../domain/model/payment-method";
+import { ALIVE } from "../../domain/model/row.fake";
 import { RegistryWizard, type RegistryWizardProps } from "./registry-wizard";
 
 afterEach(cleanup);
 
-const CATEGORIA: CategoryRecord = {
+const CATEGORIA: Category = {
   id: "cat-1",
   name: "Mercado",
   icon: "tag",
   color: "slate",
   kind: "expense",
-  deleted: false,
-  materialized: true,
-  fieldHlc: {},
+  ...ALIVE,
 };
 
-const METODO: PaymentMethodRecord = { ...CATEGORIA, id: "pm-1", name: "Nubank", kind: "credit" };
+const METODO: PaymentMethod = { ...CATEGORIA, id: "pm-1", name: "Nubank", kind: "credit" };
 
 function montar(over: Partial<RegistryWizardProps> = {}) {
   const onSubmit = vi.fn();
@@ -81,8 +81,8 @@ describe("navegação entre etapas", () => {
 
   it("bloqueia avanço com nome duplicado", () => {
     // Validacao de produto, no formulario e nao no dominio: depois do sync duas
-    // pessoas podem criar "Mercado" ao mesmo tempo legitimamente, e o log aceita
-    // as duas. A tela avisa; o fold nao rejeita.
+    // pessoas podem criar "Mercado" ao mesmo tempo legitimamente, e o banco
+    // aceita as duas. A tela avisa; o repositorio nao rejeita.
     montar({ existingNames: ["Mercado"] });
     digitarNome("  mercado ");
 

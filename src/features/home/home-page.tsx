@@ -1,9 +1,6 @@
-import type { TransactionKind } from "../../domain/events/transaction";
-import type {
-  ProjectionState,
-  TransactionRecord,
-  UserRecord,
-} from "../../domain/projections/apply";
+import type { AppState } from "../../domain/model/app-state";
+import type { Transaction, TransactionKind } from "../../domain/model/transaction";
+import type { User } from "../../domain/model/user";
 import { filterByMonth } from "../../domain/projections/breakdown";
 import { monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { totals } from "../../domain/projections/selectors";
@@ -14,13 +11,13 @@ import { MINUS, Money, moneyParts } from "../ui/money";
 import { QuickActions } from "../ui/quick-actions";
 
 export interface HomePageProps {
-  items: TransactionRecord[];
-  state: ProjectionState;
-  profile: UserRecord | null;
+  items: Transaction[];
+  state: AppState;
+  profile: User | null;
   today: string;
   hour: number;
   onCompose: (kind: TransactionKind) => void;
-  onEdit: (record: TransactionRecord) => void;
+  onEdit: (record: Transaction) => void;
   onOpenProfile: () => void;
 }
 
@@ -37,7 +34,7 @@ function monthName(month: string): string {
  * o seu: dois valores chamados "saldo" na mesma tela seriam um bug de leitura
  * no primeiro mês em que deixassem de coincidir.
  */
-function MonthCard({ items, today }: { items: TransactionRecord[]; today: string }) {
+function MonthCard({ items, today }: { items: Transaction[]; today: string }) {
   const month = monthOf(today);
   const summary = totals(filterByMonth(items, month));
   const moved = summary.incomeMinor + summary.expenseMinor;

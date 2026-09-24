@@ -1,24 +1,21 @@
-import type { CategoryDraft, PaymentMethodDraft } from "../../domain/events/reference";
-import { diffCategory, diffPaymentMethod } from "../../domain/events/reference";
 import type { Ulid } from "../../domain/ids/ulid";
-import type {
-  CategoryRecord,
-  PaymentMethodRecord,
-  ProjectionState,
-} from "../../domain/projections/apply";
+import type { AppState } from "../../domain/model/app-state";
+import type { Category, CategoryDraft } from "../../domain/model/category";
+import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
 import { listCategories, listPaymentMethods } from "../../domain/projections/selectors";
+import { ignoreHandled } from "../session/session";
 import { Modal } from "../ui/modal";
 import { type RegistryEntity, RegistryWizard } from "./registry-wizard";
 import type { RegistryStore } from "./store";
 
-export type RegistryRecord = CategoryRecord | PaymentMethodRecord;
+export type RegistryRecord = Category | PaymentMethod;
 
 export interface RegistryFormModalProps {
   entity: RegistryEntity;
   open: boolean;
   /** Registro em edição, ou null para criação. */
   editing: RegistryRecord | null;
-  state: ProjectionState;
+  state: AppState;
   store: RegistryStore;
   onClose: () => void;
   /** Excluir mora no sheet de edição (segurar a lixeira). */
@@ -61,22 +58,22 @@ export function RegistryFormModal({
   const items: RegistryRecord[] = isPayment ? listPaymentMethods(state) : listCategories(state);
   const copy = REGISTRY_COPY[entity];
 
+  /**
+   * O draft vai inteiro, também na edição: com LWW por linha não existe patch,
+   * e o repositório já ignora edição sem mudança. O `as` só estreita a união
+   * pelo `entity`, que a wizard garante ser o mesmo desta modal.
+   */
   function handleSubmit(draft: CategoryDraft | PaymentMethodDraft) {
-    if (editing === null) {
-      if (isPayment) void store.addPaymentMethod(draft as PaymentMethodDraft);
-      else void store.addCategory(draft as CategoryDraft);
-      onClose();
-      return;
-    }
-
-    // Patch parcial, nunca o agregado inteiro: emitir tudo faria o LWW por campo
-    // perder edições concorrentes sem sintoma visível.
     if (isPayment) {
-      const patch = diffPaymentMethod(editing as PaymentMethodRecord, draft as PaymentMethodDraft);
-      void store.editPaymentMethod(editing.id, patch);
+      const next = draft as PaymentMethodDraft;
+      const write =
+        editing === null ? store.addPaymentMethod(next) : store.editPaymentMethod(editing.id, next);
+      void write.catch(ignoreHandled);
     } else {
-      const patch = diffCategory(editing, draft as CategoryDraft);
-      void store.editCategory(editing.id, patch);
+      const next = draft as CategoryDraft;
+      const write =
+        editing === null ? store.addCategory(next) : store.editCategory(editing.id, next);
+      void write.catch(ignoreHandled);
     }
     onClose();
   }

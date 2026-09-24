@@ -1,6 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
-import type { UserRecord } from "../../domain/projections/apply";
+import type { User } from "../../domain/model/user";
 import { colorName, cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
@@ -16,10 +16,10 @@ export interface SettingsPageProps {
   categoryCount: number;
   paymentMethodCount: number;
   /** Perfil local, ou null enquanto ele não existe. */
-  profile: UserRecord | null;
+  profile: User | null;
   theme: ThemeToggleProps;
   onOpen: (section: SettingsSection) => void;
-  onReset: () => void;
+  onReset: () => Promise<void>;
 }
 
 const ROW = "relative flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left";

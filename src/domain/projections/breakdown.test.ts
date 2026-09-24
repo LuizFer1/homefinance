@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { TransactionRecord } from "./apply";
+import { ALIVE } from "../model/row.fake";
+import type { Transaction } from "../model/transaction";
 import { filterByMonth, monthlyTotals } from "./breakdown";
 
-function record(overrides: Partial<TransactionRecord> & { id: string }): TransactionRecord {
+function record(overrides: Partial<Transaction> & { id: string }): Transaction {
   return {
     kind: "expense",
     description: "Mercado",
@@ -15,9 +16,7 @@ function record(overrides: Partial<TransactionRecord> & { id: string }): Transac
     userId: null,
     recurrenceId: null,
     occurrenceKey: null,
-    deleted: false,
-    materialized: true,
-    fieldHlc: {},
+    ...ALIVE,
     ...overrides,
   };
 }

@@ -20,14 +20,14 @@ describe("cssVarForToken", () => {
   });
 
   it("cai no neutro para token de uma versão futura", () => {
-    // O fold aceitou o valor de propósito — descartar no dominio o apagaria para
+    // A linha guarda o valor como veio — descartar no dominio o apagaria para
     // sempre. O fallback é decisão de renderização, e mora aqui.
     expect(cssVarForToken("chartreuse")).toBe(`var(--color-tag-${FALLBACK_TOKEN})`);
     expect(cssVarForToken("")).toBe(`var(--color-tag-${FALLBACK_TOKEN})`);
   });
 
   it("não deixa token injetar CSS arbitrário", () => {
-    // O valor vem do log, que vem do sync, que vem de outro aparelho. Sem a
+    // O valor vem do banco, que vem do sync, que vem de outro aparelho. Sem a
     // checagem contra a lista, `red); background: url(...` sairia direto no
     // atributo style.
     expect(cssVarForToken("red); content: 'x'")).toBe(`var(--color-tag-${FALLBACK_TOKEN})`);

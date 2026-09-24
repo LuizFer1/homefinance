@@ -1,5 +1,9 @@
 import Dexie, { type Table } from "dexie";
-import type { DomainEvent } from "../domain/events/types";
+import type { Category } from "../domain/model/category";
+import type { PaymentMethod } from "../domain/model/payment-method";
+import type { Recurrence } from "../domain/model/recurrence";
+import type { Transaction } from "../domain/model/transaction";
+import type { User } from "../domain/model/user";
 
 export interface MetaRow {
   key: string;
@@ -7,23 +11,42 @@ export interface MetaRow {
 }
 
 /**
- * `events` é a única tabela durável: append-only, nunca atualizada nem removida
- * fora de compactação explícita. `meta` guarda o `deviceId` — a projeção vive em
- * memória e é refeita a cada boot.
+ * Uma tabela por entidade; a linha é o estado atual.
  *
- * O Dexie abre o banco preguiçosamente: o construtor **nunca lança**, mesmo sem
- * IndexedDB disponível (aba privada, quota, permissão negada). A falha aparece
- * como rejeição da primeira operação assíncrona. Quem chama deve envolver as
- * operações em try/catch, não a construção.
+ * A versão 1 continua declarada para o Dexie saber de onde está subindo. O
+ * upgrade para a 2 descarta o log de eventos (decisão da spec: zerar) e o
+ * `localUserId`, que sobreviveria apontando para um perfil que não existe mais
+ * e faria o wizard de primeiro uso ser pulado. `deviceId` fica.
+ *
+ * O construtor nunca lança; a falha de IndexedDB aparece na primeira operação.
  */
 export class HomeFinanceDb extends Dexie {
-  readonly events: Table<DomainEvent, string>;
+  readonly users: Table<User, string>;
+  readonly categories: Table<Category, string>;
+  readonly paymentMethods: Table<PaymentMethod, string>;
+  readonly transactions: Table<Transaction, string>;
+  readonly recurrences: Table<Recurrence, string>;
   readonly meta: Table<MetaRow, string>;
 
   constructor(name = "homefinance") {
     super(name);
     this.version(1).stores({ events: "id, hlc", meta: "key" });
-    this.events = this.table("events");
+    this.version(2)
+      .stores({
+        events: null,
+        users: "id, dirty",
+        categories: "id, dirty",
+        paymentMethods: "id, dirty",
+        transactions: "id, occurredOn, recurrenceId, dirty",
+        recurrences: "id, dirty",
+        meta: "key",
+      })
+      .upgrade((tx) => tx.table("meta").delete("localUserId"));
+    this.users = this.table("users");
+    this.categories = this.table("categories");
+    this.paymentMethods = this.table("paymentMethods");
+    this.transactions = this.table("transactions");
+    this.recurrences = this.table("recurrences");
     this.meta = this.table("meta");
   }
 }

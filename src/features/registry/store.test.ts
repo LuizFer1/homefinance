@@ -1,171 +1,89 @@
-import { describe, expect, it } from "vitest";
-import { type FakeEventStore, fakeEventStore } from "../../data/event-store.fake";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { HomeFinanceDb } from "../../data/db";
+import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
 import { compareHlc } from "../../domain/clock/hlc";
-import { listCategories, listPaymentMethods } from "../../domain/projections/selectors";
 import { createSession, type Session } from "../session/session";
-import { createTransactionsStore } from "../transactions/store";
-import { createRegistryStore } from "./store";
+import { createRegistryStore, type RegistryStore } from "./store";
 
-const CATEGORY = { name: "Mercado", icon: "utensils", color: "emerald", kind: "expense" } as const;
-const METHOD = { name: "Nubank", icon: "credit-card", color: "violet", kind: "credit" } as const;
+const MERCADO = { name: "Mercado", icon: "utensils", color: "emerald", kind: "expense" } as const;
+const NUBANK = { name: "Nubank", icon: "credit-card", color: "violet", kind: "credit" } as const;
 
-const TX_DRAFT = {
-  kind: "expense",
-  description: "Compra",
-  amountMinor: 1000,
-  currency: "BRL",
-  categoryId: null,
-  paymentMethodId: null,
-  cashbackMinor: null,
-  occurredOn: "2026-08-07",
-  recurrenceId: null,
-  occurrenceKey: null,
-} as const;
+let db: HomeFinanceDb;
+let session: Session;
+let store: RegistryStore;
 
-function newSession(events: FakeEventStore): Session {
-  let millis = 1_754_697_600_000;
-  return createSession({
-    events,
-    now: () => {
-      millis += 1;
-      return millis;
-    },
-    randomChunk: (count) => Array.from({ length: count }, (_, i) => i % 32),
-  });
-}
-
-async function ready(events: FakeEventStore) {
-  const session = newSession(events);
+beforeEach(async () => {
+  db = openTestDb();
+  session = createSession(testSessionDeps(db));
   await session.init();
-  return { session, registry: createRegistryStore(session) };
-}
+  store = createRegistryStore(session);
+});
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await db.delete();
+});
 
 describe("createRegistryStore", () => {
-  it("cria categoria e a publica na projeção", async () => {
-    const events = fakeEventStore();
-    const { registry, session } = await ready(events);
-
-    await registry.addCategory(CATEGORY);
-
-    const items = listCategories(session.state.value);
-    expect(items).toHaveLength(1);
-    expect(items[0]?.name).toBe("Mercado");
-    expect(events.events[0]?.entity).toBe("category");
-    expect(events.events[0]?.action).toBe("create");
+  it("addCategory grava e publica", async () => {
+    const row = await store.addCategory(MERCADO);
+    expect(session.state.value.categories[row.id]).toMatchObject(MERCADO);
+    expect(await db.categories.get(row.id)).toEqual(row);
   });
 
-  it("cria forma de pagamento com o kind", async () => {
-    const events = fakeEventStore();
-    const { registry, session } = await ready(events);
+  it("editCategory recebe o draft completo e troca a linha", async () => {
+    const created = await store.addCategory(MERCADO);
+    const edited = await store.editCategory(created.id, { ...MERCADO, name: "Supermercado" });
 
-    await registry.addPaymentMethod(METHOD);
-
-    expect(listPaymentMethods(session.state.value)[0]?.kind).toBe("credit");
+    expect(edited.name).toBe("Supermercado");
+    expect(compareHlc(edited.updatedAt, created.updatedAt)).toBe(1);
+    expect(session.state.value.categories[created.id]?.name).toBe("Supermercado");
+    expect(await db.categories.get(created.id)).toEqual(edited);
   });
 
-  it("edita emitindo apenas o patch recebido", async () => {
-    const events = fakeEventStore();
-    const { registry, session } = await ready(events);
-    await registry.addCategory(CATEGORY);
-    const [criada] = listCategories(session.state.value);
-
-    await registry.editCategory(criada?.id ?? "", { color: "rose" });
-
-    const update = events.events.find((event) => event.action === "update");
-    expect(update?.data).toEqual({ color: "rose" });
-    expect(listCategories(session.state.value)[0]?.color).toBe("rose");
-    expect(listCategories(session.state.value)[0]?.name).toBe("Mercado");
+  it("editCategory sem mudança não avança updatedAt", async () => {
+    const created = await store.addCategory(MERCADO);
+    const same = await store.editCategory(created.id, { ...MERCADO });
+    expect(same.updatedAt).toBe(created.updatedAt);
+    expect(await db.categories.get(created.id)).toEqual(created);
   });
 
-  it("não emite evento para patch vazio", async () => {
-    // Um log append-only não merece lixo permanente: o evento nunca sai de lá.
-    const events = fakeEventStore();
-    const { registry, session } = await ready(events);
-    await registry.addCategory(CATEGORY);
-    const [criada] = listCategories(session.state.value);
-    const antes = events.events.length;
+  it("removeCategory marca deletedAt e mantém a linha", async () => {
+    const created = await store.addCategory(MERCADO);
+    await store.removeCategory(created.id);
 
-    await registry.editCategory(criada?.id ?? "", {});
-
-    expect(events.events).toHaveLength(antes);
+    expect(session.state.value.categories[created.id]?.deletedAt).not.toBeNull();
+    expect((await db.categories.get(created.id))?.deletedAt).not.toBeNull();
+    expect(await db.categories.count()).toBe(1);
   });
 
-  it("remove gravando tombstone sem apagar do bucket", async () => {
-    const events = fakeEventStore();
-    const { registry, session } = await ready(events);
-    await registry.addCategory(CATEGORY);
-    const [criada] = listCategories(session.state.value);
+  it("forma de pagamento: add, edit e remove", async () => {
+    const created = await store.addPaymentMethod(NUBANK);
+    await store.editPaymentMethod(created.id, { ...NUBANK, kind: "debit" });
+    expect(session.state.value.paymentMethods[created.id]?.kind).toBe("debit");
+    expect((await db.paymentMethods.get(created.id))?.kind).toBe("debit");
 
-    await registry.removeCategory(criada?.id ?? "");
-
-    expect(listCategories(session.state.value)).toEqual([]);
-    expect(session.state.value.categories[criada?.id ?? ""]?.deleted).toBe(true);
-    expect(events.events.some((event) => event.action === "delete")).toBe(true);
+    await store.removePaymentMethod(created.id);
+    expect(session.state.value.paymentMethods[created.id]?.deletedAt).not.toBeNull();
+    expect((await db.paymentMethods.get(created.id))?.deletedAt).not.toBeNull();
   });
 
-  it("não altera a projeção quando a gravação falha", async () => {
-    const events = fakeEventStore();
-    const { registry, session } = await ready(events);
-    events.failNext = true;
+  it("falha de escrita rejeita e não publica", async () => {
+    vi.spyOn(db.categories, "put").mockRejectedValueOnce(new Error("quota exceeded"));
+    await expect(store.addCategory(MERCADO)).rejects.toThrow("quota exceeded");
+    expect(session.state.value.categories).toEqual({});
+  });
 
-    await registry.addCategory(CATEGORY);
+  it("falha de escrita no edit rejeita e mantém a linha antiga", async () => {
+    const created = await store.addCategory(MERCADO);
+    vi.spyOn(db.categories, "put").mockRejectedValueOnce(new Error("quota exceeded"));
 
-    expect(listCategories(session.state.value)).toEqual([]);
+    await expect(
+      store.editCategory(created.id, { ...MERCADO, name: "Supermercado" }),
+    ).rejects.toThrow("quota exceeded");
+
+    expect(session.state.value.categories[created.id]).toEqual(created);
+    expect(await db.categories.get(created.id)).toEqual(created);
     expect(session.error.value).toBe("quota exceeded");
-  });
-
-  it("apagar categoria não apaga o lançamento que a referencia", async () => {
-    const events = fakeEventStore();
-    const { session, registry } = await ready(events);
-    const transactions = createTransactionsStore(session);
-    await registry.addCategory(CATEGORY);
-    const [categoria] = listCategories(session.state.value);
-    await transactions.add({ ...TX_DRAFT, categoryId: categoria?.id ?? null });
-
-    await registry.removeCategory(categoria?.id ?? "");
-
-    const lancamentos = Object.values(session.state.value.transactions);
-    expect(lancamentos[0]?.deleted).toBe(false);
-    expect(lancamentos[0]?.categoryId).toBe(categoria?.id);
-  });
-
-  it("compartilha o relógio com a store de transações", async () => {
-    // A prova pela porta da frente de que existe um relógio por aparelho e não um
-    // por store. Com dois relógios os HLCs se entrelaçariam, cada escrita cairia
-    // antes do lastHlc da outra store e forçaria refold do log inteiro.
-    const events = fakeEventStore();
-    const { session, registry } = await ready(events);
-    const transactions = createTransactionsStore(session);
-
-    await registry.addCategory(CATEGORY);
-    await transactions.add(TX_DRAFT);
-    await registry.addPaymentMethod(METHOD);
-    await transactions.add({ ...TX_DRAFT, description: "Outra" });
-
-    const hlcs = events.events.map((event) => event.hlc);
-    expect(new Set(hlcs).size).toBe(hlcs.length);
-    for (let i = 1; i < hlcs.length; i += 1) {
-      expect(compareHlc(hlcs[i - 1] ?? "", hlcs[i] ?? "")).toBe(-1);
-    }
-  });
-
-  it("nenhuma escrita entrelaçada força refold: lastHlc só cresce", async () => {
-    const events = fakeEventStore();
-    const { session, registry } = await ready(events);
-    const transactions = createTransactionsStore(session);
-
-    const observados: string[] = [];
-    for (const escrever of [
-      () => registry.addCategory(CATEGORY),
-      () => transactions.add(TX_DRAFT),
-      () => registry.addPaymentMethod(METHOD),
-    ]) {
-      await escrever();
-      observados.push(session.state.value.lastHlc ?? "");
-    }
-
-    for (let i = 1; i < observados.length; i += 1) {
-      expect(compareHlc(observados[i - 1] ?? "", observados[i] ?? "")).toBe(-1);
-    }
   });
 });

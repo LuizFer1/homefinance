@@ -1,9 +1,10 @@
 import { lastDayOfMonth } from "../dates/business-day";
 import { shiftMonth } from "../dates/calendar";
+import type { AppState } from "../model/app-state";
+import { NEUTRAL_TOKEN } from "../model/tokens";
+import type { Transaction } from "../model/transaction";
 import { offersCashback } from "../transactions/cashback";
-import type { ProjectionState, TransactionRecord } from "./apply";
 import { filterByMonth, type MonthTotals } from "./breakdown";
-import { NEUTRAL_TOKEN } from "./entities";
 import { monthOf } from "./periods";
 import { findCategory, type Totals, totals } from "./selectors";
 
@@ -31,7 +32,7 @@ export interface MonthComparison {
  * O "como estou indo" do cartão de saldo: o número sozinho não diz se o mês foi
  * bom, a diferença para o anterior diz.
  */
-export function monthComparison(items: TransactionRecord[], month: string): MonthComparison {
+export function monthComparison(items: Transaction[], month: string): MonthComparison {
   const monthItems = filterByMonth(items, month);
   const current = totals(monthItems);
   const previous = totals(filterByMonth(items, shiftMonth(month, -1)));
@@ -45,7 +46,7 @@ export function monthComparison(items: TransactionRecord[], month: string): Mont
 }
 
 /** Despesa acumulada ao fim de cada dia do mês (índice 0 = dia 1). */
-function cumulativeExpense(items: TransactionRecord[], month: string): number[] {
+function cumulativeExpense(items: Transaction[], month: string): number[] {
   const daily = new Array<number>(daysInMonth(month)).fill(0);
 
   for (const item of filterByMonth(items, month)) {
@@ -82,11 +83,7 @@ export interface SpendingPace {
  * "muito abaixo". O ponto de comparação é o mesmo dia; se o anterior é mais
  * curto (31 de março contra fevereiro), vale o último dia dele.
  */
-export function spendingPace(
-  items: TransactionRecord[],
-  month: string,
-  today: string,
-): SpendingPace {
+export function spendingPace(items: Transaction[], month: string, today: string): SpendingPace {
   const current = cumulativeExpense(items, month);
   const previous = cumulativeExpense(items, shiftMonth(month, -1));
   const thisMonth = monthOf(today);
@@ -128,10 +125,7 @@ export interface CategoryShare {
  * apagada soma em "Sem categoria": o delete não cascateia, mas ícone e cor de
  * um registro morto não devem voltar à tela.
  */
-export function categoryBreakdown(
-  items: TransactionRecord[],
-  state: ProjectionState,
-): CategoryShare[] {
+export function categoryBreakdown(items: Transaction[], state: AppState): CategoryShare[] {
   const sums = new Map<string | null, number>();
   let total = 0;
 
@@ -170,10 +164,7 @@ export interface CashbackSummary {
  * ter cashback preenchido: "9 compras no crédito e débito" é o universo em que
  * o cashback poderia ter vindo.
  */
-export function cashbackSummary(
-  items: TransactionRecord[],
-  state: ProjectionState,
-): CashbackSummary {
+export function cashbackSummary(items: Transaction[], state: AppState): CashbackSummary {
   let totalMinor = 0;
   let purchases = 0;
 
@@ -192,7 +183,7 @@ export function cashbackSummary(
  * lançamentos no mês" do cadastro, que ajuda a decidir o que dá para excluir.
  */
 export function categoryUsage(
-  items: TransactionRecord[],
+  items: Transaction[],
   month: string,
   field: "categoryId" | "paymentMethodId",
 ): Record<string, number> {

@@ -105,8 +105,8 @@ describe("foto", () => {
   });
 
   it("foto grande demais mostra o motivo e nao vira rascunho", async () => {
-    // O pipeline recusa em vez de gravar: o log e append-only e uma foto
-    // gigante ficaria nele para sempre.
+    // O pipeline recusa em vez de gravar: uma foto gigante incharia a linha
+    // do perfil, que viaja inteira em todo sync.
     const { onComplete } = montar({
       processFile: () => Promise.reject(new Error("Essa imagem e grande demais.")),
     });

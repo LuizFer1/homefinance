@@ -1,4 +1,4 @@
-import type { ColorToken } from "../../domain/events/reference";
+import type { ColorToken } from "../../domain/model/tokens";
 import { COLOR_NAMES, COLOR_TOKENS, cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 

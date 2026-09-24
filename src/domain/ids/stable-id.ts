@@ -8,8 +8,8 @@ const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
  *
  * Materializar a ocorrência de março do mesmo salário em dois telefones offline
  * **tem** que produzir o mesmo `entityId`: se cada um gerasse ULID aleatório,
- * o sync traria dois salários no extrato. O log é idempotente por `event.id`
- * (ainda aleatório); o agregado converge porque o alvo é o mesmo.
+ * o sync traria dois salários no extrato. Com o mesmo id, as duas linhas são a
+ * mesma linha, e o LWW por linha as converge.
  */
 export function stableEntityId(seed: string): Ulid {
   let h1 = 0x811c9dc5;

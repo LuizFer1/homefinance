@@ -1,8 +1,9 @@
 import { shiftDay } from "../dates/calendar";
-import type { RecurrenceFrequency, ScheduleType } from "../events/recurrence";
 import { stableEntityId } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
-import type { ProjectionState } from "../projections/apply";
+import type { AppState } from "../model/app-state";
+import { isAlive } from "../model/base";
+import type { RecurrenceFrequency, ScheduleType } from "../model/recurrence";
 import { eachPeriod, FREQUENCY_MONTHS, occurrenceKey, occurrenceOn } from "./schedule";
 
 export interface UpcomingOccurrence {
@@ -29,11 +30,11 @@ function isScheduleType(value: string): value is ScheduleType {
  *
  * Calculado, nunca gravado. A materialização só escreve o que já venceu — o
  * extrato não mente sobre o futuro —, então o que está por vir é projetado da
- * regra na hora de desenhar. Ocorrência que já existe no log (materializada ou
+ * regra na hora de desenhar. Ocorrência que já existe no banco (materializada ou
  * apagada pelo usuário) fica de fora pela mesma chave determinística.
  */
 export function upcomingRecurrences(
-  state: ProjectionState,
+  state: AppState,
   today: string,
   days: number,
 ): UpcomingOccurrence[] {
@@ -41,7 +42,7 @@ export function upcomingRecurrences(
   const found: UpcomingOccurrence[] = [];
 
   for (const series of Object.values(state.recurrences)) {
-    if (!series.materialized || series.deleted || !series.active) continue;
+    if (!isAlive(series) || !series.active) continue;
     if (!isFrequency(series.frequency) || !isScheduleType(series.scheduleType)) continue;
     if (series.startOn === "") continue;
 

@@ -1,18 +1,16 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  type CategoryRecord,
-  EMPTY_STATE,
-  type ProjectionState,
-  type TransactionRecord,
-} from "../../domain/projections/apply";
+import { type AppState, EMPTY_APP_STATE } from "../../domain/model/app-state";
+import type { Category } from "../../domain/model/category";
+import { ALIVE } from "../../domain/model/row.fake";
+import type { Transaction } from "../../domain/model/transaction";
 import { DashboardPage } from "./dashboard-page";
 
 afterEach(cleanup);
 
 const TODAY = "2026-08-10";
 
-function record(overrides: Partial<TransactionRecord> & { id: string }): TransactionRecord {
+function record(overrides: Partial<Transaction> & { id: string }): Transaction {
   return {
     kind: "expense",
     description: "Mercado",
@@ -25,16 +23,14 @@ function record(overrides: Partial<TransactionRecord> & { id: string }): Transac
     userId: null,
     recurrenceId: null,
     occurrenceKey: null,
-    deleted: false,
-    materialized: true,
-    fieldHlc: {},
+    ...ALIVE,
     ...overrides,
   };
 }
 
-function stateWith(categories: CategoryRecord[] = []): ProjectionState {
+function stateWith(categories: Category[] = []): AppState {
   return {
-    ...EMPTY_STATE,
+    ...EMPTY_APP_STATE,
     categories: Object.fromEntries(categories.map((item) => [item.id, item])),
   };
 }
@@ -230,15 +226,13 @@ describe("DashboardPage", () => {
   });
 
   it("para onde foi lista as categorias com a parte de cada uma", () => {
-    const casa: CategoryRecord = {
+    const casa: Category = {
       id: "casa",
       name: "Moradia",
       icon: "house",
       color: "amber",
       kind: "expense",
-      deleted: false,
-      materialized: true,
-      fieldHlc: {},
+      ...ALIVE,
     };
     render(
       <DashboardPage

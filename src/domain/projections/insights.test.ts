@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  type CategoryRecord,
-  EMPTY_STATE,
-  type PaymentMethodRecord,
-  type ProjectionState,
-  type TransactionRecord,
-} from "./apply";
+import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
+import type { Category } from "../model/category";
+import type { PaymentMethod } from "../model/payment-method";
+import { ALIVE, DELETED_AT } from "../model/row.fake";
+import type { Transaction } from "../model/transaction";
 import {
   averageSurplus,
   cashbackSummary,
@@ -16,7 +14,7 @@ import {
   spendingPace,
 } from "./insights";
 
-function record(overrides: Partial<TransactionRecord> & { id: string }): TransactionRecord {
+function record(overrides: Partial<Transaction> & { id: string }): Transaction {
   return {
     kind: "expense",
     description: "Mercado",
@@ -29,32 +27,36 @@ function record(overrides: Partial<TransactionRecord> & { id: string }): Transac
     userId: null,
     recurrenceId: null,
     occurrenceKey: null,
-    deleted: false,
-    materialized: true,
-    fieldHlc: {},
+    ...ALIVE,
     ...overrides,
   };
 }
 
-function reference(overrides: Partial<CategoryRecord> & { id: string }): CategoryRecord {
+function reference(overrides: Partial<Category> & { id: string }): Category {
   return {
     name: "Casa",
     icon: "house",
     color: "amber",
     kind: "expense",
-    deleted: false,
-    materialized: true,
-    fieldHlc: {},
+    ...ALIVE,
     ...overrides,
   };
 }
 
-function stateWith(
-  categories: CategoryRecord[],
-  paymentMethods: PaymentMethodRecord[] = [],
-): ProjectionState {
+function method(overrides: Partial<PaymentMethod> & { id: string }): PaymentMethod {
   return {
-    ...EMPTY_STATE,
+    name: "Cartão",
+    icon: "credit-card",
+    color: "violet",
+    kind: "credit",
+    ...ALIVE,
+    ...overrides,
+  };
+}
+
+function stateWith(categories: Category[], paymentMethods: PaymentMethod[] = []): AppState {
+  return {
+    ...EMPTY_APP_STATE,
     categories: Object.fromEntries(categories.map((item) => [item.id, item])),
     paymentMethods: Object.fromEntries(paymentMethods.map((item) => [item.id, item])),
   };
@@ -171,7 +173,7 @@ describe("categoryBreakdown", () => {
   });
 
   it("junta o que não tem categoria (ou a perdeu) numa linha neutra", () => {
-    const state = stateWith([reference({ id: "morta", deleted: true })]);
+    const state = stateWith([reference({ id: "morta", deletedAt: DELETED_AT })]);
     const items = [
       record({ id: "a", amountMinor: 100, categoryId: null }),
       record({ id: "b", amountMinor: 300, categoryId: "morta" }),
@@ -184,7 +186,7 @@ describe("categoryBreakdown", () => {
   });
 
   it("não devolve nada sem despesa", () => {
-    expect(categoryBreakdown([], EMPTY_STATE)).toEqual([]);
+    expect(categoryBreakdown([], EMPTY_APP_STATE)).toEqual([]);
   });
 });
 
@@ -193,9 +195,9 @@ describe("cashbackSummary", () => {
     const state = stateWith(
       [],
       [
-        reference({ id: "cc", kind: "credit" }),
-        reference({ id: "cd", kind: "debit" }),
-        reference({ id: "pix", kind: "pix" }),
+        method({ id: "cc", kind: "credit" }),
+        method({ id: "cd", kind: "debit" }),
+        method({ id: "pix", kind: "pix" }),
       ],
     );
     const items = [

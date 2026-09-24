@@ -1,10 +1,10 @@
 import type { PhosphorName } from "./phosphor-paths";
 
 /**
- * Chave persistida no log → glifo Phosphor.
+ * Chave persistida no banco → glifo Phosphor.
  *
- * As chaves são as que o log já guarda desde a fatia de cadastros, e **não** os
- * nomes do Phosphor: trocar de biblioteca não pode reescrever evento nenhum. Um
+ * As chaves são as que o banco já guarda desde a fatia de cadastros, e **não** os
+ * nomes do Phosphor: trocar de biblioteca não pode reescrever linha nenhuma. Um
  * "utensils" gravado em 2026 continua sendo "utensils" para sempre; só o desenho
  * que ele resolve mudou.
  *
@@ -53,7 +53,7 @@ export const ICON_SET = {
 export type IconKey = keyof typeof ICON_SET;
 
 /**
- * Chave desconhecida cai aqui em vez de não renderizar nada. O log é eterno e um
+ * Chave desconhecida cai aqui em vez de não renderizar nada. Via sync, um
  * aparelho de versão mais nova pode gravar uma chave que esta versão não conhece.
  */
 export const FALLBACK_ICON: PhosphorName = "circle-dashed";

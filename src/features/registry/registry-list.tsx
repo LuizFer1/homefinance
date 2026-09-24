@@ -1,8 +1,9 @@
-import type { CategoryRecord, PaymentMethodRecord } from "../../domain/projections/apply";
+import type { Category } from "../../domain/model/category";
+import type { PaymentMethod } from "../../domain/model/payment-method";
 import { Icon } from "../icons/icon";
 import { IconTile } from "../ui/tile";
 
-type Item = CategoryRecord | PaymentMethodRecord;
+type Item = Category | PaymentMethod;
 
 export interface RegistryListProps {
   items: Item[];

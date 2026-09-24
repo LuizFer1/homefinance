@@ -24,7 +24,7 @@ describe("offersCashback", () => {
   });
 
   it("nao oferece para kind desconhecido vindo de uma versao futura", () => {
-    // O fold aceita o valor de proposito; a regra e conservadora e so liga o
+    // A linha guarda o valor como veio; a regra e conservadora e so liga o
     // campo para os dois tipos que ela conhece.
     expect(offersCashback("cripto", "expense")).toBe(false);
   });

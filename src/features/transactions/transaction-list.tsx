@@ -1,7 +1,8 @@
-import { FREQUENCY_LABELS, type RecurrenceFrequency } from "../../domain/events/recurrence";
+import type { AppState } from "../../domain/model/app-state";
+import { FREQUENCY_LABELS, type RecurrenceFrequency } from "../../domain/model/recurrence";
+import { NEUTRAL_TOKEN } from "../../domain/model/tokens";
+import type { Transaction } from "../../domain/model/transaction";
 import { formatBRL } from "../../domain/money/money";
-import type { ProjectionState, TransactionRecord } from "../../domain/projections/apply";
-import { NEUTRAL_TOKEN } from "../../domain/projections/entities";
 import { dayHeading } from "../../domain/projections/periods";
 import {
   type DayGroup,
@@ -18,12 +19,12 @@ import { IconTile } from "../ui/tile";
 
 export interface TransactionListProps {
   /** Já filtrados e ordenados por `listTransactions`. */
-  items: TransactionRecord[];
+  items: Transaction[];
   /** Para resolver categoria, forma de pagamento e autor, inclusive os apagados. */
-  state: ProjectionState;
+  state: AppState;
   /** Data de hoje em 'YYYY-MM-DD', para os rótulos "Hoje" e "Ontem". */
   today: string;
-  onEdit: (record: TransactionRecord) => void;
+  onEdit: (record: Transaction) => void;
 }
 
 /**
@@ -32,11 +33,11 @@ export interface TransactionListProps {
  * Cai no eixo receita/despesa em vez de num genérico: é a única coisa que se
  * sabe do lançamento sem categoria.
  */
-function fallbackIcon(kind: TransactionRecord["kind"]): string {
+function fallbackIcon(kind: Transaction["kind"]): string {
   return kind === "income" ? "banknote" : "receipt";
 }
 
-function metadata(state: ProjectionState, item: TransactionRecord): string {
+function metadata(state: AppState, item: Transaction): string {
   return [
     item.categoryId !== null ? resolveCategoryName(state, item.categoryId) : null,
     item.paymentMethodId !== null ? resolvePaymentMethodName(state, item.paymentMethodId) : null,
@@ -47,7 +48,7 @@ function metadata(state: ProjectionState, item: TransactionRecord): string {
 }
 
 /** Rótulo da tag de recorrente: a frequência da série ("Mensal"). */
-function repeatLabel(state: ProjectionState, item: TransactionRecord): string {
+function repeatLabel(state: AppState, item: Transaction): string {
   const series = item.recurrenceId === null ? undefined : state.recurrences[item.recurrenceId];
   const frequency = series?.frequency;
   return frequency !== undefined && Object.hasOwn(FREQUENCY_LABELS, frequency)
@@ -84,10 +85,10 @@ function Row({
   first,
   onEdit,
 }: {
-  item: TransactionRecord;
-  state: ProjectionState;
+  item: Transaction;
+  state: AppState;
   first: boolean;
-  onEdit: (record: TransactionRecord) => void;
+  onEdit: (record: Transaction) => void;
 }) {
   const category = findCategory(state, item.categoryId);
   const author = findUser(state, item.userId);

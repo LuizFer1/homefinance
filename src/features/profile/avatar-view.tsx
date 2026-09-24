@@ -11,9 +11,9 @@ export interface AvatarProps {
 /**
  * Lista de **permissão**, não de bloqueio.
  *
- * O valor vem do log, e o log vem do aparelho da outra pessoa via sync: é
- * entrada não confiável, e o fold a aceitou de propósito para não perder dado de
- * uma versão mais nova. A restrição mora aqui, onde é reversível.
+ * O valor vem do banco, e a linha pode vir do aparelho da outra pessoa via sync:
+ * é entrada não confiável, guardada como veio para não perder dado de uma
+ * versão mais nova. A restrição mora aqui, onde é reversível.
  *
  * `data:image/svg+xml` é recusado. Num `<img>` o script de um SVG não executa,
  * então isto não corrige um furo conhecido — recusa um formato que carrega

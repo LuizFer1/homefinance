@@ -9,14 +9,14 @@ export interface ResetDeps {
 }
 
 /**
- * Ação mais destrutiva do app: a única sem desfazer, porque o log apagado não
+ * Ação mais destrutiva do app: a única sem desfazer, porque o banco apagado não
  * volta de lugar nenhum.
  *
  * Limpa as **três** camadas que o navegador guarda. Apagar só o IndexedDB
  * deixaria o app carregando de um cache (service worker / Cache Storage) que
  * espera dados que não existem mais.
  *
- * A recarga é o que garante que toda store reconstrua de um log vazio. Remendar
+ * A recarga é o que garante que a sessão reabra de um banco vazio. Remendar
  * os sinais em memória para simular o estado inicial seria uma segunda
  * implementação do boot, divergindo da primeira em silêncio. Entra injetada,
  * senão o teste recarrega o runner.

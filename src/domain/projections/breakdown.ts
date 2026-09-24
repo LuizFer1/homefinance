@@ -1,4 +1,4 @@
-import type { TransactionRecord } from "./apply";
+import type { Transaction } from "../model/transaction";
 import { monthOf } from "./periods";
 
 export interface MonthTotals {
@@ -8,7 +8,7 @@ export interface MonthTotals {
   expenseMinor: number;
 }
 
-export function filterByMonth(records: TransactionRecord[], month: string): TransactionRecord[] {
+export function filterByMonth(records: Transaction[], month: string): Transaction[] {
   return records.filter((record) => monthOf(record.occurredOn) === month);
 }
 
@@ -22,7 +22,7 @@ export function filterByMonth(records: TransactionRecord[], month: string): Tran
  * colapsam e a saída fica menor que a entrada — hoje a única origem é
  * `lastMonths`, que nunca repete.
  */
-export function monthlyTotals(records: TransactionRecord[], months: string[]): MonthTotals[] {
+export function monthlyTotals(records: Transaction[], months: string[]): MonthTotals[] {
   const buckets = new Map<string, MonthTotals>();
   for (const month of months) {
     buckets.set(month, { month, incomeMinor: 0, expenseMinor: 0 });
@@ -30,7 +30,7 @@ export function monthlyTotals(records: TransactionRecord[], months: string[]): M
 
   for (const record of records) {
     const entry = buckets.get(monthOf(record.occurredOn));
-    // Fora da janela pedida. Não é erro: o log guarda tudo, a janela é da tela.
+    // Fora da janela pedida. Não é erro: o banco guarda tudo, a janela é da tela.
     if (entry === undefined) continue;
     if (record.kind === "income") entry.incomeMinor += record.amountMinor;
     else entry.expenseMinor += record.amountMinor;

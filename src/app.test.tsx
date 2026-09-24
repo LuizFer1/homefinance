@@ -1,9 +1,11 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app";
-import type { EventStore } from "./data/event-store";
-import { fakeEventStore } from "./data/event-store.fake";
-import { userCreated } from "./domain/events/user";
+import type { HomeFinanceDb } from "./data/db";
+import { buildRow } from "./data/repository";
+import { openTestDb, TEST_DEVICE_ID, testSessionDeps } from "./data/test-db.fake";
+import { createRowClock } from "./domain/clock/row-clock";
+import type { User } from "./domain/model/user";
 import { createOnboardingStore } from "./features/onboarding/store";
 import { createProfileStore } from "./features/profile/store";
 import { createRecurrenceStore } from "./features/recurrence/store";
@@ -12,53 +14,62 @@ import { createSession, LOCAL_USER_ID_KEY } from "./features/session/session";
 import { createTransactionsStore } from "./features/transactions/store";
 import { HOLD_MS } from "./features/ui/hold-button";
 
-afterEach(cleanup);
-
 const PERFIL_LOCAL = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
-const DEVICE_LOCAL = "01J9F3K2M7QX8YB4TVWZ0DCEHZ";
+
+/** Bancos abertos no teste corrente, apagados no `afterEach`. */
+let abertos: HomeFinanceDb[] = [];
+
+afterEach(async () => {
+  cleanup();
+  await Promise.all(abertos.map((db) => db.delete()));
+  abertos = [];
+});
+
+/** Banco real sobre `fake-indexeddb`, vazio: aparelho virgem. */
+function novoBanco(): HomeFinanceDb {
+  const db = openTestDb();
+  abertos.push(db);
+  return db;
+}
 
 /**
- * Duplo de aparelho **já cadastrado**: o meta traz `localUserId` e o log o
- * `user.create` correspondente. Sem o evento, a linha de perfil em Ajustes
- * ficaria desabilitada (perfil nulo) e os testes de edição não teriam o que
- * abrir.
+ * Relógio das linhas semeadas antes do `render`. Anda atrás do da sessão
+ * (`testSessionDeps` começa em 1_754_697_600_000), como um cadastro antigo.
  */
-function fakeCadastrado(seed: Parameters<typeof fakeEventStore>[0] = []) {
-  const comPerfil =
-    seed.length > 0
-      ? seed
-      : [
-          userCreated({
-            eventId: "01J9F3K2M7QX8YB4TVWZ0DCEE1",
-            entityId: PERFIL_LOCAL,
-            deviceId: DEVICE_LOCAL,
-            hlc: `1754697500000-0000-${DEVICE_LOCAL}`,
-            draft: { name: "Luiz", color: "teal", avatar: null },
-          }),
-        ];
-  return fakeEventStore(comPerfil, { [LOCAL_USER_ID_KEY]: PERFIL_LOCAL });
+function seedClock() {
+  return createRowClock({
+    deviceId: TEST_DEVICE_ID,
+    now: () => 1_754_697_500_000,
+    randomChunk: (count) => Array.from({ length: count }, () => 0),
+  });
+}
+
+/**
+ * Aparelho **já cadastrado**: o meta traz `localUserId` e a tabela `users` a
+ * linha correspondente. Sem a linha, o perfil em Ajustes ficaria desabilitado
+ * (perfil nulo) e os testes de edição não teriam o que abrir.
+ */
+async function cadastrado(): Promise<HomeFinanceDb> {
+  const db = novoBanco();
+  await db.users.put(
+    buildRow<User>(seedClock(), { name: "Luiz", color: "teal", avatar: null }, PERFIL_LOCAL),
+  );
+  await db.meta.put({ key: LOCAL_USER_ID_KEY, value: PERFIL_LOCAL });
+  return db;
 }
 
 /** As stores partilham a mesma sessao, como em producao. */
-function buildStores(events: EventStore) {
-  let millis = 1_754_697_600_000;
-  const session = createSession({
-    events,
-    now: () => {
-      millis += 1;
-      return millis;
-    },
-    randomChunk: (count: number) => Array.from({ length: count }, (_, index) => index % 32),
-  });
+function buildStores(db: HomeFinanceDb) {
+  const session = createSession(testSessionDeps(db));
   return {
+    session,
     store: createTransactionsStore(session),
     registry: createRegistryStore(session),
     profileStore: createProfileStore(session),
     recurrence: createRecurrenceStore(session),
     onboarding: createOnboardingStore(session),
-    localUserId: session.localUserId,
     processFile: () => Promise.resolve("data:image/webp;base64,AAAA"),
-    onReset: () => {},
+    onReset: async () => {},
   };
 }
 
@@ -125,7 +136,7 @@ async function abrirEdicao(description: string) {
 describe("App", () => {
   it("mostra saudacao e saldo no cabecalho", async () => {
     render(
-      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
 
     await waitFor(() => expect(screen.getByRole("heading", { name: /Bom dia/i })).toBeDefined());
@@ -135,7 +146,7 @@ describe("App", () => {
 
   it("adiciona um lançamento e atualiza os totais", async () => {
     render(
-      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -148,9 +159,11 @@ describe("App", () => {
     expect(screen.getByTestId("total-expense").textContent).toContain("12,34");
   });
 
-  it("edita emitindo patch apenas do campo alterado", async () => {
-    const events = fakeCadastrado();
-    render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+  it("edita gravando o campo alterado na linha do lançamento", async () => {
+    const db = await cadastrado();
+    const stores = buildStores(db);
+    const edit = vi.spyOn(stores.store, "edit");
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
     );
@@ -160,33 +173,58 @@ describe("App", () => {
     fireEvent.input(screen.getByLabelText("Valor"), { target: { value: "5,00" } });
     concluirWizard();
 
-    await waitFor(() =>
-      expect(events.events.some((event) => event.action === "update")).toBe(true),
-    );
-    const update = events.events.find((event) => event.action === "update");
-    expect(update?.data).toEqual({ amountMinor: 500 });
+    await waitFor(() => expect(edit).toHaveBeenCalledTimes(1));
+    await edit.mock.results[0]?.value;
+    const [linha] = await db.transactions.toArray();
+    expect(linha).toMatchObject({ description: "Mercado", amountMinor: 500, dirty: 1 });
   });
 
-  it("não emite evento quando nada mudou na edição", async () => {
-    const events = fakeCadastrado();
-    render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+  it("não regrava a linha quando nada mudou na edição", async () => {
+    // O draft vai inteiro; quem percebe que nada mudou é o repositório, que
+    // devolve a linha sem gravar nem avançar `updatedAt`.
+    const db = await cadastrado();
+    const stores = buildStores(db);
+    const edit = vi.spyOn(stores.store, "edit");
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
     );
     await addTransaction("Mercado", "12,34");
+    const [antes] = await db.transactions.toArray();
 
     await abrirEdicao("Mercado");
     concluirWizard();
 
-    // Modal fecha sem emitir: o patch sai vazio e um log append-only nao merece
-    // lixo permanente.
     await waitFor(() => expect(screen.queryByLabelText("Descrição")).toBeNull());
-    expect(events.events.filter((event) => event.action === "update")).toHaveLength(0);
+    await waitFor(() => expect(edit).toHaveBeenCalledTimes(1));
+    await edit.mock.results[0]?.value;
+    const [depois] = await db.transactions.toArray();
+    expect(depois?.updatedAt).toBe(antes?.updatedAt);
+  });
+
+  it("falha ao gravar aparece no alerta e não vira rejeição solta", async () => {
+    // A escrita é fire-and-forget: a mensagem vem do `session.error`, e o
+    // `ignoreHandled` impede a promise rejeitada de escapar (o Vitest acusaria).
+    const db = await cadastrado();
+    render(<App {...buildStores(db)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
+    vi.spyOn(db.transactions, "put").mockRejectedValueOnce(new Error("disco cheio"));
+
+    await abrirModal();
+    fireEvent.input(screen.getByLabelText("Descrição"), { target: { value: "Mercado" } });
+    fireEvent.input(screen.getByLabelText("Valor"), { target: { value: "12,34" } });
+    concluirWizard();
+
+    expect((await screen.findByRole("alert")).textContent).toContain("disco cheio");
+    expect(screen.queryByText("Mercado")).toBeNull();
+    expect(await db.transactions.count()).toBe(0);
   });
 
   it("remove o lançamento da lista", async () => {
     render(
-      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -214,10 +252,8 @@ describe("App", () => {
   });
 
   it("mostra erro quando o armazenamento não abre", async () => {
-    const broken = fakeEventStore();
-    broken.readAll = async () => {
-      throw new Error("IndexedDB indisponível");
-    };
+    const broken = novoBanco();
+    vi.spyOn(broken.meta, "get").mockRejectedValue(new Error("IndexedDB indisponível"));
     render(<App {...buildStores(broken)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
 
     await waitFor(() =>
@@ -263,7 +299,7 @@ function arrastarHorizontal(main: Element, fromX: number, toX: number) {
 describe("navegacao", () => {
   it("arrastar para a esquerda vai de Inicio para Ajustes", async () => {
     render(
-      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -283,7 +319,7 @@ describe("navegacao", () => {
 
   it("arrastar para a direita vai de Inicio para Dashboard", async () => {
     render(
-      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -301,7 +337,7 @@ describe("navegacao", () => {
 
   it("troca para categorias e volta para lancamentos", async () => {
     render(
-      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -318,9 +354,9 @@ describe("navegacao", () => {
   it("cadastra categoria e volta com o lancamento intacto", async () => {
     // O ciclo que a fatia inteira existe para permitir: sair da tela de
     // lancamentos, cadastrar, e voltar sem perder nada — as duas telas leem a
-    // mesma projecao.
-    const events = fakeCadastrado();
-    render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    // mesmo estado.
+    const db = await cadastrado();
+    render(<App {...buildStores(db)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
     );
@@ -338,14 +374,15 @@ describe("navegacao", () => {
 
     fireEvent.click(naBarra().getByRole("button", { name: "Início" }));
 
-    // O lancamento continua la, e os dois eventos foram para o mesmo log.
+    // O lancamento continua la, e as duas linhas foram para o mesmo banco.
     expect(screen.getByText("Mercado")).toBeDefined();
-    expect(events.events.map((e) => e.entity).sort()).toEqual(["category", "transaction", "user"]);
+    expect((await db.transactions.toArray()).map((t) => t.description)).toEqual(["Mercado"]);
+    expect((await db.categories.toArray()).map((c) => c.name)).toEqual(["Alimentacao"]);
   });
 
   it("a tela de pagamentos oferece o tipo e a de categorias nao", async () => {
     render(
-      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -365,7 +402,7 @@ describe("navegacao", () => {
 describe("modal de lançamento", () => {
   async function pronto() {
     render(
-      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -421,7 +458,7 @@ describe("modal de lançamento", () => {
 describe("fila de ações rápidas", () => {
   async function pronto() {
     render(
-      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -490,7 +527,7 @@ describe("fila de ações rápidas", () => {
 describe("as tres telas", () => {
   async function pronto() {
     render(
-      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
     await waitFor(() =>
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
@@ -599,11 +636,9 @@ describe("as tres telas", () => {
 describe("primeiro uso", () => {
   /** Aparelho virgem: sem `localUserId` no meta. */
   function novoAparelho(over: Partial<Parameters<typeof App>[0]> = {}) {
-    const events = fakeEventStore();
-    render(
-      <App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} {...over} />,
-    );
-    return events;
+    const db = novoBanco();
+    render(<App {...buildStores(db)} today="2026-08-08" hour={9} theme={fakeTheme()} {...over} />);
+    return db;
   }
 
   it("bloqueia o app com o wizard na primeira abertura", async () => {
@@ -618,7 +653,7 @@ describe("primeiro uso", () => {
 
   it("nao pede cadastro quando o aparelho ja tem perfil local", async () => {
     render(
-      <App {...buildStores(fakeCadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
 
     await waitFor(() =>
@@ -627,35 +662,25 @@ describe("primeiro uso", () => {
     expect(screen.queryByLabelText(/seu nome/i)).toBeNull();
   });
 
-  it("pede cadastro mesmo com um user de outro aparelho ja no log", async () => {
-    // Decisao transversal 6: derivar de "existe algum user no log" faria este
-    // aparelho pular o cadastro depois do sync, e todo lancamento seguinte
-    // sairia sem autor.
-    const outro = "01J9F3K2M7QX8YB4TVWZ0DCEHZ";
-    render(
-      <App
-        {...buildStores(
-          fakeEventStore([
-            userCreated({
-              eventId: "01J9F3K2M7QX8YB4TVWZ0DCEE1",
-              entityId: "01J9F3K2M7QX8YB4TVWZ0DCEHO",
-              deviceId: outro,
-              hlc: `1754697500000-0000-${outro}`,
-              draft: { name: "Ana", color: "rose", avatar: null },
-            }),
-          ]),
-        )}
-        today="2026-08-08"
-        hour={9}
-        theme={fakeTheme()}
-      />,
+  it("pede cadastro mesmo com um user de outro aparelho ja na tabela", async () => {
+    // Decisao transversal 6: derivar de "existe algum user na tabela" faria
+    // este aparelho pular o cadastro depois do sync, e todo lancamento
+    // seguinte sairia sem autor.
+    const db = novoBanco();
+    await db.users.put(
+      buildRow<User>(
+        seedClock(),
+        { name: "Ana", color: "rose", avatar: null },
+        "01J9F3K2M7QX8YB4TVWZ0DCEHO",
+      ),
     );
+    render(<App {...buildStores(db)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
 
     await waitFor(() => expect(screen.getByLabelText(/seu nome/i)).toBeDefined());
   });
 
   it("concluir o wizard abre o app com o nome na saudacao e as formas padrao", async () => {
-    const events = novoAparelho();
+    const db = novoAparelho();
     await waitFor(() => expect(screen.getByLabelText(/seu nome/i)).toBeDefined());
 
     fireEvent.input(screen.getByLabelText(/seu nome/i), { target: { value: "Luiz" } });
@@ -669,16 +694,21 @@ describe("primeiro uso", () => {
     );
     expect(screen.getByRole("heading", { name: /bom dia, luiz/i })).toBeDefined();
     // Perfil, as quatro formas padrao e as categorias padrao, numa escrita so.
-    expect(events.events[0]?.entity).toBe("user");
-    expect(events.events.filter((e) => e.entity === "paymentMethod")).toHaveLength(4);
-    expect(events.events.filter((e) => e.entity === "category").length).toBeGreaterThan(0);
-    expect(await events.getMeta(LOCAL_USER_ID_KEY)).not.toBeNull();
+    const [perfil] = await db.users.toArray();
+    expect(perfil?.name).toBe("Luiz");
+    expect(await db.paymentMethods.count()).toBe(4);
+    expect(await db.categories.count()).toBeGreaterThan(0);
+    expect((await db.meta.get(LOCAL_USER_ID_KEY))?.value).toBe(perfil?.id);
   });
 
   it("falha na escrita do lote mantem o wizard na tela, sem estado parcial", async () => {
-    const events = fakeEventStore();
-    events.failNext = true;
-    render(<App {...buildStores(events)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    const db = novoBanco();
+    // Falha no meio do lote: `users` e `categories` já foram escritos na
+    // transação quando `paymentMethods` rejeita, e o Dexie desfaz tudo.
+    const falha = vi
+      .spyOn(db.paymentMethods, "bulkPut")
+      .mockRejectedValueOnce(new Error("QuotaExceededError"));
+    render(<App {...buildStores(db)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
     await waitFor(() => expect(screen.getByLabelText(/seu nome/i)).toBeDefined());
 
     fireEvent.input(screen.getByLabelText(/seu nome/i), { target: { value: "Luiz" } });
@@ -686,19 +716,21 @@ describe("primeiro uso", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
     fireEvent.click(screen.getByRole("button", { name: /começar/i }));
 
-    await waitFor(() => expect(events.failNext).toBe(true));
+    expect((await screen.findByRole("alert")).textContent).toContain("QuotaExceededError");
+    expect(falha).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText(/escolher foto/i)).toBeDefined();
-    expect(events.events).toHaveLength(0);
-    expect(await events.getMeta(LOCAL_USER_ID_KEY)).toBeNull();
+    expect(await db.users.count()).toBe(0);
+    expect(await db.categories.count()).toBe(0);
+    expect(await db.meta.get(LOCAL_USER_ID_KEY)).toBeUndefined();
   });
 });
 
 describe("perfil e reset nas configuracoes", () => {
-  async function emAjustes(onReset = () => {}) {
-    const events = fakeCadastrado();
+  async function emAjustes(onReset: () => Promise<void> = async () => {}) {
+    const db = await cadastrado();
     render(
       <App
-        {...buildStores(events)}
+        {...buildStores(db)}
         onReset={onReset}
         today="2026-08-08"
         hour={9}
@@ -709,7 +741,7 @@ describe("perfil e reset nas configuracoes", () => {
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
     );
     fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
-    return events;
+    return db;
   }
 
   it("oferece resetar a conta atras da digitacao exata", async () => {
@@ -730,8 +762,39 @@ describe("perfil e reset nas configuracoes", () => {
     expect(onReset).toHaveBeenCalledTimes(1);
   });
 
+  it("reset que falha mostra o motivo no sheet, sem rejeicao solta", async () => {
+    await emAjustes(async () => {
+      throw new Error("Banco bloqueado por outra aba");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /resetar conta/i }));
+    const sheet = within(screen.getByRole("dialog", { name: "Resetar conta" }));
+    fireEvent.input(screen.getByLabelText(/digite apagar/i), { target: { value: "APAGAR" } });
+    fireEvent.click(sheet.getByRole("button", { name: /^resetar conta$/i }));
+
+    expect((await sheet.findByRole("alert")).textContent).toContain(
+      "Banco bloqueado por outra aba",
+    );
+  });
+
+  it("falha ao salvar o perfil aparece num alerta so, junto do formulario", async () => {
+    // A falha passa pelo `mutate`, que preenche `session.error`; a tela de
+    // perfil mostra o motivo perto do botão e limpa o global, para o mesmo
+    // erro não aparecer duas vezes.
+    const db = await emAjustes();
+    fireEvent.click(screen.getByRole("button", { name: /Luiz/ }));
+    vi.spyOn(db.users, "put").mockRejectedValueOnce(new Error("disco cheio"));
+
+    fireEvent.input(screen.getByLabelText(/seu nome/i), { target: { value: "Ana" } });
+    fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("disco cheio"));
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByRole("region", { name: "Seu perfil" })).toBeDefined();
+  });
+
   it("edita nome e cor do perfil e volta para Ajustes", async () => {
-    const events = await emAjustes();
+    const db = await emAjustes();
 
     fireEvent.click(screen.getByRole("button", { name: /Luiz/ }));
     fireEvent.input(screen.getByLabelText(/seu nome/i), { target: { value: "Ana" } });
@@ -742,6 +805,6 @@ describe("perfil e reset nas configuracoes", () => {
       expect(screen.getByRole("region", { name: "Configurações" })).toBeDefined(),
     );
     expect(screen.getByRole("button", { name: /Ana/ })).toBeDefined();
-    expect(events.events.some((e) => e.entity === "user" && e.action === "update")).toBe(true);
+    expect(await db.users.get(PERFIL_LOCAL)).toMatchObject({ name: "Ana", color: "rose" });
   });
 });

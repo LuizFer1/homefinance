@@ -1,143 +1,87 @@
-import { describe, expect, it } from "vitest";
-import { type FakeEventStore, fakeEventStore } from "../../data/event-store.fake";
-import type { UserDraft } from "../../domain/events/user";
-import { userCreated } from "../../domain/events/user";
-import {
-  listCategories,
-  listCategoriesFor,
-  listPaymentMethods,
-} from "../../domain/projections/selectors";
-import { createSession, LOCAL_USER_ID_KEY, type Session } from "../session/session";
-import { createOnboardingStore, type OnboardingStore } from "./store";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { HomeFinanceDb } from "../../data/db";
+import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
+import { createSession, LOCAL_USER_ID_KEY } from "../session/session";
+import { createOnboardingStore } from "./store";
 
-const DRAFT: UserDraft = { name: "Luiz", color: "teal", avatar: null };
-const OUTRO_DEVICE = "01J9F3K2M7QX8YB4TVWZ0DCEHZ";
+const LUIZ = { name: "Luiz", color: "teal", avatar: null } as const;
 
-function newSession(events: FakeEventStore): Session {
-  let millis = 1_754_697_600_000;
-  return createSession({
-    events,
-    now: () => {
-      millis += 1;
-      return millis;
-    },
-    randomChunk: (count) => Array.from({ length: count }, (_, i) => i % 32),
-  });
-}
+let db: HomeFinanceDb;
 
-function build(events: FakeEventStore): { session: Session; onboarding: OnboardingStore } {
-  const session = newSession(events);
-  return { session, onboarding: createOnboardingStore(session) };
-}
-
-describe("primeiro uso", () => {
-  it("nao pede onboarding enquanto a sessao esta carregando", () => {
-    // Sem isto o wizard pisca antes de o disco responder, e quem ja se cadastrou
-    // ve a tela de boas-vindas por um frame.
-    const { onboarding } = build(fakeEventStore());
-
-    expect(onboarding.needsOnboarding.value).toBe(false);
-  });
-
-  it("pede onboarding quando localUserId esta vazio", async () => {
-    const { session, onboarding } = build(fakeEventStore());
-
-    await session.init();
-
-    expect(onboarding.needsOnboarding.value).toBe(true);
-  });
-
-  it("nao pede onboarding na segunda abertura", async () => {
-    const events = fakeEventStore();
-    await events.setMeta(LOCAL_USER_ID_KEY, "01J9F3K2M7QX8YB4TVWZ0DCEHU");
-    const { session, onboarding } = build(events);
-
-    await session.init();
-
-    expect(onboarding.needsOnboarding.value).toBe(false);
-  });
-
-  it("pede onboarding mesmo com um user de outro device ja no log", async () => {
-    // Decisao transversal 6 do ROADMAP: derivar de "existe algum user no log"
-    // quebraria depois do sync, e todo lancamento seguinte sairia sem autor.
-    const events = fakeEventStore([
-      userCreated({
-        eventId: "01J9F3K2M7QX8YB4TVWZ0DCEE1",
-        entityId: "01J9F3K2M7QX8YB4TVWZ0DCEHO",
-        deviceId: OUTRO_DEVICE,
-        hlc: `1754697500000-0000-${OUTRO_DEVICE}`,
-        draft: { name: "Ana", color: "rose", avatar: null },
-      }),
-    ]);
-    const { session, onboarding } = build(events);
-
-    await session.init();
-
-    expect(onboarding.needsOnboarding.value).toBe(true);
-  });
+beforeEach(() => {
+  db = openTestDb();
 });
 
-describe("conclusao do wizard", () => {
-  it("grava o lote, semeia metodos e categorias, e para de pedir", async () => {
-    const events = fakeEventStore();
-    const { session, onboarding } = build(events);
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await db.delete();
+});
+
+describe("createOnboardingStore", () => {
+  it("precisa de onboarding só depois do boot e sem perfil local", async () => {
+    const session = createSession(testSessionDeps(db));
+    const store = createOnboardingStore(session);
+    expect(store.needsOnboarding.value).toBe(false);
+
     await session.init();
-
-    await onboarding.complete(DRAFT);
-
-    expect(onboarding.needsOnboarding.value).toBe(false);
-    expect(await events.getMeta(LOCAL_USER_ID_KEY)).not.toBeNull();
-    expect(listPaymentMethods(session.state.value).map((m) => m.name)).toEqual([
-      "Cartão de crédito",
-      "Cartão de débito",
-      "Dinheiro",
-      "Pix",
-    ]);
-    expect(listCategories(session.state.value).length).toBeGreaterThan(0);
+    expect(store.needsOnboarding.value).toBe(true);
   });
 
-  it("as categorias semeadas ja chegam filtradas por lado do lancamento", async () => {
-    // "Salario" oferecido ao lancar uma despesa e a razao de `kind` existir na
-    // categoria.
-    const { session, onboarding } = build(fakeEventStore());
+  it("complete grava tudo e sobrevive ao reabrir", async () => {
+    const session = createSession(testSessionDeps(db));
     await session.init();
-    await onboarding.complete(DRAFT);
+    await createOnboardingStore(session).complete(LUIZ);
 
-    const despesas = listCategoriesFor(session.state.value, "expense").map((c) => c.name);
-    const receitas = listCategoriesFor(session.state.value, "income").map((c) => c.name);
+    const reaberta = createSession(testSessionDeps(db));
+    await reaberta.init();
 
-    expect(despesas).toContain("Alimentação");
-    expect(despesas).not.toContain("Salário");
-    expect(receitas).toContain("Salário");
-    expect(receitas).not.toContain("Alimentação");
-    // `both` aparece nas duas listas, e e o caso de investimento.
-    expect(despesas).toContain("Investimentos");
-    expect(receitas).toContain("Investimentos");
+    expect(createOnboardingStore(reaberta).needsOnboarding.value).toBe(false);
+    expect(Object.keys(reaberta.state.value.categories)).toHaveLength(12);
+    expect(Object.keys(reaberta.state.value.paymentMethods)).toHaveLength(4);
+    expect(reaberta.state.value.users[reaberta.localUserId.value ?? ""]?.name).toBe("Luiz");
   });
 
-  it("grava a foto quando ela existe", async () => {
-    const events = fakeEventStore();
-    const { session, onboarding } = build(events);
+  it("falha no meio não grava nada e continua pedindo onboarding", async () => {
+    const session = createSession(testSessionDeps(db));
     await session.init();
+    const store = createOnboardingStore(session);
+    vi.spyOn(db.categories, "bulkPut").mockRejectedValueOnce(new Error("quota exceeded"));
 
-    await onboarding.complete({ ...DRAFT, avatar: "data:image/webp;base64,AAAA" });
+    await expect(store.complete(LUIZ)).rejects.toThrow("quota exceeded");
 
-    const id = session.localUserId.value ?? "";
-    expect(session.state.value.users[id]?.avatar).toBe("data:image/webp;base64,AAAA");
+    expect(store.needsOnboarding.value).toBe(true);
+    expect(await db.users.count()).toBe(0);
+    expect(await db.paymentMethods.count()).toBe(0);
+    expect(await db.categories.count()).toBe(0);
+    expect(await db.meta.get(LOCAL_USER_ID_KEY)).toBeUndefined();
+    expect(session.error.value).toBe("quota exceeded");
   });
 
-  it("falha na escrita do lote nao deixa localUserId nem metodos orfaos", async () => {
-    const events = fakeEventStore();
-    const { session, onboarding } = build(events);
+  it("dois complete simultâneos semeiam só uma vez", async () => {
+    const session = createSession(testSessionDeps(db));
     await session.init();
-    events.failNext = true;
+    const store = createOnboardingStore(session);
 
-    await onboarding.complete(DRAFT);
+    // As duas chamadas começam antes de qualquer `localUserId` ser publicado,
+    // então um guard que só olha `localUserId.value !== null` não pega isto.
+    await Promise.all([store.complete(LUIZ), store.complete(LUIZ)]);
 
-    expect(await events.getMeta(LOCAL_USER_ID_KEY)).toBeNull();
-    expect(await events.readAll()).toHaveLength(0);
-    expect(listPaymentMethods(session.state.value)).toEqual([]);
-    expect(onboarding.needsOnboarding.value).toBe(true);
-    expect(session.error.value).toContain("quota");
+    expect(await db.users.count()).toBe(1);
+    expect(await db.paymentMethods.count()).toBe(4);
+    expect(await db.categories.count()).toBe(12);
+  });
+
+  it("depois de uma falha, um novo complete funciona", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    const store = createOnboardingStore(session);
+    vi.spyOn(db.categories, "bulkPut").mockRejectedValueOnce(new Error("quota exceeded"));
+
+    await expect(store.complete(LUIZ)).rejects.toThrow("quota exceeded");
+    await store.complete(LUIZ);
+
+    expect(store.needsOnboarding.value).toBe(false);
+    expect(await db.users.count()).toBe(1);
+    expect(await db.categories.count()).toBe(12);
   });
 });

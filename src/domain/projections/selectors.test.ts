@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  type CategoryRecord,
-  EMPTY_STATE,
-  type ProjectionState,
-  type TransactionRecord,
-} from "./apply";
+import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
+import type { Category } from "../model/category";
+import { ALIVE, DELETED_AT } from "../model/row.fake";
+import type { Transaction } from "../model/transaction";
 import {
   findCategory,
   findUser,
@@ -18,12 +16,12 @@ import {
   totals,
 } from "./selectors";
 
-/** Parte de EMPTY_STATE: bucket novo na projeção não obriga a tocar cada literal daqui. */
-function stateWith(transactions: Record<string, TransactionRecord>): ProjectionState {
-  return { ...EMPTY_STATE, transactions };
+/** Parte de EMPTY_APP_STATE: tabela nova no estado não obriga a tocar cada literal daqui. */
+function stateWith(transactions: Record<string, Transaction>): AppState {
+  return { ...EMPTY_APP_STATE, transactions };
 }
 
-function record(overrides: Partial<TransactionRecord> & { id: string }): TransactionRecord {
+function record(overrides: Partial<Transaction> & { id: string }): Transaction {
   return {
     kind: "expense",
     description: "Mercado",
@@ -36,22 +34,19 @@ function record(overrides: Partial<TransactionRecord> & { id: string }): Transac
     userId: null,
     recurrenceId: null,
     occurrenceKey: null,
-    deleted: false,
-    materialized: true,
-    fieldHlc: {},
+    ...ALIVE,
     ...overrides,
   };
 }
 
-const STATE: ProjectionState = stateWith({
+const STATE: AppState = stateWith({
   a: record({ id: "a", occurredOn: "2026-08-05", amountMinor: 1000 }),
   b: record({ id: "b", occurredOn: "2026-08-09", kind: "income", amountMinor: 5000 }),
-  c: record({ id: "c", occurredOn: "2026-08-10", deleted: true }),
-  d: record({ id: "d", occurredOn: "2026-08-11", materialized: false }),
+  c: record({ id: "c", occurredOn: "2026-08-10", deletedAt: DELETED_AT }),
 });
 
 describe("listTransactions", () => {
-  it("esconde tombstones e registros não materializados", () => {
+  it("esconde linhas apagadas", () => {
     expect(listTransactions(STATE).map((item) => item.id)).toEqual(["b", "a"]);
   });
 
@@ -117,44 +112,43 @@ describe("totals", () => {
   });
 });
 
-function categoria(overrides: Partial<CategoryRecord> & { id: string }): CategoryRecord {
+function categoria(overrides: Partial<Category> & { id: string }): Category {
   return {
     name: "Mercado",
     icon: "tag",
     color: "slate",
     kind: "expense",
-    deleted: false,
-    materialized: true,
-    fieldHlc: {},
+    ...ALIVE,
     ...overrides,
   };
 }
 
 const VIVA = "01J9F3K2M7QX8YB4TVWZ0DCEC1";
 const APAGADA = "01J9F3K2M7QX8YB4TVWZ0DCEC2";
-const CASCA = "01J9F3K2M7QX8YB4TVWZ0DCEC3";
 
-const REF_STATE: ProjectionState = {
-  ...EMPTY_STATE,
+const REF_STATE: AppState = {
+  ...EMPTY_APP_STATE,
   categories: {
     [VIVA]: categoria({ id: VIVA, name: "Mercado" }),
-    [APAGADA]: categoria({ id: APAGADA, name: "Antiga", deleted: true }),
-    [CASCA]: categoria({ id: CASCA, name: "", materialized: false }),
+    [APAGADA]: categoria({ id: APAGADA, name: "Antiga", deletedAt: DELETED_AT }),
   },
   paymentMethods: {
     [VIVA]: { ...categoria({ id: VIVA, name: "Nubank" }), kind: "credit" },
-    [APAGADA]: { ...categoria({ id: APAGADA, name: "Antigo", deleted: true }), kind: "debit" },
+    [APAGADA]: {
+      ...categoria({ id: APAGADA, name: "Antigo", deletedAt: DELETED_AT }),
+      kind: "debit",
+    },
   },
 };
 
 describe("listCategories", () => {
-  it("esconde apagadas e não materializadas", () => {
+  it("esconde apagadas", () => {
     expect(listCategories(REF_STATE).map((c) => c.id)).toEqual([VIVA]);
   });
 
   it("ordena por nome", () => {
-    const state: ProjectionState = {
-      ...EMPTY_STATE,
+    const state: AppState = {
+      ...EMPTY_APP_STATE,
       categories: {
         z: categoria({ id: "z", name: "Zoológico" }),
         a: categoria({ id: "a", name: "Água" }),
@@ -166,13 +160,13 @@ describe("listCategories", () => {
   });
 
   it("desempata nome igual por id, sem depender da ordem de inserção", () => {
-    // Sem o desempate a lista pula de posição a cada refold.
-    const uma: ProjectionState = {
-      ...EMPTY_STATE,
+    // Sem o desempate a lista pula de posição conforme a ordem de inserção.
+    const uma: AppState = {
+      ...EMPTY_APP_STATE,
       categories: { x: categoria({ id: "x" }), y: categoria({ id: "y" }) },
     };
-    const outra: ProjectionState = {
-      ...EMPTY_STATE,
+    const outra: AppState = {
+      ...EMPTY_APP_STATE,
       categories: { y: categoria({ id: "y" }), x: categoria({ id: "x" }) },
     };
 
@@ -207,7 +201,7 @@ describe("resolveCategoryName", () => {
   });
 
   it("nunca devolve o id cru, que vazaria ULID na tela e no CSV", () => {
-    for (const id of [APAGADA, CASCA, "01J9F3K2M7QX8YB4TVWZ0DCEXX"]) {
+    for (const id of [APAGADA, "01J9F3K2M7QX8YB4TVWZ0DCEXX"]) {
       expect(resolveCategoryName(REF_STATE, id)).not.toContain(id);
     }
   });
@@ -225,26 +219,23 @@ describe("autor do lançamento", () => {
   const AUTOR = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
   const AUTOR_APAGADO = "01J9F3K2M7QX8YB4TVWZ0DCEHD";
 
-  const USER_STATE: ProjectionState = {
-    ...EMPTY_STATE,
+  const USER_STATE: AppState = {
+    ...EMPTY_APP_STATE,
     users: {
       [AUTOR]: {
         id: AUTOR,
         name: "Luiz",
         color: "teal",
         avatar: "data:image/webp;base64,AAAA",
-        deleted: false,
-        materialized: true,
-        fieldHlc: {},
+        ...ALIVE,
       },
       [AUTOR_APAGADO]: {
         id: AUTOR_APAGADO,
         name: "Ana",
         color: "rose",
         avatar: null,
-        deleted: true,
-        materialized: true,
-        fieldHlc: {},
+        ...ALIVE,
+        deletedAt: DELETED_AT,
       },
     },
   };
@@ -254,8 +245,8 @@ describe("autor do lançamento", () => {
   });
 
   it("lançamento sem autor renderiza a cor neutra", () => {
-    // O histórico gravado antes da fatia de perfil é este caso, e ele nunca
-    // deixa de existir: o log é eterno.
+    // Lançamento gravado antes de existir perfil neste aparelho tem
+    // `userId` nulo, e continua assim: a autoria não é reescrita.
     expect(resolveAuthorColor(USER_STATE, null)).toBe("slate");
   });
 
@@ -290,7 +281,7 @@ describe("groupByDay", () => {
 
   it("preserva a ordem que listTransactions ja decidiu", () => {
     // Reagrupar por chave num objeto perderia o desempate por id, e os dias
-    // pulariam de posicao a cada refold do log.
+    // pulariam de posicao conforme a ordem de insercao.
     const ordenados = listTransactions(
       stateWith({
         a: record({ id: "a", occurredOn: ONTEM }),
@@ -328,8 +319,8 @@ describe("findCategory", () => {
   const VIVA_CAT = "01J9F3K2M7QX8YB4TVWZ0DCEC1";
   const MORTA_CAT = "01J9F3K2M7QX8YB4TVWZ0DCEC2";
 
-  const CAT_STATE: ProjectionState = {
-    ...EMPTY_STATE,
+  const CAT_STATE: AppState = {
+    ...EMPTY_APP_STATE,
     categories: {
       [VIVA_CAT]: {
         id: VIVA_CAT,
@@ -337,9 +328,7 @@ describe("findCategory", () => {
         icon: "utensils",
         color: "emerald",
         kind: "expense",
-        deleted: false,
-        materialized: true,
-        fieldHlc: {},
+        ...ALIVE,
       },
       [MORTA_CAT]: {
         id: MORTA_CAT,
@@ -347,9 +336,8 @@ describe("findCategory", () => {
         icon: "tag",
         color: "rose",
         kind: "expense",
-        deleted: true,
-        materialized: true,
-        fieldHlc: {},
+        ...ALIVE,
+        deletedAt: DELETED_AT,
       },
     },
   };

@@ -71,7 +71,7 @@
   --color-expense-fg: oklch(0.54 0.17 22);
 
   /*
-   * Paleta de categoria e da pessoa: 12 tokens de nome fixo, gravados no log.
+   * Paleta de categoria e da pessoa: 12 tokens de nome fixo, gravados na linha.
    * O nome nunca muda (ver `color-token.ts`); so o valor, por tema.
    */
   --color-tag-slate: #75798c;
@@ -462,9 +462,10 @@
 /*
  * Segurar para confirmar.
  *
- * Existe porque excluir e a unica acao sem desfazer: o log e append-only e o
- * evento de delete nasce eterno. `clip-path` e nao `width`: largura reflui a
- * cada quadro e escala distorceria o raio do preenchimento.
+ * Existe porque excluir e a unica acao sem desfazer: a linha ganha `deletedAt`,
+ * nao ha tela para restaura-la e o sync propaga a exclusao ao outro aparelho.
+ * `clip-path` e nao `width`: largura reflui a cada quadro e escala distorceria
+ * o raio do preenchimento.
  */
 @utility hf-hold {
   position: relative;

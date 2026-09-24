@@ -76,7 +76,7 @@ export function lastMonths(today: string, count: number): string[] {
 
 /**
  * `noUncheckedIndexedAccess` faz o acesso por índice devolver `string |
- * undefined`. Mês fora de 1..12 só chega aqui com dado corrompido vindo do log,
+ * undefined`. Mês fora de 1..12 só chega aqui com dado corrompido vindo do banco,
  * e a tela prefere um rótulo vazio a quebrar o render inteiro.
  */
 function labelFrom(table: readonly string[], month: string): string {
@@ -107,7 +107,7 @@ export function dayLabel(occurredOn: string, today: string): string {
   if (occurredOn === shiftDay(today, -1)) return "Ontem";
 
   const name = labelFrom(LONG, occurredOn);
-  // Data corrompida vinda do log prefere aparecer crua a derrubar o render.
+  // Data corrompida vinda do banco prefere aparecer crua a derrubar o render.
   if (name === "") return occurredOn;
 
   const day = occurredOn.slice(8, 10);

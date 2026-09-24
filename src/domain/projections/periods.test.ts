@@ -73,7 +73,7 @@ describe("rótulos", () => {
   });
 
   it("devolve rótulo vazio para mês fora de 1..12", () => {
-    // O log é eterno e sincroniza com versões futuras: um mês corrompido tem
+    // O banco sincroniza com versões futuras: um mês corrompido tem
     // que degradar para vazio, não quebrar o render inteiro da tela.
     expect(monthLabelShort("2026-13")).toBe("");
     expect(monthLabelShort("2026-00")).toBe("");

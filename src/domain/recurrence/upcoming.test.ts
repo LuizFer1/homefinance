@@ -1,41 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { recurrenceCreated } from "../events/recurrence";
-import { transactionCreated } from "../events/transaction";
 import { stableEntityId } from "../ids/stable-id";
-import { fold } from "../projections/apply";
+import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
+import type { Recurrence } from "../model/recurrence";
+import { ALIVE, DELETED_AT } from "../model/row.fake";
+import type { Transaction } from "../model/transaction";
 import { occurrenceKey } from "./schedule";
 import { nextOccurrences, upcomingRecurrences } from "./upcoming";
 
-const DEVICE = "01J9F3K2M7QX8YB4TVWZ0DCEHZ";
 const SERIES = "01J9F3K2M7QX8YB4TVWZ0DCEHS";
 
-function series(overrides: Partial<{ startOn: string; endOn: string | null; active: boolean }>) {
-  return recurrenceCreated({
-    eventId: "01J9F3K2M7QX8YB4TVWZ0DCEE1",
-    entityId: SERIES,
-    deviceId: DEVICE,
-    hlc: `1754697500000-0000-${DEVICE}`,
-    draft: {
-      kind: "expense",
-      description: "Internet",
-      amountMinor: 12_000,
-      currency: "BRL",
-      categoryId: null,
-      paymentMethodId: null,
-      cashbackMinor: null,
-      frequency: "monthly",
-      scheduleType: "dayOfMonth",
-      scheduleN: 30,
-      startOn: overrides.startOn ?? "2026-06-30",
-      endOn: overrides.endOn ?? null,
-      active: overrides.active ?? true,
-    },
-  });
+function series(overrides: Partial<Recurrence>): Recurrence {
+  return {
+    id: SERIES,
+    ...ALIVE,
+    kind: "expense",
+    description: "Internet",
+    amountMinor: 12_000,
+    currency: "BRL",
+    categoryId: null,
+    paymentMethodId: null,
+    cashbackMinor: null,
+    frequency: "monthly",
+    scheduleType: "dayOfMonth",
+    scheduleN: 30,
+    startOn: "2026-06-30",
+    endOn: null,
+    active: true,
+    ...overrides,
+  };
+}
+
+function stateWith(recurrences: Recurrence[], transactions: Transaction[] = []): AppState {
+  return {
+    ...EMPTY_APP_STATE,
+    recurrences: Object.fromEntries(recurrences.map((row) => [row.id, row])),
+    transactions: Object.fromEntries(transactions.map((row) => [row.id, row])),
+  };
 }
 
 describe("upcomingRecurrences", () => {
   it("lista as ocorrências dos próximos dias, depois de hoje", () => {
-    const state = fold([series({})]);
+    const state = stateWith([series({})]);
 
     const upcoming = upcomingRecurrences(state, "2026-09-24", 30);
 
@@ -44,7 +49,7 @@ describe("upcomingRecurrences", () => {
   });
 
   it("janela maior pega a competência seguinte", () => {
-    const state = fold([series({})]);
+    const state = stateWith([series({})]);
 
     expect(upcomingRecurrences(state, "2026-09-24", 40).map((item) => item.date)).toEqual([
       "2026-09-30",
@@ -54,14 +59,12 @@ describe("upcomingRecurrences", () => {
 
   it("não repete ocorrência já materializada", () => {
     const key = occurrenceKey(SERIES, "2026-09");
-    const state = fold([
-      series({}),
-      transactionCreated({
-        eventId: "01J9F3K2M7QX8YB4TVWZ0DCEE2",
-        entityId: stableEntityId(key),
-        deviceId: DEVICE,
-        hlc: `1754697500001-0000-${DEVICE}`,
-        draft: {
+    const state = stateWith(
+      [series({})],
+      [
+        {
+          id: stableEntityId(key),
+          ...ALIVE,
           kind: "expense",
           description: "Internet",
           amountMinor: 12_000,
@@ -70,21 +73,29 @@ describe("upcomingRecurrences", () => {
           paymentMethodId: null,
           cashbackMinor: null,
           occurredOn: "2026-09-30",
+          userId: null,
           recurrenceId: SERIES,
           occurrenceKey: key,
         },
-        userId: null,
-      }),
-    ]);
+      ],
+    );
 
     expect(upcomingRecurrences(state, "2026-09-24", 30)).toEqual([]);
   });
 
   it("respeita pausa e data final", () => {
-    expect(upcomingRecurrences(fold([series({ active: false })]), "2026-09-24", 30)).toEqual([]);
-    expect(upcomingRecurrences(fold([series({ endOn: "2026-09-29" })]), "2026-09-24", 30)).toEqual(
+    expect(upcomingRecurrences(stateWith([series({ active: false })]), "2026-09-24", 30)).toEqual(
       [],
     );
+    expect(
+      upcomingRecurrences(stateWith([series({ endOn: "2026-09-29" })]), "2026-09-24", 30),
+    ).toEqual([]);
+  });
+
+  it("ignora série apagada", () => {
+    const state = stateWith([series({ deletedAt: DELETED_AT })]);
+
+    expect(upcomingRecurrences(state, "2026-09-24", 30)).toEqual([]);
   });
 });
 

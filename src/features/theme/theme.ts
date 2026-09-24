@@ -1,9 +1,9 @@
 /**
  * Preferência de tema do aparelho.
  *
- * Não é dado de domínio e por isso **não entra no log de eventos**: o log é
- * append-only e sincroniza entre aparelhos, então gravar o tema ali imporia a
- * escolha de um celular ao outro. Tema é preferência local — mora no
+ * Não é dado de domínio e por isso **não entra no IndexedDB**: as tabelas
+ * sincronizam entre aparelhos, então gravar o tema ali imporia a escolha de um
+ * celular ao outro. Tema é preferência local — mora no
  * `localStorage`, que é síncrono e por isso não pisca no primeiro paint.
  */
 export type ThemePreference = "system" | "light" | "dark";

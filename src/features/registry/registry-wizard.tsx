@@ -1,12 +1,11 @@
 import { useState } from "preact/hooks";
-import type {
-  CategoryDraft,
-  CategoryKind,
-  PaymentKind,
-  PaymentMethodDraft,
-} from "../../domain/events/reference";
-import type { CategoryRecord, PaymentMethodRecord } from "../../domain/projections/apply";
-import { PAYMENT_KINDS } from "../../domain/projections/entities";
+import type { Category, CategoryDraft, CategoryKind } from "../../domain/model/category";
+import {
+  PAYMENT_KINDS,
+  type PaymentKind,
+  type PaymentMethod,
+  type PaymentMethodDraft,
+} from "../../domain/model/payment-method";
 import { Icon } from "../icons/icon";
 import { PICKABLE_ICONS } from "../icons/icon-set";
 import { Button } from "../ui/button";
@@ -26,7 +25,7 @@ export type RegistryEntity = "category" | "paymentMethod";
 export interface RegistryWizardProps {
   entity: RegistryEntity;
   /** Registro em edição, ou null para criação. Montado com `key` pela página. */
-  editing: CategoryRecord | PaymentMethodRecord | null;
+  editing: Category | PaymentMethod | null;
   /** Nomes já usados, para o aviso de duplicata. Inclui o próprio em edição. */
   existingNames: string[];
   onSubmit: (draft: CategoryDraft | PaymentMethodDraft) => void;
@@ -126,7 +125,7 @@ export function RegistryWizard({
     }
     // Duplicata é decisão de produto, validada aqui e não no domínio: depois do
     // sync duas pessoas podem criar "Mercado" ao mesmo tempo legitimamente, e o
-    // log aceita as duas. A tela avisa; o fold não rejeita.
+    // banco aceita as duas. A tela avisa; o repositório não rejeita.
     if (conflicts && !isOwnName) {
       setProblem("Ja existe um item com esse nome.");
       return false;

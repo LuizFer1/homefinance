@@ -1,9 +1,9 @@
 import "fake-indexeddb/auto";
 import Dexie from "dexie";
 import { describe, expect, it } from "vitest";
-import { CrudDb } from "./crud-db";
+import { HomeFinanceDb } from "./db";
 
-describe("CrudDb", () => {
+describe("HomeFinanceDb", () => {
   it("upgrade da v1 descarta events e localUserId e mantém deviceId", async () => {
     const name = `homefinance-upgrade-${Date.now()}`;
     const v1 = new Dexie(name);
@@ -15,7 +15,7 @@ describe("CrudDb", () => {
     ]);
     v1.close();
 
-    const db = new CrudDb(name);
+    const db = new HomeFinanceDb(name);
     await db.open();
 
     // `db.tables` é o cache em memória do Dexie; o que decide se a store
@@ -28,7 +28,7 @@ describe("CrudDb", () => {
   });
 
   it("banco novo abre com as cinco tabelas vazias", async () => {
-    const db = new CrudDb(`homefinance-novo-${Date.now()}`);
+    const db = new HomeFinanceDb(`homefinance-novo-${Date.now()}`);
     expect(await db.users.count()).toBe(0);
     expect(await db.categories.count()).toBe(0);
     expect(await db.paymentMethods.count()).toBe(0);
