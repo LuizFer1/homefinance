@@ -1,4 +1,5 @@
 import { useLayoutEffect, useState } from "preact/hooks";
+import { Segmented, type SegmentOption } from "../ui/segmented";
 import {
   applyPreference,
   readPreference,
@@ -20,51 +21,11 @@ export interface ThemeToggleProps {
  * tema fixo: no momento em que ele grava "claro", o app para de acompanhar o
  * sistema para sempre. 'Sistema' é o padrão e precisa ser um destino de volta.
  */
-const OPTIONS = [
-  { value: "light", label: "Claro" },
-  { value: "dark", label: "Escuro" },
-  { value: "system", label: "Sistema" },
-] as const satisfies ReadonlyArray<{ value: ThemePreference; label: string }>;
-
-const SEGMENT =
-  "hf-press hf-tap rounded-full flex h-8 w-8 cursor-pointer items-center justify-center " +
-  "transition-colors duration-150 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/45";
-
-const ICON = {
-  viewBox: "0 0 16 16",
-  class: "size-4",
-  fill: "none",
-  stroke: "currentColor",
-  "stroke-width": 1.5,
-  "stroke-linecap": "round",
-} as const;
-
-function Icon({ preference }: { preference: ThemePreference }) {
-  if (preference === "light") {
-    return (
-      <svg {...ICON} aria-hidden="true">
-        <circle cx="8" cy="8" r="3" />
-        <path d="M8 1v1.5M8 13.5V15M15 8h-1.5M2.5 8H1M12.95 3.05l-1.06 1.06M4.11 11.89l-1.06 1.06M12.95 12.95l-1.06-1.06M4.11 4.11L3.05 3.05" />
-      </svg>
-    );
-  }
-
-  if (preference === "dark") {
-    return (
-      <svg {...ICON} aria-hidden="true">
-        <path d="M13.5 9.7A5.8 5.8 0 0 1 6.3 2.5a5.8 5.8 0 1 0 7.2 7.2Z" />
-      </svg>
-    );
-  }
-
-  // 'Sistema': metade clara, metade escura — o icone diz que a decisao e de fora.
-  return (
-    <svg {...ICON} aria-hidden="true">
-      <circle cx="8" cy="8" r="5.5" />
-      <path d="M8 2.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
+const OPTIONS: readonly SegmentOption<ThemePreference>[] = [
+  { value: "light", label: "Claro", icon: "sun" },
+  { value: "dark", label: "Escuro", icon: "moon", iconFillWhenOn: true },
+  { value: "system", label: "Sistema", icon: "circle-half" },
+];
 
 export function ThemeToggle({ storage, doc }: ThemeToggleProps) {
   const [preference, setPreference] = useState<ThemePreference>(() => readPreference(storage));
@@ -86,29 +47,6 @@ export function ThemeToggle({ storage, doc }: ThemeToggleProps) {
   }
 
   return (
-    <fieldset class="flex items-center gap-0.5 p-0.5">
-      <legend class="sr-only">Tema</legend>
-      {OPTIONS.map(({ value, label }) => (
-        <label
-          key={value}
-          class={`${SEGMENT} ${
-            preference === value
-              ? "bg-base-100 text-base-content shadow-sm"
-              : "text-base-content/35"
-          }`}
-        >
-          <input
-            type="radio"
-            name="theme"
-            value={value}
-            checked={preference === value}
-            onChange={() => choose(value)}
-            class="sr-only"
-          />
-          <Icon preference={value} />
-          <span class="sr-only">{label}</span>
-        </label>
-      ))}
-    </fieldset>
+    <Segmented name="theme" legend="Tema" options={OPTIONS} value={preference} onChange={choose} />
   );
 }

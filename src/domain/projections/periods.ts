@@ -114,3 +114,49 @@ export function dayLabel(occurredOn: string, today: string): string {
   const year = occurredOn.slice(0, 4);
   return year === today.slice(0, 4) ? `${day} de ${name}` : `${day} de ${name} de ${year}`;
 }
+
+const WEEKDAY_SHORT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"] as const;
+
+/**
+ * Dia da semana abreviado ("qui"). `Date.UTC` só para a aritmética — ver o topo
+ * de `calendar.ts`: com fuso local, a meia-noite do Brasil cai no dia anterior.
+ */
+export function weekdayShort(date: string): string {
+  const stamp = Date.UTC(
+    Number(date.slice(0, 4)),
+    Number(date.slice(5, 7)) - 1,
+    Number(date.slice(8, 10)),
+  );
+  return WEEKDAY_SHORT[new Date(stamp).getUTCDay()] ?? "";
+}
+
+/** "qui, 24 set". O ano só entra quando difere do de `today`. */
+export function shortDate(date: string, today: string): string {
+  const month = labelFrom(SHORT, date);
+  if (month === "") return date;
+  const base = `${weekdayShort(date)}, ${Number(date.slice(8, 10))} ${month}`;
+  return date.slice(0, 4) === today.slice(0, 4) ? base : `${base} ${date.slice(0, 4)}`;
+}
+
+/** "24 out" — chip de "Próximas vezes". */
+export function dayMonth(date: string): string {
+  return `${Number(date.slice(8, 10))} ${labelFrom(SHORT, date)}`;
+}
+
+/**
+ * Cabeçalho do grupo do dia: "Hoje · qui, 24 set", "Ontem · qua, 23 set",
+ * "Seg, 21 set". O relativo vem primeiro porque é o que se reconhece sem ler.
+ */
+export function dayHeading(date: string, today: string): string {
+  const short = shortDate(date, today);
+  if (date === today) return `Hoje · ${short}`;
+  if (date === shiftDay(today, -1)) return `Ontem · ${short}`;
+  return short.charAt(0).toLocaleUpperCase("pt-BR") + short.slice(1);
+}
+
+/** Dias corridos de `from` até `to` (positivo quando `to` é depois). */
+export function daysBetween(from: string, to: string): number {
+  const stamp = (date: string) =>
+    Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
+  return Math.round((stamp(to) - stamp(from)) / 86_400_000);
+}

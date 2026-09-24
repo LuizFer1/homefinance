@@ -53,14 +53,16 @@ describe("ProfilePage", () => {
 
     expect(screen.getByRole("region", { name: "Seu perfil" })).toBeDefined();
     expect(screen.getByLabelText<HTMLInputElement>(/seu nome/i).value).toBe("Luiz");
-    expect((screen.getByRole("radio", { name: "teal" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("radio", { name: "Turquesa" }) as HTMLInputElement).checked).toBe(
+      true,
+    );
   });
 
   it("salva so o patch do que mudou", async () => {
     const { store, onBack } = montar();
 
     fireEvent.input(screen.getByLabelText(/seu nome/i), { target: { value: "Luís" } });
-    fireEvent.click(screen.getByRole("radio", { name: "rose" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Rosa" }));
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
 
     await waitFor(() =>

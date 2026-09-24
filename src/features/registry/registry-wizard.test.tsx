@@ -35,7 +35,7 @@ function montar(over: Partial<RegistryWizardProps> = {}) {
 }
 
 function digitarNome(valor: string) {
-  fireEvent.input(screen.getByLabelText(/nome/i), { target: { value: valor } });
+  fireEvent.input(screen.getByRole("textbox", { name: "Nome" }), { target: { value: valor } });
 }
 
 function continuar() {
@@ -57,8 +57,8 @@ describe("navegação entre etapas", () => {
   it("começa no nome", () => {
     montar();
 
-    expect(screen.getByLabelText(/nome/i)).toBeDefined();
-    expect(screen.queryByRole("radio", { name: "emerald" })).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Nome" })).toBeDefined();
+    expect(screen.queryByRole("radio", { name: "Verde" })).toBeNull();
   });
 
   it("bloqueia avanço com nome vazio", () => {
@@ -67,7 +67,7 @@ describe("navegação entre etapas", () => {
     continuar();
 
     expect(screen.getByRole("alert").textContent).toBe("Informe um nome.");
-    expect(screen.getByLabelText(/nome/i)).toBeDefined();
+    expect(screen.getByRole("textbox", { name: "Nome" })).toBeDefined();
   });
 
   it("bloqueia avanço com nome só de espaços", () => {
@@ -111,7 +111,9 @@ describe("navegação entre etapas", () => {
     expect((screen.getByRole("radio", { name: "pill" }) as HTMLInputElement).checked).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: /Nome/ }));
-    expect((screen.getByLabelText(/nome/i) as HTMLInputElement).value).toBe("Farmacia");
+    expect((screen.getByRole("textbox", { name: "Nome" }) as HTMLInputElement).value).toBe(
+      "Farmacia",
+    );
   });
 
   it("o indicador não deixa pular antes do nome válido", () => {
@@ -127,13 +129,13 @@ describe("navegação entre etapas", () => {
   it("só a última etapa oferece o botão de salvar", () => {
     montar();
     digitarNome("Mercado");
-    expect(screen.queryByRole("button", { name: "Adicionar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Adicionar/ })).toBeNull();
 
     continuar();
-    expect(screen.queryByRole("button", { name: "Adicionar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Adicionar/ })).toBeNull();
 
     continuar();
-    expect(screen.getByRole("button", { name: "Adicionar" })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Adicionar/ })).toBeDefined();
   });
 
   it("fechar não emite nada", () => {
@@ -175,7 +177,7 @@ describe("categoria", () => {
     continuar();
     fireEvent.click(screen.getByRole("radio", { name: "utensils" }));
     continuar();
-    fireEvent.click(screen.getByRole("radio", { name: "emerald" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Verde" }));
     salvar();
 
     expect(onSubmit).toHaveBeenCalledWith({
@@ -192,7 +194,7 @@ describe("categoria", () => {
     const { onSubmit } = montar();
 
     digitarNome("Salario");
-    fireEvent.change(screen.getByLabelText(/onde aparece/i), { target: { value: "income" } });
+    fireEvent.click(screen.getByRole("radio", { name: "Receitas" }));
     continuar();
     continuar();
     salvar();
@@ -232,11 +234,13 @@ describe("categoria", () => {
   it("preenche os campos do registro em edição", () => {
     montar({ editing: { ...CATEGORIA, icon: "pill", color: "rose" } });
 
-    expect((screen.getByLabelText(/nome/i) as HTMLInputElement).value).toBe("Mercado");
+    expect((screen.getByRole("textbox", { name: "Nome" }) as HTMLInputElement).value).toBe(
+      "Mercado",
+    );
     fireEvent.click(screen.getByRole("button", { name: /Ícone/ }));
     expect((screen.getByRole("radio", { name: "pill" }) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /Cor/ }));
-    expect((screen.getByRole("radio", { name: "rose" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("radio", { name: "Rosa" }) as HTMLInputElement).checked).toBe(true);
   });
 });
 
@@ -245,9 +249,7 @@ describe("forma de pagamento", () => {
     const { onSubmit } = montar({ entity: "paymentMethod" });
 
     digitarNome("Nubank");
-    fireEvent.change(screen.getByLabelText(/tipo de pagamento/i), {
-      target: { value: "credit" },
-    });
+    fireEvent.click(screen.getByRole("radio", { name: "Crédito" }));
     continuar();
     continuar();
     salvar();
@@ -271,7 +273,7 @@ describe("forma de pagamento", () => {
   it("preenche o tipo do registro em edição", () => {
     montar({ entity: "paymentMethod", editing: METODO });
 
-    expect((screen.getByLabelText(/tipo de pagamento/i) as HTMLSelectElement).value).toBe("credit");
+    expect((screen.getByRole("radio", { name: "Crédito" }) as HTMLInputElement).checked).toBe(true);
   });
 
   it("nasce com o ícone de carteira, e categoria com o de etiqueta", () => {
@@ -298,7 +300,8 @@ describe("prévia na etapa de cor", () => {
     fireEvent.click(screen.getByRole("radio", { name: "pill" }));
     continuar();
 
-    expect(screen.getByText("Farmacia")).toBeDefined();
+    // A previa e um lancamento de exemplo com a categoria escolhida.
+    expect(screen.getByText("Farmacia · Pix")).toBeDefined();
     expect(screen.getByTestId("icon-pill")).toBeDefined();
   });
 });

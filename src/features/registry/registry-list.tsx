@@ -1,57 +1,72 @@
-import type { Ulid } from "../../domain/ids/ulid";
 import type { CategoryRecord, PaymentMethodRecord } from "../../domain/projections/apply";
-import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
+import { IconTile } from "../ui/tile";
+
+type Item = CategoryRecord | PaymentMethodRecord;
 
 export interface RegistryListProps {
-  items: (CategoryRecord | PaymentMethodRecord)[];
+  items: Item[];
   emptyHint: string;
-  onEdit: (item: CategoryRecord | PaymentMethodRecord) => void;
-  onDelete: (id: Ulid) => void;
+  onEdit: (item: Item) => void;
+  /** Linha de meta sob o nome ("9 lançamentos no mês", "Crédito"). */
+  meta?: (item: Item) => string;
+  /** Tag opcional ao lado da meta ("cashback" em crédito e débito). */
+  tag?: (item: Item) => string | null;
 }
 
-const ACTION =
-  "hf-press rounded-field px-2.5 py-1.5 text-sm text-base-content/60 " +
-  "transition-colors duration-150 hover:text-base-content";
-
-export function RegistryList({ items, emptyHint, onEdit, onDelete }: RegistryListProps) {
+/**
+ * Lista de cadastro: a linha inteira é tocável e abre a edição, onde fica o
+ * excluir.
+ *
+ * Os botões "Editar" e "Excluir" por linha saíram: davam ao destrutivo o mesmo
+ * peso visual do inócuo e comiam a largura do nome num celular.
+ */
+export function RegistryList({ items, emptyHint, onEdit, meta, tag }: RegistryListProps) {
   if (items.length === 0) {
     return (
-      <p class="rounded-box mt-4 border border-base-content/10 bg-base-100/60 p-6 text-center text-sm text-base-content/50">
+      <p class="mt-4 rounded-lg border border-dashed border-neutral-800 p-6 text-center text-sm text-fg/55">
         {emptyHint}
       </p>
     );
   }
 
   return (
-    <ul class="rounded-box mt-4 divide-y divide-base-200 border border-base-content/10 bg-base-100/60">
-      {items.map((item) => (
-        <li key={item.id} class="flex items-center gap-3 px-4 py-3">
-          {/*
-            A cor é a âncora visual do item e vive no ícone, não no fundo da
-            linha: fundo colorido em lista longa vira listra e cansa a leitura.
-          */}
-          <span
-            class="flex size-9 shrink-0 items-center justify-center rounded-full text-base-100"
-            style={{ backgroundColor: cssVarForToken(item.color) }}
-          >
-            <Icon name={item.icon} />
-          </span>
+    <ul class="mt-4 overflow-hidden rounded-lg bg-surface">
+      {items.map((item, index) => {
+        const label = tag?.(item) ?? null;
+        const detail = meta?.(item) ?? "";
 
-          <span class="min-w-0 flex-1 truncate">{item.name}</span>
-
-          <button type="button" class={ACTION} onClick={() => onEdit(item)}>
-            Editar
-          </button>
-          <button
-            type="button"
-            class={`${ACTION} hover:text-error`}
-            onClick={() => onDelete(item.id)}
-          >
-            Excluir
-          </button>
-        </li>
-      ))}
+        return (
+          <li key={item.id} class="relative">
+            {index > 0 && (
+              <span aria-hidden="true" class="hf-rule absolute top-0 right-0 left-[64px]" />
+            )}
+            <button
+              type="button"
+              aria-label={`Editar ${item.name}`}
+              onClick={() => onEdit(item)}
+              class="hf-press flex h-[60px] w-full items-center gap-3 px-4 text-left hover:bg-fg/[0.04]"
+            >
+              <IconTile icon={item.icon} color={item.color} size={36} iconSize={18} />
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-[15px]">{item.name}</span>
+                {(detail !== "" || label !== null) && (
+                  <span class="mt-0.5 flex items-center gap-1.5 text-xs text-fg/50">
+                    {detail !== "" && <span class="truncate">{detail}</span>}
+                    {label !== null && (
+                      <span class="inline-flex shrink-0 items-center gap-1 rounded bg-accent-900 px-1.5 py-0.5 text-[10px] font-medium text-accent-300">
+                        <Icon name="coins" size={10} />
+                        {label}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </span>
+              <Icon name="caret-right" size={16} class="text-fg/40" />
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }

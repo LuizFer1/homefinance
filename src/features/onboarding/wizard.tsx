@@ -2,9 +2,15 @@ import { useState } from "preact/hooks";
 import type { ColorToken } from "../../domain/events/reference";
 import type { UserDraft } from "../../domain/events/user";
 import { BrandMark } from "../brand/brand-mark";
-import { COLOR_TOKENS, cssVarForToken } from "../colors/color-token";
-import { Avatar } from "../profile/avatar-view";
-import { StepIndicator } from "../transactions/step-indicator";
+import { colorName, cssVarForToken } from "../colors/color-token";
+import { Icon } from "../icons/icon";
+import { Avatar, MiniAvatar } from "../profile/avatar-view";
+import { Button, SECONDARY } from "../ui/button";
+import { HINT, LABEL } from "../ui/field";
+import { MINUS } from "../ui/money";
+import { Progress } from "../ui/progress";
+import { Swatches } from "../ui/swatches";
+import { IconTile } from "../ui/tile";
 
 export interface OnboardingWizardProps {
   onComplete: (draft: UserDraft) => Promise<void> | void;
@@ -14,17 +20,18 @@ export interface OnboardingWizardProps {
 
 const STEPS = ["Nome", "Cor", "Foto"] as const;
 
-// Tipografia um degrau acima do restante do app: o wizard e a primeira tela
-// que o usuario ve, em tela cheia, e captions de 11px leem pequenos demais.
-const LABEL = "hf-caption block text-xs font-semibold uppercase text-base-content/45";
-const FIELD =
-  "rounded-field mt-1.5 w-full bg-base-200 px-3.5 py-3 text-base outline-none " +
-  "transition-[box-shadow,background-color] duration-150 " +
-  "focus-visible:bg-base-100 focus-visible:ring-2 focus-visible:ring-primary/45";
-const ACTION = "hf-press rounded-field px-4 py-3 text-base font-medium";
-const SWATCH =
-  "hf-press flex size-10 cursor-pointer items-center justify-center rounded-full " +
-  "transition-transform duration-150 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/45";
+/** Título em duas linhas por etapa, como no handoff. */
+const TITLES = [
+  ["Bem-vindo ao", "HomeFinance"],
+  ["Escolha", "sua cor"],
+  ["Uma foto,", "se quiser"],
+] as const;
+
+const SUPPORT = [
+  "Vamos começar pelo básico. Leva menos de um minuto.",
+  "Ela marca os lançamentos que você criar — útil quando o app for compartilhado.",
+  "Opcional. Sem foto, usamos sua inicial sobre a cor escolhida.",
+] as const;
 
 function describeError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -35,16 +42,15 @@ function describeError(cause: unknown): string {
  *
  * Bloqueia o app enquanto não concluído — não há tela por trás dele que faça
  * sentido sem um autor. A **foto é a única etapa pulável**: exigi-la contraria
- * "nenhuma conta obrigatória" do README e trava quem simplesmente não tem foto à
- * mão no momento do cadastro. Sem foto, o avatar são as iniciais sobre a cor
- * escolhida, e isso é um estado final legítimo, não degradação.
+ * "nenhuma conta obrigatória" do README. Sem foto, o avatar é a inicial sobre a
+ * cor escolhida, e isso é um estado final legítimo, não degradação.
  *
- * A cor tem um propósito só: diferenciar quem lançou. Não é tema, não é acento,
- * não tinge a UI — ela só faz sentido de verdade depois que o sync existir e
- * duas pessoas dividirem a mesma base.
+ * As ações ficam presas embaixo, ao alcance do polegar: a coluna ocupa a altura
+ * da tela e o rodapé é empurrado para o fim dela.
  */
 export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardProps) {
   const [step, setStep] = useState(0);
+  const [dir, setDir] = useState<"next" | "back">("next");
   const [name, setName] = useState("");
   const [color, setColor] = useState<ColorToken>("slate");
   const [avatar, setAvatar] = useState<string | null>(null);
@@ -69,6 +75,7 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
   function goTo(index: number) {
     if (step === 0 && index > 0 && !validateName()) return;
     setProblem(null);
+    setDir(index < step ? "back" : "next");
     setStep(index);
   }
 
@@ -108,26 +115,36 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
     }
   }
 
-  return (
-    <form onSubmit={handleSubmit} class="py-2">
-      <BrandMark size={56} class="mb-4" />
-      <h1 class="hf-display text-3xl font-semibold">Bem-vindo ao HomeFinance</h1>
-      <p class="mt-2 text-base text-base-content/55">
-        Seus dados ficam neste aparelho. Sem conta, sem cadastro, sem internet.
-      </p>
+  const [lineA, lineB] = TITLES[step] ?? TITLES[0];
 
-      <div class="mt-6">
-        <StepIndicator steps={STEPS} current={step} maxReachable={maxReachable} onGo={goTo} />
+  return (
+    <form
+      onSubmit={handleSubmit}
+      class="mx-auto flex min-h-dvh w-full max-w-md flex-col px-6
+        pt-[max(1.75rem,env(safe-area-inset-top))] pb-[max(1.75rem,env(safe-area-inset-bottom))]"
+    >
+      <BrandMark size={44} />
+
+      <div class="mt-10">
+        <Progress
+          steps={STEPS}
+          current={step}
+          maxReachable={maxReachable}
+          onGo={goTo}
+          variant="count"
+        />
       </div>
 
-      {/* Mesma troca de etapa do lançamento — ver o comentário em `transaction-wizard.tsx`. */}
-      <div
-        key={step}
-        class="mt-6 transition-[opacity,translate] duration-[140ms] ease-out-soft
-          starting:translate-x-1.5 starting:opacity-0"
-      >
+      <div key={step} data-dir={dir} class="hf-step">
+        <h1 class="mt-[22px] text-[34px] leading-[1.08] font-medium tracking-[-0.025em]">
+          {lineA}
+          <br />
+          {lineB}
+        </h1>
+        <p class="mt-3 text-[15px] leading-normal text-fg/62 text-pretty">{SUPPORT[step]}</p>
+
         {step === 0 && (
-          <div>
+          <div class="mt-8">
             <label class={LABEL} for="onboarding-name">
               Seu nome
             </label>
@@ -137,123 +154,145 @@ export function OnboardingWizard({ onComplete, processFile }: OnboardingWizardPr
               type="text"
               autocomplete="off"
               placeholder="Como te chamamos?"
-              class={FIELD}
+              class="mt-2 h-14 w-full rounded-lg border border-divider bg-surface px-4 text-xl
+                outline-none placeholder:text-fg/35 focus:border-accent focus-visible:outline-none"
               value={name}
               onInput={(event) => setName(event.currentTarget.value)}
             />
+            <p class={HINT}>Aparece na saudação e nos seus lançamentos.</p>
           </div>
         )}
 
         {step === 1 && (
-          <fieldset>
-            <legend class={LABEL}>Sua cor</legend>
-            <p class="mt-1.5 text-sm text-base-content/45">
-              Marca os lançamentos que você criar. Serve para diferenciar quem lançou quando o app
-              for compartilhado.
-            </p>
-            <div class="mt-3 flex flex-wrap gap-2.5">
-              {COLOR_TOKENS.map((token) => (
-                <label
-                  key={token}
-                  class={`${SWATCH} ${color === token ? "scale-110 ring-2 ring-base-content/35" : ""}`}
-                  style={{ backgroundColor: cssVarForToken(token) }}
-                >
-                  <input
-                    type="radio"
-                    name="color"
-                    value={token}
-                    aria-label={token}
-                    checked={color === token}
-                    onChange={() => setColor(token)}
-                    class="sr-only"
-                  />
-                </label>
-              ))}
+          <div class="mt-8">
+            <Swatches
+              name="color"
+              legend="Sua cor"
+              value={color}
+              onChange={setColor}
+              surface="bg"
+            />
+
+            {/*
+              Prévia ao vivo: a cor só faz sentido onde ela vai aparecer — no
+              mini-avatar de cada lançamento.
+            */}
+            <p class={`${LABEL} mt-8`}>Prévia</p>
+            <div class="mt-2 flex h-16 items-center gap-3 rounded-lg bg-surface px-3.5">
+              <IconTile icon="utensils" color="orange" size={38} iconSize={19} />
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-[15px] font-medium">Mercado</span>
+                <span class="mt-1 flex items-center gap-1.5 text-xs text-fg/55">
+                  <MiniAvatar name={trimmed} color={color} />
+                  {trimmed} · Alimentação
+                </span>
+              </span>
+              <span class="hf-num text-[15px] font-medium">{MINUS}R$ 254,30</span>
             </div>
-          </fieldset>
+          </div>
         )}
 
         {step === 2 && (
-          <div>
-            <span class={LABEL}>Sua foto</span>
-            <p class="mt-1.5 text-sm text-base-content/45">
-              Opcional. Sem foto, usamos suas iniciais sobre a cor escolhida.
-            </p>
-
-            <div class="mt-4 flex items-center gap-4">
-              <Avatar name={trimmed} color={color} avatar={avatar} size={72} />
-
-              <div class="flex min-w-0 flex-col gap-2">
-                <label
-                  class={`${ACTION} cursor-pointer bg-base-200 text-center text-base-content/70
-                    has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/45`}
+          <div class="mt-8">
+            <div class="flex items-center gap-5">
+              <span
+                class="relative shrink-0 rounded-full"
+                style={{
+                  boxShadow: `0 0 0 4px var(--color-bg), 0 0 0 5px ${cssVarForToken(color)}`,
+                }}
+              >
+                <Avatar name={trimmed} color={color} avatar={avatar} size={112} />
+                <span
+                  aria-hidden="true"
+                  class="absolute right-0 bottom-0 grid size-9 place-items-center rounded-full
+                    bg-surface text-fg/85 shadow-[0_0_0_3px_var(--color-bg)]"
                 >
-                  {avatar === null ? "Escolher foto" : "Trocar foto"}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    aria-label="Escolher foto"
-                    onChange={handleFile}
-                    class="sr-only"
+                  <Icon name="camera" size={18} />
+                </span>
+              </span>
+              <span class="min-w-0">
+                <span class="block truncate text-xl font-medium">{trimmed}</span>
+                <span class="mt-1 flex items-center gap-1.5 text-[13px] text-fg/60">
+                  <span
+                    aria-hidden="true"
+                    class="size-2 rounded-full"
+                    style={{ backgroundColor: cssVarForToken(color) }}
                   />
-                </label>
+                  {colorName(color)}
+                </span>
+              </span>
+            </div>
 
-                {avatar !== null && (
-                  <button
-                    type="button"
-                    onClick={() => setAvatar(null)}
-                    class={`${ACTION} bg-transparent text-base-content/45`}
-                  >
-                    Remover foto
-                  </button>
-                )}
-              </div>
+            <div class="mt-7 flex flex-wrap gap-2.5">
+              <label
+                class={`${SECONDARY} flex-1 cursor-pointer has-[:focus-visible]:outline-2
+                  has-[:focus-visible]:outline-accent`}
+              >
+                <Icon name="image" size={18} />
+                {avatar === null ? "Escolher foto" : "Trocar foto"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  aria-label="Escolher foto"
+                  onChange={handleFile}
+                  class="sr-only"
+                />
+              </label>
+              {avatar !== null && (
+                <Button variant="secondary" onClick={() => setAvatar(null)}>
+                  Remover foto
+                </Button>
+              )}
             </div>
           </div>
         )}
       </div>
 
       {problem !== null && (
-        <p role="alert" class="mt-4 text-base text-error">
+        <p role="alert" class="mt-5 text-[15px] text-expense-fg">
           {problem}
         </p>
       )}
 
-      <div class="mt-6 flex gap-2">
-        {step > 0 && (
-          <button
-            type="button"
-            onClick={() => goTo(step - 1)}
-            class={`${ACTION} bg-base-200 text-base-content/70`}
-          >
-            Voltar
-          </button>
+      {/*
+        As `key` distintas não são decoração — ver o comentário gêmeo em
+        `transaction-wizard.tsx`. Sem elas, ir da cor para a foto concluía o
+        cadastro na hora: a etapa da foto nunca chegava a aparecer.
+      */}
+      <div class="mt-auto pt-8">
+        {/* Perto do botão, e não do campo: é a última coisa lida antes de continuar. */}
+        {step === 0 && (
+          <div class="mb-4 flex items-start gap-3 rounded-lg bg-surface p-4">
+            <Icon name="lock-simple" size={18} class="mt-0.5 text-accent-300" />
+            <p class="text-[13px] leading-normal text-fg/70">
+              Seus dados ficam neste aparelho. Sem conta, sem cadastro, sem internet.
+            </p>
+          </div>
         )}
-
-        {/*
-          As `key` distintas não são decoração — ver o comentário gêmeo em
-          `registry-wizard.tsx`. Sem elas, ir da cor para a foto concluía o
-          cadastro na hora: a etapa da foto nunca chegava a aparecer.
-        */}
-        {isLast ? (
-          <button
-            key="enviar"
-            type="submit"
-            disabled={saving}
-            class={`${ACTION} flex-1 bg-primary text-primary-content disabled:opacity-60`}
-          >
-            {saving ? "Salvando..." : "Começar"}
-          </button>
-        ) : (
-          <button
-            key="avancar"
-            type="button"
-            onClick={() => goTo(step + 1)}
-            class={`${ACTION} flex-1 bg-primary text-primary-content`}
-          >
-            Continuar
-          </button>
-        )}
+        <div class="flex gap-2.5">
+          {step > 0 && (
+            <Button key="voltar" variant="secondary" onClick={() => goTo(step - 1)}>
+              Voltar
+            </Button>
+          )}
+          {isLast ? (
+            <Button key="enviar" type="submit" icon="check" disabled={saving} class="flex-1">
+              {saving ? "Salvando..." : "Começar"}
+            </Button>
+          ) : (
+            <Button
+              key="avancar"
+              icon="arrow-right"
+              // Parece desabilitado sem nome, mas continua clicável: o toque é o
+              // que mostra o motivo, e um botão morto não explica nada.
+              aria-disabled={step === 0 && !nameValid}
+              class={`flex-1 ${step === 0 && !nameValid ? "opacity-45" : ""}`}
+              onClick={() => goTo(step + 1)}
+            >
+              Continuar
+            </Button>
+          )}
+        </div>
       </div>
     </form>
   );

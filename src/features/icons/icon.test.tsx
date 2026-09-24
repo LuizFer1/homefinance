@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it } from "vitest";
 import { Icon } from "./icon";
-import { ICON_KEYS } from "./icon-set";
+import { ICON_KEYS, PICKABLE_ICONS } from "./icon-set";
 
 afterEach(cleanup);
 
@@ -45,12 +45,42 @@ describe("Icon", () => {
   });
 
   it("todas as chaves do conjunto renderizam", () => {
-    // 34 imports literais é onde um typo se esconde: o import vira `undefined` e
-    // só a tela que usa aquela chave quebra, meses depois.
+    // Um nome Phosphor com typo no mapa só quebraria a tela que usa aquela
+    // chave, meses depois. Aqui toda chave precisa achar um glifo gerado.
     for (const key of ICON_KEYS) {
       render(<Icon name={key} />);
       expect(screen.getByTestId(`icon-${key}`)).toBeDefined();
       cleanup();
     }
+  });
+
+  it("toda chave do mapa aponta para um glifo com desenho", () => {
+    for (const key of ICON_KEYS) {
+      const { container } = render(<Icon name={key} />);
+      expect(container.querySelector("path")?.getAttribute("d")).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it("a grade de escolha só oferece chaves conhecidas, sem a seta de interface", () => {
+    expect(PICKABLE_ICONS.every((key) => ICON_KEYS.includes(key))).toBe(true);
+    expect(PICKABLE_ICONS).not.toContain("chevron-down");
+    expect(PICKABLE_ICONS).toContain("paw-print");
+    expect(new Set(PICKABLE_ICONS).size).toBe(35);
+  });
+
+  it("peso preenchido troca o desenho quando o glifo tem variante", () => {
+    const { container } = render(<Icon name="house" />);
+    const regular = container.querySelector("path")?.getAttribute("d");
+    cleanup();
+
+    const filled = render(<Icon name="house" weight="fill" />).container;
+    expect(filled.querySelector("path")?.getAttribute("d")).not.toBe(regular);
+  });
+
+  it("aceita nome de interface do Phosphor além das chaves do log", () => {
+    render(<Icon name="arrow-right" />);
+
+    expect(screen.getByTestId("icon-arrow-right")).toBeDefined();
   });
 });

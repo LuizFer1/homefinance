@@ -1,10 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   CategoryRecord,
   PaymentMethodRecord,
   TransactionRecord,
 } from "../../domain/projections/apply";
+import { HOLD_MS } from "../ui/hold-button";
 import { TransactionWizard } from "./transaction-wizard";
 
 afterEach(cleanup);
@@ -179,16 +181,16 @@ describe("navegação entre etapas", () => {
   it("só a última etapa oferece o botão de salvar", () => {
     montar();
     preencherDados();
-    expect(screen.queryByRole("button", { name: "Adicionar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Adicionar/ })).toBeNull();
 
     continuar(); // Repetir
-    expect(screen.queryByRole("button", { name: "Adicionar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Adicionar/ })).toBeNull();
 
     continuar(); // Categoria
-    expect(screen.queryByRole("button", { name: "Adicionar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Adicionar/ })).toBeNull();
 
     continuar(); // Pagamento
-    expect(screen.getByRole("button", { name: "Adicionar" })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Adicionar/ })).toBeDefined();
   });
 
   it("fechar não emite nada", () => {
@@ -474,8 +476,8 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
 
     expect(screen.getByRole("button", { name: /Repetir/ })).toBeDefined();
     fireEvent.click(screen.getByRole("checkbox", { name: /repetir este lançamento/i }));
-    fireEvent.change(screen.getByLabelText(/frequência/i), { target: { value: "monthly" } });
-    fireEvent.change(screen.getByLabelText(/quando no período/i), {
+    fireEvent.click(screen.getByRole("radio", { name: "Mensal" }));
+    fireEvent.change(screen.getByLabelText(/^quando$/i), {
       target: { value: "nthBusinessDay" },
     });
     fireEvent.input(screen.getByLabelText(/nº do dia útil/i), { target: { value: "5" } });
@@ -521,5 +523,92 @@ describe("regressao: avancar nao pode virar submit", () => {
     // Continuar de novo: se o no tivesse virado submit, gravaria aqui.
     expect(screen.getByRole("button", { name: "Continuar" }).getAttribute("type")).toBe("button");
     expect(screen.queryByRole("button", { name: /adicionar|salvar/i })).toBeNull();
+  });
+});
+
+describe("data em atalhos", () => {
+  it("Hoje é o padrão e Ontem troca a data num toque", () => {
+    const { onSubmit } = montar();
+    expect(screen.getByRole("button", { name: "Hoje" }).getAttribute("aria-pressed")).toBe("true");
+
+    preencherDados();
+    fireEvent.click(screen.getByRole("button", { name: "Ontem" }));
+    avancarAteOFim();
+    enviar();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ occurredOn: "2026-08-07" }),
+      null,
+    );
+  });
+
+  it("Outra data abre o calendário e o chip passa a mostrar a data escolhida", () => {
+    montar();
+
+    fireEvent.click(screen.getByRole("button", { name: "Outra data" }));
+    fireEvent.click(screen.getByRole("button", { name: "4 de agosto de 2026" }));
+
+    expect(screen.getByRole("button", { name: /Ter, 4 ago/ })).toBeDefined();
+  });
+});
+
+describe("recorrência", () => {
+  it("mostra as próximas vezes calculadas pela regra", () => {
+    montar({ today: "2026-09-24" });
+    preencherDados("Salário", "6500,00");
+    continuar();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /repetir este lançamento/i }));
+
+    for (const chip of ["24 out", "24 nov", "24 dez", "24 jan"]) {
+      expect(screen.getByText(chip)).toBeDefined();
+    }
+  });
+
+  it("o resumo mostra o que foi preenchido na etapa 1", () => {
+    montar();
+    preencherDados("Padaria", "12,34");
+    continuar();
+
+    expect(screen.getByText("Padaria")).toBeDefined();
+    expect(screen.getByText(/R\$\s12,34/)).toBeDefined();
+  });
+});
+
+describe("edição", () => {
+  it("salva direto do primeiro passo, sem percorrer os outros", () => {
+    const { onSubmit } = montar({ editing: RECORD });
+    fireEvent.input(screen.getByLabelText("Descrição"), { target: { value: "Feira" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ description: "Feira" }), null);
+  });
+
+  it("exclui só depois de segurar a lixeira", () => {
+    vi.useFakeTimers();
+    const onDelete = vi.fn();
+    montar({ editing: RECORD, onDelete });
+    const lixeira = screen.getByRole("button", { name: "Excluir Mercado (segure para confirmar)" });
+
+    fireEvent.pointerDown(lixeira);
+    fireEvent.pointerUp(lixeira);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS);
+    });
+    expect(onDelete).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(lixeira);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS);
+    });
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("diz quem criou o lançamento", () => {
+    montar({ editing: RECORD, author: { name: "Luiz", color: "sky" } });
+
+    expect(screen.getByText(/Criado por Luiz/)).toBeDefined();
   });
 });

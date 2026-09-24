@@ -1,25 +1,24 @@
-import { cleanup, render } from "@testing-library/preact";
+import { cleanup, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it } from "vitest";
 import { BrandMark } from "./brand-mark";
-import { BRAND_ICONS } from "./icons";
 
 afterEach(cleanup);
 
 describe("BrandMark", () => {
-  it("renderiza o par maskable 192 claro e escuro", () => {
-    const { container } = render(<BrandMark size={32} />);
-    const imgs = container.querySelectorAll("img");
+  it("desenha a marca em vetor, na cor do texto", () => {
+    // Traço em currentColor é o que a mantém visível no escuro — o PNG preto
+    // sumia no fundo do Nocturne.
+    const { container } = render(<BrandMark size={44} />);
+    const svg = container.querySelector("svg");
 
-    expect(imgs).toHaveLength(2);
-    expect(imgs[0]?.getAttribute("src")).toBe(BRAND_ICONS.light.maskable192);
-    expect(imgs[1]?.getAttribute("src")).toBe(BRAND_ICONS.dark.maskable192);
-    expect(imgs[0]?.getAttribute("width")).toBe("32");
+    expect(svg?.getAttribute("stroke")).toBe("currentColor");
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByTestId("brand-mark").style.width).toBe("44px");
   });
 
-  it("e decorativo: sem texto alternativo proprio", () => {
-    const { container } = render(<BrandMark />);
-    for (const img of container.querySelectorAll("img")) {
-      expect(img.getAttribute("alt")).toBe("");
-    }
+  it("e decorativa: fora da árvore de acessibilidade", () => {
+    render(<BrandMark />);
+
+    expect(screen.getByTestId("brand-mark").getAttribute("aria-hidden")).toBe("true");
   });
 });

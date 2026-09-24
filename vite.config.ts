@@ -17,7 +17,7 @@ export default defineConfig({
       // Script externo em dist/registerSW.js — evita puxar workbox-window
       // para o chunk da SPA e estourar o teto de first paint.
       injectRegister: "script",
-      includeAssets: ["img/icons/*.png", "img/undraw/*.svg"],
+      includeAssets: ["img/icons/*.png"],
       manifest: {
         name: "HomeFinance",
         short_name: "HomeFinance",
@@ -28,8 +28,8 @@ export default defineConfig({
         scope: "/",
         display: "standalone",
         orientation: "portrait-primary",
-        background_color: "#f3f3f3",
-        theme_color: "#f3f3f3",
+        background_color: "#161826",
+        theme_color: "#161826",
         // Canvas real: 192x204 / 512x544 (nao quadrado). purpose any = fundo
         // opaco claro; maskable = glifo transparente (claro e escuro).
         icons: [

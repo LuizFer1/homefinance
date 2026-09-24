@@ -148,7 +148,7 @@ describe("conclusao", () => {
     const { onComplete } = montar();
     digitarNome("Luiz");
     continuar();
-    fireEvent.click(screen.getByRole("radio", { name: "teal" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Turquesa" }));
     continuar();
 
     comecar();

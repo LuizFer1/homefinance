@@ -2,8 +2,12 @@ import { useState } from "preact/hooks";
 import type { ColorToken } from "../../domain/events/reference";
 import { diffUser, type UserDraft } from "../../domain/events/user";
 import type { UserRecord } from "../../domain/projections/apply";
-import { COLOR_TOKENS, cssVarForToken } from "../colors/color-token";
-import { FIELD, LABEL } from "../ui/field";
+import { COLOR_TOKENS } from "../colors/color-token";
+import { Icon } from "../icons/icon";
+import { Button, SECONDARY } from "../ui/button";
+import { FIELD_PAGE, LABEL } from "../ui/field";
+import { PageHeader } from "../ui/page-header";
+import { Swatches } from "../ui/swatches";
 import { Avatar } from "./avatar-view";
 import type { ProfileStore } from "./store";
 
@@ -13,12 +17,9 @@ export interface ProfilePageProps {
   /** Pipeline da foto, injetado: `happy-dom` não tem canvas. */
   processFile: (file: Blob) => Promise<string>;
   onBack: () => void;
+  /** Avisa a cor em escolha, para o brilho do topo acompanhar antes de salvar. */
+  onColorPreview?: (token: string) => void;
 }
-
-const ACTION = "hf-press rounded-field px-4 py-2.5 font-medium";
-const SWATCH =
-  "hf-press flex size-10 cursor-pointer items-center justify-center rounded-full " +
-  "transition-transform duration-150 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/45";
 
 function describeError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -39,10 +40,16 @@ function asColorToken(value: string): ColorToken {
  * Edição do perfil local: nome, cor e foto numa tela só.
  *
  * Diferente do wizard (três etapas obrigatórias na primeira vez), aqui a pessoa
- * já tem perfil e só quer ajustar um campo. Wizard de novo seria atrito; patch
- * parcial via `diffUser` evita lixo no log quando nada mudou.
+ * já tem perfil e só quer ajustar um campo. Patch parcial via `diffUser` evita
+ * lixo no log quando nada mudou.
  */
-export function ProfilePage({ profile, store, processFile, onBack }: ProfilePageProps) {
+export function ProfilePage({
+  profile,
+  store,
+  processFile,
+  onBack,
+  onColorPreview,
+}: ProfilePageProps) {
   const [name, setName] = useState(profile.name);
   const [color, setColor] = useState<ColorToken>(() => asColorToken(profile.color));
   const [avatar, setAvatar] = useState<string | null>(profile.avatar);
@@ -50,6 +57,11 @@ export function ProfilePage({ profile, store, processFile, onBack }: ProfilePage
   const [saving, setSaving] = useState(false);
 
   const trimmed = name.trim();
+
+  function chooseColor(token: ColorToken) {
+    setColor(token);
+    onColorPreview?.(token);
+  }
 
   async function handleFile(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
@@ -98,50 +110,51 @@ export function ProfilePage({ profile, store, processFile, onBack }: ProfilePage
 
   return (
     <section aria-label="Seu perfil">
-      <div class="mt-4 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Voltar para configurações"
-          class="hf-press rounded-field px-2 py-1 text-base-content/55"
-        >
-          &lsaquo;
-        </button>
-        <h2 class="hf-caption text-[0.6875rem] font-semibold uppercase text-base-content/45">
-          Seu perfil
-        </h2>
-      </div>
+      <PageHeader title="Seu perfil" onBack={onBack} />
 
-      <form onSubmit={handleSubmit} class="mt-4">
-        <div class="flex flex-col items-center gap-3">
-          <Avatar name={trimmed || profile.name} color={color} avatar={avatar} size={80} />
-          <div class="flex gap-2">
-            <label
-              class={`${ACTION} cursor-pointer bg-base-200 text-center text-sm text-base-content/70
-                has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/45`}
+      <form onSubmit={handleSubmit} class="mt-6">
+        <div class="flex items-center gap-5">
+          <span class="relative shrink-0">
+            <Avatar name={trimmed || profile.name} color={color} avatar={avatar} size={88} />
+            <span
+              aria-hidden="true"
+              class="absolute right-0 bottom-0 grid size-8 place-items-center rounded-full
+                bg-surface text-fg/85 shadow-[0_0_0_3px_var(--color-bg)]"
             >
-              {avatar === null ? "Escolher foto" : "Trocar foto"}
-              <input
-                type="file"
-                accept="image/*"
-                aria-label="Escolher foto"
-                onChange={handleFile}
-                class="sr-only"
-              />
-            </label>
-            {avatar !== null && (
-              <button
-                type="button"
-                onClick={() => setAvatar(null)}
-                class={`${ACTION} bg-transparent text-sm text-base-content/45`}
+              <Icon name="camera" size={16} />
+            </span>
+          </span>
+          <div class="min-w-0">
+            <div class="flex flex-wrap gap-2">
+              <label
+                class={`${SECONDARY} h-11 cursor-pointer px-4 text-sm has-[:focus-visible]:outline-2
+                  has-[:focus-visible]:outline-accent`}
               >
-                Remover foto
-              </button>
-            )}
+                <Icon name="image" size={16} />
+                {avatar === null ? "Escolher foto" : "Trocar foto"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  aria-label="Escolher foto"
+                  onChange={handleFile}
+                  class="sr-only"
+                />
+              </label>
+              {avatar !== null && (
+                <Button
+                  variant="secondary"
+                  class="h-11 px-4 text-sm"
+                  onClick={() => setAvatar(null)}
+                >
+                  Remover foto
+                </Button>
+              )}
+            </div>
+            <p class="mt-2 text-xs text-fg/55">Sem foto, usamos a inicial.</p>
           </div>
         </div>
 
-        <div class="mt-6">
+        <div class="mt-8">
           <label class={LABEL} for="profile-name">
             Seu nome
           </label>
@@ -150,60 +163,38 @@ export function ProfilePage({ profile, store, processFile, onBack }: ProfilePage
             name="name"
             type="text"
             autocomplete="off"
-            class={FIELD}
+            class={`${FIELD_PAGE} mt-2`}
             value={name}
             onInput={(event) => setName(event.currentTarget.value)}
           />
         </div>
 
-        <fieldset class="mt-5">
-          <legend class={LABEL}>Sua cor</legend>
-          <p class="mt-1.5 text-xs text-base-content/45">
-            Marca os lançamentos que você criar. Serve para diferenciar quem lançou quando o app for
-            compartilhado.
-          </p>
-          <div class="mt-3 flex flex-wrap gap-2.5">
-            {COLOR_TOKENS.map((token) => (
-              <label
-                key={token}
-                class={`${SWATCH} ${color === token ? "scale-110 ring-2 ring-base-content/35" : ""}`}
-                style={{ backgroundColor: cssVarForToken(token) }}
-              >
-                <input
-                  type="radio"
-                  name="color"
-                  value={token}
-                  aria-label={token}
-                  checked={color === token}
-                  onChange={() => setColor(token)}
-                  class="sr-only"
-                />
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        <div class="mt-7">
+          <p class={LABEL}>Sua cor</p>
+          <p class="mt-1.5 text-[13px] text-fg/55">Marca os lançamentos que você criar.</p>
+          <Swatches
+            name="color"
+            legend="Sua cor"
+            value={color}
+            onChange={chooseColor}
+            surface="bg"
+            class="mt-4"
+          />
+        </div>
 
         {problem !== null && (
-          <p role="alert" class="mt-4 text-sm text-error">
+          <p role="alert" class="mt-5 text-sm text-expense-fg">
             {problem}
           </p>
         )}
 
-        <div class="mt-6 flex gap-2">
-          <button
-            type="button"
-            onClick={onBack}
-            class={`${ACTION} bg-base-200 text-base-content/70`}
-          >
+        <div class="mt-8 flex gap-2.5">
+          <Button variant="secondary" onClick={onBack}>
             Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            class={`${ACTION} flex-1 bg-primary text-primary-content disabled:opacity-60`}
-          >
+          </Button>
+          <Button type="submit" icon="check" iconSide="left" disabled={saving} class="flex-1">
             {saving ? "Salvando..." : "Salvar"}
-          </button>
+          </Button>
         </div>
       </form>
     </section>

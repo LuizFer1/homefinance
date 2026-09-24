@@ -58,6 +58,6 @@ describe("ResetSection", () => {
   it("avisa que nao ha como desfazer antes de qualquer clique", () => {
     render(<ResetSection onReset={vi.fn()} />);
 
-    expect(screen.getByText(/nao ha como desfazer/i)).toBeDefined();
+    expect(screen.getByText(/não há como desfazer/i)).toBeDefined();
   });
 });

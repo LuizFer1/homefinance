@@ -1,41 +1,50 @@
-import { BRAND_ICONS } from "./icons";
-
 export interface BrandMarkProps {
-  /** Lado em CSS pixels (canvas do PNG é ~192×204; o browser escala). */
+  /** Lado do quadro em CSS pixels (44 no onboarding do handoff). */
   size?: number;
   class?: string;
 }
 
 /**
- * Ícone de marca maskable 192 (par claro/escuro).
+ * Marca do app: a casa com a cédula dentro, redesenhada como vetor.
  *
- * Dois `<img>` e CSS de tema (`.hf-brand-mark-*`) — sem utilitário Tailwind
- * `block`/`hidden`, que vence o `@layer base` e empilha os dois assets.
- * Display só no CSS. Decorativo: o nome do app já está no texto ao lado.
+ * Os PNGs de marca são traço preto, e traço preto some no fundo do Nocturne —
+ * exatamente o defeito que o handoff apontou. Em `currentColor` o mesmo símbolo
+ * serve aos dois temas sem um segundo asset, e o quadro com contorno de acento e
+ * brilho é o do handoff. Os PNGs continuam existindo para favicon e manifest,
+ * onde o fundo é opaco.
+ *
+ * Decorativo: o nome do app já está no texto ao lado.
  */
-export function BrandMark({ size = 28, class: className = "" }: BrandMarkProps) {
+export function BrandMark({ size = 44, class: className = "" }: BrandMarkProps) {
+  const glyph = Math.round(size * 0.55);
+
   return (
     <span
-      class={`hf-brand-mark inline-block shrink-0 overflow-hidden ${className}`.trim()}
-      style={{ width: size, height: size }}
       aria-hidden="true"
+      data-testid="brand-mark"
+      class={`hf-glow inline-grid shrink-0 place-items-center rounded-xl border border-accent
+        text-accent-300 ${className}`.trim()}
+      style={{ width: size, height: size }}
     >
-      <img
-        src={BRAND_ICONS.light.maskable192}
-        width={size}
-        height={size}
-        alt=""
-        decoding="async"
-        class="hf-brand-mark-light size-full object-contain"
-      />
-      <img
-        src={BRAND_ICONS.dark.maskable192}
-        width={size}
-        height={size}
-        alt=""
-        decoding="async"
-        class="hf-brand-mark-dark size-full object-contain"
-      />
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        width={glyph}
+        height={glyph}
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.7"
+        stroke-linejoin="round"
+        stroke-linecap="round"
+      >
+        <path d="M3.5 10.2 12 2.8l8.5 7.4V21h-17Z" />
+        <path
+          d="M6.8 11.6c1.9-.9 3.4.9 5.2 0s3.3-.9 5.2 0v5.2c-1.9-.9-3.4.9-5.2 0s-3.3-.9-5.2 0Z"
+          stroke-width="1.4"
+        />
+        <circle cx="12" cy="14.2" r="1.2" stroke-width="1.3" />
+        <path d="M8.9 13v2.4M15.1 13v2.4" stroke-width="1.3" />
+      </svg>
     </span>
   );
 }

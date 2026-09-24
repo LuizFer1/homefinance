@@ -4,21 +4,20 @@ import { useEffect, useState } from "preact/hooks";
 import type { TransactionKind } from "./domain/events/transaction";
 import { diffTransaction, type TransactionDraft } from "./domain/events/transaction";
 import type { Ulid } from "./domain/ids/ulid";
-import { formatBRL } from "./domain/money/money";
 import type { TransactionRecord } from "./domain/projections/apply";
 import {
   findUser,
   listCategories,
   listPaymentMethods,
   listTransactions,
-  totals,
 } from "./domain/projections/selectors";
 import { BrandMark } from "./features/brand/brand-mark";
+import { cssVarForToken } from "./features/colors/color-token";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
+import { HomePage } from "./features/home/home-page";
 import { Icon } from "./features/icons/icon";
 import type { OnboardingStore } from "./features/onboarding/store";
 import { OnboardingWizard } from "./features/onboarding/wizard";
-import { Avatar } from "./features/profile/avatar-view";
 import { ProfilePage } from "./features/profile/profile-page";
 import type { ProfileStore } from "./features/profile/store";
 import type { RecurrenceStore } from "./features/recurrence/store";
@@ -26,16 +25,12 @@ import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
 import { SettingsPage, type SettingsSection } from "./features/settings/settings-page";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
-import { ThemeToggle } from "./features/theme/theme-toggle";
 import type { TransactionsStore } from "./features/transactions/store";
-import { TransactionList } from "./features/transactions/transaction-list";
 import {
   type RecurrenceInput,
   TransactionWizard,
 } from "./features/transactions/transaction-wizard";
-import { greetingFor } from "./features/ui/greeting";
 import { Modal } from "./features/ui/modal";
-import { QuickActions } from "./features/ui/quick-actions";
 import { useSwipeNav } from "./features/ui/use-swipe-nav";
 
 export interface AppProps {
@@ -61,8 +56,7 @@ export interface AppProps {
   theme: ThemeToggleProps;
 }
 
-const SHELL = "min-h-dvh bg-base-200 text-base-content";
-const CAPTION = "hf-caption text-[0.6875rem] font-semibold uppercase text-base-content/45";
+const SHELL = "hf-backdrop min-h-dvh text-fg";
 
 /**
  * Navegação sem router.
@@ -76,19 +70,15 @@ const CAPTION = "hf-caption text-[0.6875rem] font-semibold uppercase text-base-c
  * para ele competiria com as três coisas que o usuário realmente faz.
  */
 const SCREENS = [
-  { id: "dashboard", label: "Dashboard", icon: "piggy-bank" },
+  { id: "dashboard", label: "Dashboard", icon: "chart-pie-slice" },
   { id: "inicio", label: "Início", icon: "house" },
-  { id: "config", label: "Ajustes", icon: "briefcase" },
+  { id: "config", label: "Ajustes", icon: "gear-six" },
 ] as const;
 
 type ScreenId = (typeof SCREENS)[number]["id"];
 
 /** Ordem esquerda → direita do arraste (Dashboard · Início · Ajustes). */
 const SCREEN_IDS: readonly ScreenId[] = SCREENS.map((s) => s.id);
-
-const TAB =
-  "hf-press flex flex-1 flex-col items-center justify-center gap-1 text-xs font-medium " +
-  "transition-colors duration-150";
 
 function Shell({ children }: { children: ComponentChildren }) {
   return (
@@ -115,6 +105,9 @@ export function App({
   const [composing, setComposing] = useState<TransactionKind | null>(null);
   const [screen, setScreen] = useState<ScreenId>("inicio");
   const [section, setSection] = useState<SettingsSection | null>(null);
+  // Cor do brilho do topo enquanto o Perfil está aberto: acompanha a cor que a
+  // pessoa está escolhendo, antes mesmo de salvar.
+  const [glow, setGlow] = useState<string | null>(null);
 
   useEffect(() => {
     // Materializa depois do init: o boot e o "virar do mês" são o mesmo caminho.
@@ -152,10 +145,8 @@ export function App({
   if (store.status.value === "loading") {
     return (
       <Shell>
-        <div class="flex items-center gap-3">
-          <BrandMark size={36} />
-        </div>
-        <p class="mt-2 text-base-content/50">Carregando...</p>
+        <BrandMark size={44} />
+        <p class="mt-4 text-fg/55">Carregando...</p>
       </Shell>
     );
   }
@@ -163,10 +154,8 @@ export function App({
   if (store.status.value === "error") {
     return (
       <Shell>
-        <div class="flex items-center gap-3">
-          <BrandMark size={36} />
-        </div>
-        <p role="alert" class="rounded-box mt-3 bg-error/10 p-4 text-sm text-error">
+        <BrandMark size={44} />
+        <p role="alert" class="mt-4 rounded-lg bg-expense/10 p-4 text-sm text-expense-fg">
           Não foi possível abrir o armazenamento local: {store.error.value}
         </p>
       </Shell>
@@ -178,16 +167,14 @@ export function App({
   // baixo dele.
   if (onboarding.needsOnboarding.value) {
     return (
-      <Shell>
+      <div class={SHELL}>
         <OnboardingWizard onComplete={onboarding.complete} processFile={processFile} />
-      </Shell>
+      </div>
     );
   }
 
   const profile = findUser(store.state.value, localUserId.value);
   const items = listTransactions(store.state.value);
-  const summary = totals(items);
-  const negative = summary.balanceMinor < 0;
   const categories = listCategories(store.state.value);
   const paymentMethods = listPaymentMethods(store.state.value);
 
@@ -218,68 +205,23 @@ export function App({
     void store.remove(entityId);
   }
 
+  function openSection(next: SettingsSection) {
+    setScreen("config");
+    setSection(next);
+    if (next !== "profile") setGlow(null);
+  }
+
+  const editingAuthor = editing === null ? null : findUser(store.state.value, editing.userId);
+
   return (
-    <div class={SHELL}>
-      {/*
-        Cabeçalho translúcido e sticky: o saldo fica sempre à vista em todas as
-        telas. A foto e o tema ficam agrupados à direita — o toque no avatar
-        abre o perfil (atalo natural; não esconder só em Ajustes).
-      */}
-      <header class="hf-topbar hf-scroll-edge sticky top-0 z-10">
-        <div
-          class="mx-auto w-full max-w-md px-5
-            pt-[max(0.75rem,env(safe-area-inset-top))] pb-3.5"
-        >
-          <div class="flex items-center justify-between gap-4">
-            <div class="min-w-0 flex-1">
-              <h1 class={`${CAPTION} tracking-[0.04em]`}>{greetingFor(hour, profile?.name)}</h1>
-              <p
-                data-testid="total-balance"
-                class={`hf-display mt-0.5 text-[1.875rem] font-semibold leading-none
-                  tabular-nums tracking-tight ${negative ? "text-error" : ""}`}
-              >
-                {/* "total" e não só "saldo": o dashboard agora mostra o do mês,
-                    e dois números com o mesmo nome na mesma sessão confundem. */}
-                <span class="sr-only">Saldo total: </span>
-                {formatBRL(summary.balanceMinor)}
-              </p>
-              <p class="mt-1 text-[0.6875rem] text-base-content/40">Saldo total</p>
-            </div>
-
-            <div
-              class="flex shrink-0 items-center gap-1 rounded-full border border-base-content/[0.06]
-                bg-base-200/55 p-1 shadow-[0_1px_0_0_color-mix(in_oklab,var(--color-base-content)_4%,transparent)]"
-            >
-              {profile !== null && (
-                <button
-                  type="button"
-                  aria-label="Editar perfil"
-                  class="hf-press hf-tap rounded-full ring-2 ring-base-100 ring-offset-0"
-                  onClick={() => {
-                    setScreen("config");
-                    setSection("profile");
-                  }}
-                >
-                  <Avatar
-                    name={profile.name}
-                    color={profile.color}
-                    avatar={profile.avatar}
-                    size={38}
-                  />
-                </button>
-              )}
-              <ThemeToggle storage={theme.storage} doc={theme.doc} />
-            </div>
-          </div>
-        </div>
-      </header>
-
+    <div class={SHELL} style={glow === null ? undefined : { "--hf-glow": cssVarForToken(glow) }}>
       {/*
         O padding inferior reserva a altura da barra mais o safe area. Sem ele o
         último item da lista fica permanentemente sob a barra, inalcançável.
       */}
       <main
-        class={`hf-swipe mx-auto w-full max-w-md px-5 pb-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+2rem)]`}
+        class="hf-swipe mx-auto w-full max-w-md px-5 pt-[max(1.25rem,env(safe-area-inset-top))]
+          pb-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+2rem)]"
         onPointerDown={swipe.onPointerDown}
         onPointerMove={swipe.onPointerMove}
         onPointerUp={swipe.onPointerUp}
@@ -288,44 +230,31 @@ export function App({
         style={swipe.style}
       >
         {store.error.value !== null && (
-          <p role="alert" class="rounded-box mt-4 bg-error/10 p-3 text-sm text-error">
+          <p role="alert" class="mb-4 rounded-lg bg-expense/10 p-3 text-sm text-expense-fg">
             {store.error.value}
           </p>
         )}
 
         {screen === "dashboard" && (
-          <DashboardPage items={items} state={store.state.value} today={today} />
+          <DashboardPage
+            items={items}
+            state={store.state.value}
+            today={today}
+            onGoHome={() => goToScreen("inicio")}
+          />
         )}
 
         {screen === "inicio" && (
-          <>
-            <QuickActions
-              actions={[
-                {
-                  id: "despesa",
-                  label: "Despesa",
-                  icon: "receipt",
-                  tone: "border-error/25 bg-error/10 text-error hover:border-error/45",
-                  onSelect: () => setComposing("expense"),
-                },
-                {
-                  id: "receita",
-                  label: "Receita",
-                  icon: "banknote",
-                  tone: "border-success/25 bg-success/10 text-success hover:border-success/45",
-                  onSelect: () => setComposing("income"),
-                },
-              ]}
-            />
-
-            <TransactionList
-              items={items}
-              state={store.state.value}
-              today={today}
-              onEdit={setEditing}
-              onDelete={handleDelete}
-            />
-          </>
+          <HomePage
+            items={items}
+            state={store.state.value}
+            profile={profile}
+            today={today}
+            hour={hour}
+            onCompose={setComposing}
+            onEdit={setEditing}
+            onOpenProfile={() => openSection("profile")}
+          />
         )}
 
         {screen === "config" &&
@@ -334,7 +263,8 @@ export function App({
               categoryCount={categories.length}
               paymentMethodCount={paymentMethods.length}
               profile={profile}
-              onOpen={setSection}
+              theme={theme}
+              onOpen={openSection}
               onReset={onReset}
             />
           ) : section === "profile" ? (
@@ -343,38 +273,59 @@ export function App({
                 profile={profile}
                 store={profileStore}
                 processFile={processFile}
-                onBack={() => setSection(null)}
+                onColorPreview={setGlow}
+                onBack={() => {
+                  setGlow(null);
+                  setSection(null);
+                }}
               />
             ) : null
           ) : (
             <RegistryPage
               entity={section}
               state={store.state.value}
+              items={items}
+              today={today}
               store={registry}
               onBack={() => setSection(null)}
             />
           ))}
       </main>
 
+      {/*
+        Barra de abas: 80px com 18 de área segura desenhada. Fundo em degradê do
+        `bg` a 80% para o `bg` cheio — a lista passa por baixo e some, em vez de
+        ser cortada por uma faixa opaca. Régua superior esmaecida nas pontas.
+      */}
       <nav
         aria-label="Seções"
-        class="hf-material fixed inset-x-0 bottom-0 z-10 border-t border-base-300/60
-          pb-[env(safe-area-inset-bottom)]"
+        class="fixed inset-x-0 bottom-0 z-10 bg-[linear-gradient(to_bottom,color-mix(in_srgb,var(--color-bg)_80%,transparent),var(--color-bg)_45%)]
+          pb-[max(1.125rem,env(safe-area-inset-bottom))]"
       >
-        {/* A altura e do conteudo; o safe area soma por fora, no <nav>. */}
-        <div class="mx-auto flex h-[var(--hf-nav-h)] w-full max-w-md">
-          {SCREENS.map(({ id, label, icon }) => (
-            <button
-              key={id}
-              type="button"
-              aria-current={screen === id ? "page" : undefined}
-              onClick={() => goToScreen(id)}
-              class={`${TAB} ${screen === id ? "text-primary" : "text-base-content/50"}`}
-            >
-              <Icon name={icon} size={20} />
-              {label}
-            </button>
-          ))}
+        <div aria-hidden="true" class="hf-rule-both absolute inset-x-0 top-0" />
+        <div class="mx-auto grid h-[var(--hf-nav-h)] w-full max-w-md grid-cols-3 px-3">
+          {SCREENS.map(({ id, label, icon }) => {
+            const active = screen === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-current={active ? "page" : undefined}
+                onClick={() => goToScreen(id)}
+                class={`hf-press relative flex flex-col items-center justify-center gap-[3px]
+                  text-[11px] font-medium ${active ? "text-accent-300" : "text-fg/55"}`}
+              >
+                <span
+                  aria-hidden="true"
+                  class={`absolute top-0 h-0.5 w-[22px] rounded-full transition-colors duration-200 ${
+                    active ? "bg-accent shadow-[0_0_12px_var(--color-accent)]" : "bg-transparent"
+                  }`}
+                />
+                <Icon name={icon} size={24} weight={active ? "fill" : "regular"} />
+                {label}
+              </button>
+            );
+          })}
         </div>
       </nav>
 
@@ -399,6 +350,16 @@ export function App({
             initialKind={composing ?? undefined}
             categories={categories}
             paymentMethods={paymentMethods}
+            author={
+              editingAuthor === null
+                ? null
+                : { name: editingAuthor.name, color: editingAuthor.color }
+            }
+            onDelete={editing === null ? undefined : () => handleDelete(editing.id)}
+            onManageCategories={() => {
+              closeModal();
+              openSection("category");
+            }}
           />
         )}
       </Modal>

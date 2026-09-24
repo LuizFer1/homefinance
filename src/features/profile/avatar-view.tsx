@@ -62,10 +62,33 @@ export function Avatar({ name, color, avatar, size = 36 }: AvatarProps) {
   return (
     <span
       aria-hidden="true"
-      style={{ ...box, backgroundColor: cssVarForToken(color) }}
-      class="flex shrink-0 items-center justify-center rounded-full text-sm font-semibold text-base-100"
+      // A inicial acompanha o disco (40% do lado): 44px no avatar de 112 do
+      // onboarding, ~14px no de 36 do cabeçalho. Um tamanho fixo sumiria num e
+      // estouraria o outro.
+      style={{ ...box, backgroundColor: cssVarForToken(color), fontSize: `${size * 0.4}px` }}
+      class="flex shrink-0 items-center justify-center rounded-full font-medium text-bg"
     >
       {initialsFor(name)}
+    </span>
+  );
+}
+
+/**
+ * Autor do lançamento em 14px, antes de "Categoria · Forma".
+ *
+ * Só a cor e a inicial, nunca a foto: 96px de foto renderizados a 14 viram um
+ * borrão, e a pergunta que a marca responde é só "quem lançou".
+ */
+export function MiniAvatar({ name, color }: { name: string; color: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="author-mark"
+      style={{ backgroundColor: cssVarForToken(color) }}
+      class="inline-grid size-3.5 shrink-0 place-items-center rounded-full text-[8px]
+        font-semibold leading-none text-bg"
+    >
+      {initialsFor(name).slice(0, 1)}
     </span>
   );
 }

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { COLOR_TOKENS, cssVarForToken, FALLBACK_TOKEN } from "./color-token";
+import {
+  COLOR_NAMES,
+  COLOR_TOKENS,
+  colorName,
+  cssVarForToken,
+  FALLBACK_TOKEN,
+  tileStyle,
+} from "./color-token";
 
 describe("cssVarForToken", () => {
   it("resolve token conhecido para a variável CSS", () => {
@@ -28,5 +35,27 @@ describe("cssVarForToken", () => {
 
   it("declara os doze tokens do roadmap", () => {
     expect(COLOR_TOKENS).toHaveLength(12);
+  });
+});
+
+describe("colorName", () => {
+  it("dá nome em português aos doze tokens, sem repetir", () => {
+    const names = COLOR_TOKENS.map((token) => COLOR_NAMES[token]);
+    expect(new Set(names).size).toBe(12);
+    expect(colorName("sky")).toBe("Céu");
+    expect(colorName("red")).toBe("Coral");
+  });
+
+  it("token desconhecido lê como o neutro", () => {
+    expect(colorName("chartreuse")).toBe("Cinza");
+  });
+});
+
+describe("tileStyle", () => {
+  it("tinge o fundo e pinta o ícone na cor cheia", () => {
+    expect(tileStyle("teal")).toEqual({
+      backgroundColor: "color-mix(in oklch, var(--color-tag-teal) 18%, transparent)",
+      color: "var(--color-tag-teal)",
+    });
   });
 });

@@ -1,90 +1,54 @@
-import {
-  Baby,
-  Banknote,
-  Book,
-  Briefcase,
-  Bus,
-  CalendarDays,
-  Car,
-  ChevronDown,
-  CircleDashed,
-  Coffee,
-  CreditCard,
-  Dog,
-  Dumbbell,
-  Film,
-  Fuel,
-  Gamepad2,
-  Gift,
-  GraduationCap,
-  HeartPulse,
-  House,
-  Landmark,
-  Music,
-  PiggyBank,
-  Pill,
-  Plane,
-  Receipt,
-  Scissors,
-  Shirt,
-  ShoppingBag,
-  ShoppingCart,
-  Smartphone,
-  Tag,
-  Utensils,
-  Wallet,
-  Wifi,
-  Zap,
-} from "lucide-preact";
+import type { PhosphorName } from "./phosphor-paths";
 
 /**
- * Imports **literais**, num `Record` estático.
+ * Chave persistida no log → glifo Phosphor.
  *
- * Literal é o que preserva o tree-shaking: `import()` dinâmico traria a
- * biblioteca inteira e estouraria o teto de bundle sozinho. A escolha do usuário
- * é lookup neste mapa, nunca import em runtime.
+ * As chaves são as que o log já guarda desde a fatia de cadastros, e **não** os
+ * nomes do Phosphor: trocar de biblioteca não pode reescrever evento nenhum. Um
+ * "utensils" gravado em 2026 continua sendo "utensils" para sempre; só o desenho
+ * que ele resolve mudou.
  *
- * Custo medido destes 34 ícones: 4.88kb gzip, contra o gatilho de reversão de
- * 10kb registrado no ROADMAP. Acrescentar ícones aqui é barato, mas não é de
- * graça — remeça a medição se a lista crescer muito.
+ * Os caminhos moram em `phosphor-paths.ts`, gerado por `scripts/gen-icons.mjs`
+ * só com os glifos listados — o pacote inteiro nunca entra no bundle.
  */
 export const ICON_SET = {
-  baby: Baby,
-  banknote: Banknote,
-  book: Book,
-  briefcase: Briefcase,
-  bus: Bus,
-  calendar: CalendarDays,
-  car: Car,
-  "chevron-down": ChevronDown,
-  coffee: Coffee,
-  "credit-card": CreditCard,
-  dog: Dog,
-  dumbbell: Dumbbell,
-  film: Film,
-  fuel: Fuel,
-  gamepad: Gamepad2,
-  gift: Gift,
-  graduation: GraduationCap,
-  health: HeartPulse,
-  house: House,
-  landmark: Landmark,
-  music: Music,
-  "piggy-bank": PiggyBank,
-  pill: Pill,
-  plane: Plane,
-  receipt: Receipt,
-  scissors: Scissors,
-  shirt: Shirt,
-  "shopping-bag": ShoppingBag,
-  "shopping-cart": ShoppingCart,
-  smartphone: Smartphone,
-  tag: Tag,
-  utensils: Utensils,
-  wallet: Wallet,
-  wifi: Wifi,
-  zap: Zap,
-} as const;
+  baby: "baby",
+  banknote: "money",
+  book: "book-open",
+  briefcase: "briefcase",
+  bus: "bus",
+  calendar: "calendar-blank",
+  car: "car",
+  "chevron-down": "caret-down",
+  coffee: "coffee",
+  "credit-card": "credit-card",
+  dog: "dog",
+  dumbbell: "barbell",
+  film: "film-strip",
+  fuel: "gas-pump",
+  gamepad: "game-controller",
+  gift: "gift",
+  graduation: "graduation-cap",
+  health: "heartbeat",
+  house: "house",
+  landmark: "bank",
+  music: "music-notes",
+  "paw-print": "paw-print",
+  "piggy-bank": "piggy-bank",
+  pill: "pill",
+  plane: "airplane",
+  receipt: "receipt",
+  scissors: "scissors",
+  shirt: "t-shirt",
+  "shopping-bag": "shopping-bag",
+  "shopping-cart": "shopping-cart",
+  smartphone: "device-mobile",
+  tag: "tag",
+  utensils: "fork-knife",
+  wallet: "wallet",
+  wifi: "wifi-high",
+  zap: "lightning",
+} as const satisfies Record<string, PhosphorName>;
 
 export type IconKey = keyof typeof ICON_SET;
 
@@ -92,6 +56,51 @@ export type IconKey = keyof typeof ICON_SET;
  * Chave desconhecida cai aqui em vez de não renderizar nada. O log é eterno e um
  * aparelho de versão mais nova pode gravar uma chave que esta versão não conhece.
  */
-export const FALLBACK_ICON = CircleDashed;
+export const FALLBACK_ICON: PhosphorName = "circle-dashed";
 
 export const ICON_KEYS = Object.keys(ICON_SET) as IconKey[];
+
+/**
+ * O que a grade "Ícone" oferece, na ordem do handoff.
+ *
+ * `chevron-down` fica fora: é seta de interface que entrou no mapa por acidente
+ * de uma fatia antiga. Continua resolvendo para quem já a gravou, mas deixar
+ * escolhê-la como ícone de categoria seria propagar o acidente.
+ */
+export const PICKABLE_ICONS: readonly IconKey[] = [
+  "baby",
+  "banknote",
+  "book",
+  "briefcase",
+  "bus",
+  "calendar",
+  "car",
+  "coffee",
+  "credit-card",
+  "dog",
+  "dumbbell",
+  "film",
+  "fuel",
+  "gamepad",
+  "gift",
+  "graduation",
+  "health",
+  "house",
+  "landmark",
+  "music",
+  "piggy-bank",
+  "pill",
+  "plane",
+  "receipt",
+  "scissors",
+  "shirt",
+  "shopping-bag",
+  "shopping-cart",
+  "smartphone",
+  "tag",
+  "utensils",
+  "wallet",
+  "wifi",
+  "zap",
+  "paw-print",
+];

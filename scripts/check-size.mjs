@@ -34,13 +34,19 @@ import { gzipSync } from "node:zlib";
  *           sem bump; este commit so ratifica. Service worker / Workbox
  *           continuam fora do gate (isAppShellArtifact) — offline e
  *           instalabilidade nao sao first paint da SPA.
+ *   90kb  — redesign Nocturne (87.16kb medidos, sendo 10.69kb de CSS). Sai o
+ *           lucide (4.88kb) e entram os caminhos Phosphor gerados so com os 67
+ *           glifos usados (8.5kb, ja com uma casa decimal a menos por
+ *           ponto); o resto e o Dashboard novo (ritmo, recorrentes a caminho,
+ *           cashback) e os componentes do sistema. A fonte Inter fica fora do
+ *           gate: e woff2 precacheado, nao JS nem CSS.
  * Alvo de projeto: ~140kb gzip, conforme o README.
  *
  * Service worker e runtime do Workbox **nao** entram neste teto: sao baixados
  * e cacheados a parte do shell da UI, e o tamanho deles e o preco de offline/
  * instalabilidade, nao do first paint da SPA. Ver isAppShellArtifact.
  */
-export const LIMIT_BYTES = 76 * 1024;
+export const LIMIT_BYTES = 90 * 1024;
 
 const MEASURED = /\.(js|css)$/;
 

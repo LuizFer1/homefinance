@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { dayLabel, lastMonths, monthLabelLong, monthLabelShort, monthOf } from "./periods";
+import {
+  dayHeading,
+  dayLabel,
+  dayMonth,
+  daysBetween,
+  lastMonths,
+  monthLabelLong,
+  monthLabelShort,
+  monthOf,
+  shortDate,
+  weekdayShort,
+} from "./periods";
 
 describe("monthOf", () => {
   it("corta a data no mês", () => {
@@ -103,5 +114,36 @@ describe("dayLabel", () => {
 
   it("data corrompida aparece crua em vez de derrubar o render", () => {
     expect(dayLabel("2026-13-01", HOJE)).toBe("2026-13-01");
+  });
+});
+
+describe("weekdayShort / shortDate", () => {
+  it("abrevia o dia da semana sem depender do fuso", () => {
+    expect(weekdayShort("2026-09-24")).toBe("qui");
+    expect(weekdayShort("2026-09-20")).toBe("dom");
+  });
+
+  it("monta 'qui, 24 set' e só põe o ano quando muda", () => {
+    expect(shortDate("2026-09-24", "2026-09-24")).toBe("qui, 24 set");
+    expect(shortDate("2025-12-31", "2026-01-02")).toBe("qua, 31 dez 2025");
+  });
+
+  it("chip de próximas vezes", () => {
+    expect(dayMonth("2026-10-04")).toBe("4 out");
+  });
+});
+
+describe("dayHeading", () => {
+  it("prefixa Hoje e Ontem e capitaliza os demais", () => {
+    expect(dayHeading("2026-09-24", "2026-09-24")).toBe("Hoje · qui, 24 set");
+    expect(dayHeading("2026-09-23", "2026-09-24")).toBe("Ontem · qua, 23 set");
+    expect(dayHeading("2026-09-21", "2026-09-24")).toBe("Seg, 21 set");
+  });
+});
+
+describe("daysBetween", () => {
+  it("conta dias corridos atravessando o mês", () => {
+    expect(daysBetween("2026-09-24", "2026-09-30")).toBe(6);
+    expect(daysBetween("2026-09-30", "2026-10-01")).toBe(1);
   });
 });

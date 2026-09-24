@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Modal } from "./modal";
+import { DRAG_CLOSE_PX, Modal } from "./modal";
 
 afterEach(cleanup);
 
@@ -63,5 +63,25 @@ describe("Modal", () => {
     );
 
     expect(screen.getByLabelText("Novo lancamento")).toBeDefined();
+  });
+
+  it("fecha ao arrastar o grabber para baixo, e volta se o arraste for curto", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal open title="Novo" onClose={onClose}>
+        <p>conteudo</p>
+      </Modal>,
+    );
+    const grabber = document.querySelector(".cursor-grab") as HTMLElement;
+
+    fireEvent.pointerDown(grabber, { clientY: 100 });
+    fireEvent.pointerMove(grabber, { clientY: 100 + DRAG_CLOSE_PX / 2 });
+    fireEvent.pointerUp(grabber);
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(grabber, { clientY: 100 });
+    fireEvent.pointerMove(grabber, { clientY: 100 + DRAG_CLOSE_PX + 10 });
+    fireEvent.pointerUp(grabber);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

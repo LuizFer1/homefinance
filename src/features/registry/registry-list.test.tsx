@@ -18,7 +18,7 @@ function categoria(overrides: Partial<CategoryRecord> & { id: string }): Categor
   };
 }
 
-const NOOP = { onEdit: () => {}, onDelete: () => {}, emptyHint: "Nada aqui ainda." };
+const NOOP = { onEdit: () => {}, emptyHint: "Nada aqui ainda." };
 
 describe("RegistryList", () => {
   it("mostra nome, ícone e cor de cada item", () => {
@@ -50,17 +50,15 @@ describe("RegistryList", () => {
     expect(screen.queryByRole("listitem")).toBeNull();
   });
 
-  it("entrega o item certo ao editar e o id certo ao excluir", () => {
+  it("a linha inteira abre a edicao do item certo, sem botao de excluir", () => {
     const onEdit = vi.fn();
-    const onDelete = vi.fn();
-    const items = [categoria({ id: "a", name: "Aluguel" }), categoria({ id: "b", name: "Bar" })];
-    render(<RegistryList {...NOOP} items={items} onEdit={onEdit} onDelete={onDelete} />);
+    const itens = [categoria({ id: "a" }), categoria({ id: "b", name: "Farmacia" })];
+    render(<RegistryList {...NOOP} onEdit={onEdit} items={itens} />);
 
     const segundo = screen.getAllByRole("listitem")[1] as HTMLElement;
-    fireEvent.click(within(segundo).getByRole("button", { name: /editar/i }));
-    fireEvent.click(within(segundo).getByRole("button", { name: /excluir/i }));
+    fireEvent.click(within(segundo).getByRole("button", { name: /editar farmacia/i }));
 
-    expect(onEdit).toHaveBeenCalledWith(items[1]);
-    expect(onDelete).toHaveBeenCalledWith("b");
+    expect(onEdit).toHaveBeenCalledWith(itens[1]);
+    expect(screen.queryByRole("button", { name: /excluir/i })).toBeNull();
   });
 });

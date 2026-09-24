@@ -1,28 +1,14 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/preact";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   EMPTY_STATE,
   type ProjectionState,
   type TransactionRecord,
 } from "../../domain/projections/apply";
-import { HOLD_MS, TransactionList } from "./transaction-list";
+import { MINUS } from "../ui/money";
+import { TransactionList } from "./transaction-list";
 
 afterEach(cleanup);
-
-/*
-  Relógio falso: o botão de excluir só confirma depois de dois segundos de dedo
-  preso, e esperar isso de verdade custaria quatro segundos nesta suíte.
-*/
-beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
-
-/** `act` porque quem muda o estado é o callback do timer, e não um evento. */
-async function segurar(botao: HTMLElement, ms: number) {
-  fireEvent.pointerDown(botao);
-  await act(async () => {
-    vi.advanceTimersByTime(ms);
-  });
-}
 
 function record(overrides: Partial<TransactionRecord> & { id: string }): TransactionRecord {
   return {
@@ -86,15 +72,7 @@ const STATE: ProjectionState = {
 
 describe("TransactionList", () => {
   it("mostra uma linha por lançamento", () => {
-    render(
-      <TransactionList
-        items={ITEMS}
-        state={STATE}
-        today="2026-08-08"
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
+    render(<TransactionList items={ITEMS} state={STATE} today="2026-08-08" onEdit={vi.fn()} />);
 
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
     expect(screen.getByText("Mercado")).toBeDefined();
@@ -103,96 +81,38 @@ describe("TransactionList", () => {
 
   it("avisa quando não há lançamentos", () => {
     const { container } = render(
-      <TransactionList
-        items={[]}
-        state={STATE}
-        today="2026-08-08"
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
+      <TransactionList items={[]} state={STATE} today="2026-08-08" onEdit={vi.fn()} />,
     );
 
     expect(screen.getByRole("heading", { name: /Nenhum lançamento ainda/i })).toBeDefined();
-    expect(container.querySelector('img[src*="undraw_enter-payment-info"]')).not.toBeNull();
+    // Sem ilustração genérica: o vazio prenuncia a lista com linhas-fantasma.
+    expect(container.querySelector("img")).toBeNull();
   });
 
   it("pede edição do registro clicado", () => {
     const onEdit = vi.fn();
-    render(
-      <TransactionList
-        items={ITEMS}
-        state={STATE}
-        today="2026-08-08"
-        onEdit={onEdit}
-        onDelete={vi.fn()}
-      />,
-    );
+    render(<TransactionList items={ITEMS} state={STATE} today="2026-08-08" onEdit={onEdit} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Editar Salário" }));
 
     expect(onEdit).toHaveBeenCalledWith(ITEMS[1]);
   });
 
-  it("nao exclui com um toque solto", async () => {
-    const onDelete = vi.fn();
-    render(
-      <TransactionList
-        items={ITEMS}
-        state={STATE}
-        today="2026-08-08"
-        onEdit={vi.fn()}
-        onDelete={onDelete}
-      />,
-    );
+  it("não oferece excluir na linha: excluir mora na edição", () => {
+    render(<TransactionList items={ITEMS} state={STATE} today="2026-08-08" onEdit={vi.fn()} />);
 
-    const botao = screen.getByRole("button", { name: "Excluir Mercado (segure para confirmar)" });
-    fireEvent.pointerDown(botao);
-    fireEvent.pointerUp(botao);
-    await act(async () => {
-      vi.advanceTimersByTime(HOLD_MS * 2);
-    });
-
-    // É este caso que a exclusão sem desfazer existe para impedir: o dedo que
-    // encostou no alvo errado e saiu.
-    expect(onDelete).not.toHaveBeenCalled();
-  });
-
-  it("exclui o registro depois de segurar o botao", async () => {
-    const onDelete = vi.fn();
-    render(
-      <TransactionList
-        items={ITEMS}
-        state={STATE}
-        today="2026-08-08"
-        onEdit={vi.fn()}
-        onDelete={onDelete}
-      />,
-    );
-
-    await segurar(
-      screen.getByRole("button", { name: "Excluir Mercado (segure para confirmar)" }),
-      HOLD_MS,
-    );
-
-    expect(onDelete).toHaveBeenCalledWith("a");
+    expect(screen.queryByRole("button", { name: /Excluir/ })).toBeNull();
   });
 
   it("distingue receita de despesa no valor exibido", () => {
-    render(
-      <TransactionList
-        items={ITEMS}
-        state={STATE}
-        today="2026-08-08"
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
+    render(<TransactionList items={ITEMS} state={STATE} today="2026-08-08" onEdit={vi.fn()} />);
 
     const linhas = screen.getAllByRole("listitem");
 
     expect(linhas[0]?.textContent).toContain("123,45");
     expect(linhas[1]?.textContent).toContain("123,45");
-    expect(linhas[0]?.textContent).not.toBe(linhas[1]?.textContent);
+    expect(linhas[0]?.textContent).toContain(`${MINUS}R$`);
+    expect(linhas[1]?.textContent).toContain("+R$");
   });
 });
 
@@ -206,7 +126,6 @@ describe("rotulos de categoria, forma de pagamento e cashback", () => {
         state={STATE}
         today="2026-08-08"
         onEdit={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
   }
@@ -238,7 +157,7 @@ describe("rotulos de categoria, forma de pagamento e cashback", () => {
     expect(screen.getByText(/de volta/)).toBeDefined();
   });
 
-  it("nao mostra segunda linha quando nao ha nada a dizer", () => {
+  it("sem categoria nem forma, a meta fica so com o autor", () => {
     // "Sem categoria - Sem forma de pagamento" em toda linha seria ruido
     // constante e empurraria o valor, que e o dado que importa.
     comAtributos({ categoryId: null, paymentMethodId: null, cashbackMinor: null });
@@ -273,13 +192,12 @@ describe("autoria", () => {
         state={COM_AUTOR}
         today="2026-08-08"
         onEdit={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
     return screen.getByRole("listitem");
   }
 
-  it("a cor do autor e marca lateral, nao fundo do item", () => {
+  it("a cor do autor e um mini-avatar, nao fundo do item", () => {
     // Fundo colorido competiria com o unico dado que importa na tela: o
     // dinheiro. Mesmo raciocinio que o app.css ja registra para o tema.
     const item = comAutor(AUTOR);
@@ -312,21 +230,19 @@ describe("autoria", () => {
 
     expect(screen.queryByRole("img")).toBeNull();
   });
+
+  it("o mini-avatar leva a inicial de quem lancou", () => {
+    const item = comAutor(AUTOR);
+
+    expect(item.querySelector("[data-testid='author-mark']")?.textContent).toBe("L");
+  });
 });
 
 describe("agrupamento por dia", () => {
   const HOJE = "2026-08-10";
 
   function comItens(items: TransactionRecord[]) {
-    render(
-      <TransactionList
-        items={items}
-        state={STATE}
-        today={HOJE}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
+    render(<TransactionList items={items} state={STATE} today={HOJE} onEdit={vi.fn()} />);
   }
 
   it("um cabecalho por dia, com o rotulo relativo", () => {
@@ -337,9 +253,9 @@ describe("agrupamento por dia", () => {
     ]);
 
     expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
-      "Hoje",
-      "Ontem",
-      "05 de agosto",
+      "Hoje · seg, 10 ago",
+      "Ontem · dom, 9 ago",
+      "Qua, 5 ago",
     ]);
   });
 
@@ -358,6 +274,7 @@ describe("agrupamento por dia", () => {
       record({ id: "b", occurredOn: HOJE, amountMinor: 21_000 }),
     ]);
 
+    expect(screen.getByTestId("day-total").textContent).toContain("+R$");
     expect(screen.getByTestId("day-total").textContent).toContain("2.790,00");
   });
 
@@ -377,7 +294,6 @@ describe("ancora visual da linha", () => {
         state={STATE}
         today="2026-08-08"
         onEdit={vi.fn()}
-        onDelete={vi.fn()}
       />,
     );
   }
@@ -409,13 +325,25 @@ describe("ancora visual da linha", () => {
     expect(screen.getByTestId("icon-receipt")).toBeDefined();
   });
 
-  it("a marca de autoria e uma pilula recuada, nao faixa ate a borda", () => {
-    // A lista tem raio de 1rem: faixa em esquadro contra o canto arredondado le
-    // como defeito no primeiro e no ultimo item.
+  it("a marca de autoria e um disco pequeno na meta da linha", () => {
     comCategoria({});
 
     const marca = screen.getByTestId("author-mark");
     expect(marca.className).toContain("rounded-full");
-    expect(marca.className).toContain("absolute");
+    expect(marca.className).toContain("size-3.5");
+  });
+
+  it("recorrente ganha a tag com a frequencia da serie", () => {
+    render(
+      <TransactionList
+        items={[record({ id: "a", recurrenceId: "serie-sumida" })]}
+        state={STATE}
+        today="2026-08-08"
+        onEdit={vi.fn()}
+      />,
+    );
+
+    // Serie que nao esta na projecao cai no rotulo generico.
+    expect(screen.getByText("Recorrente")).toBeDefined();
   });
 });

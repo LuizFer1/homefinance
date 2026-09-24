@@ -57,8 +57,8 @@ test("devolve total zero quando nao ha artefatos", async () => {
   expect(files).toEqual([]);
 });
 
-test("o teto esta declarado em 76kb", () => {
-  expect(LIMIT_BYTES).toBe(76 * 1024);
+test("o teto esta declarado em 90kb", () => {
+  expect(LIMIT_BYTES).toBe(90 * 1024);
 });
 
 test("service worker e workbox ficam fora do teto do shell", async () => {

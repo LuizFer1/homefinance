@@ -10,7 +10,7 @@ import { createRecurrenceStore } from "./features/recurrence/store";
 import { createRegistryStore } from "./features/registry/store";
 import { createSession, LOCAL_USER_ID_KEY } from "./features/session/session";
 import { createTransactionsStore } from "./features/transactions/store";
-import { HOLD_MS } from "./features/transactions/transaction-list";
+import { HOLD_MS } from "./features/ui/hold-button";
 
 afterEach(cleanup);
 
@@ -197,6 +197,8 @@ describe("App", () => {
       `shouldAdvanceTime` porque o `waitFor` logo abaixo depende do relógio
       andar: com timers falsos parados ele esgotaria o tempo sem nunca reavaliar.
     */
+    // Excluir mora na edição: abre o lançamento e segura a lixeira do sheet.
+    fireEvent.click(screen.getByRole("button", { name: "Editar Mercado" }));
     vi.useFakeTimers({ shouldAdvanceTime: true });
     fireEvent.pointerDown(
       screen.getByRole("button", { name: "Excluir Mercado (segure para confirmar)" }),
@@ -326,10 +328,12 @@ describe("navegacao", () => {
 
     irParaCadastro(/^Categorias/);
     fireEvent.click(screen.getByRole("button", { name: /\+ Nova categoria/ }));
-    fireEvent.input(screen.getByLabelText(/nome/i), { target: { value: "Alimentacao" } });
+    fireEvent.input(screen.getByRole("textbox", { name: "Nome" }), {
+      target: { value: "Alimentacao" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
-    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Adicionar/ }));
     await waitFor(() => expect(screen.getByText("Alimentacao")).toBeDefined());
 
     fireEvent.click(naBarra().getByRole("button", { name: "Início" }));
@@ -501,20 +505,21 @@ describe("as tres telas", () => {
     );
   });
 
-  it("o saldo fica visível nas três telas", async () => {
-    // E o unico numero que merece estar sempre a vista, entao vive no cabecalho
-    // fixo e nao dentro de uma aba.
+  it("o saldo total mora no Início e o Dashboard traz o do mês", async () => {
+    // O redesign tirou o cabeçalho fixo: Dashboard e Ajustes têm título próprio,
+    // e cada tela diz qual recorte é o seu número.
     await pronto();
-    for (const aba of ["Dashboard", "Início", "Ajustes"]) {
-      fireEvent.click(naBarra().getByRole("button", { name: aba }));
-      expect(screen.getByTestId("total-balance")).toBeDefined();
-    }
+    expect(screen.getByTestId("total-balance")).toBeDefined();
+
+    fireEvent.click(naBarra().getByRole("button", { name: "Dashboard" }));
+    expect(screen.queryByTestId("total-balance")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Dashboard" })).toBeDefined();
   });
 
   it("o Dashboard mostra os totais e diz quando não há nada", async () => {
     await pronto();
     fireEvent.click(naBarra().getByRole("button", { name: "Dashboard" }));
-    expect(screen.getByText(/Nenhum lançamento ainda/)).toBeDefined();
+    expect(screen.getByText(/O resumo de agosto aparece aqui/)).toBeDefined();
 
     fireEvent.click(naBarra().getByRole("button", { name: "Início" }));
     await addTransaction("Mercado", "12,34");
@@ -544,7 +549,7 @@ describe("as tres telas", () => {
     expect(screen.getByRole("button", { name: /Luiz/ })).toBeDefined();
     expect(screen.getByText("Hub de sincronização")).toBeDefined();
     expect(
-      screen.getByText(/roda no seu computador, nunca um servidor de terceiros/),
+      screen.getByText(/roda no seu computador — nunca num servidor de terceiros/),
     ).toBeDefined();
     expect(screen.queryByRole("button", { name: /Hub de sincronização/ })).toBeNull();
 
@@ -655,7 +660,7 @@ describe("primeiro uso", () => {
 
     fireEvent.input(screen.getByLabelText(/seu nome/i), { target: { value: "Luiz" } });
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
-    fireEvent.click(screen.getByRole("radio", { name: "teal" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Turquesa" }));
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
     fireEvent.click(screen.getByRole("button", { name: /começar/i }));
 
@@ -711,7 +716,12 @@ describe("perfil e reset nas configuracoes", () => {
     const onReset = vi.fn();
     await emAjustes(onReset);
 
-    const botao = screen.getByRole("button", { name: /^resetar conta$/i });
+    // A zona de risco abre um sheet próprio; a confirmação mora nele.
+    fireEvent.click(screen.getByRole("button", { name: /resetar conta/i }));
+    const botao = within(screen.getByRole("dialog", { name: "Resetar conta" })).getByRole(
+      "button",
+      { name: /^resetar conta$/i },
+    );
     expect(botao.hasAttribute("disabled")).toBe(true);
 
     fireEvent.input(screen.getByLabelText(/digite apagar/i), { target: { value: "APAGAR" } });
@@ -725,7 +735,7 @@ describe("perfil e reset nas configuracoes", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Luiz/ }));
     fireEvent.input(screen.getByLabelText(/seu nome/i), { target: { value: "Ana" } });
-    fireEvent.click(screen.getByRole("radio", { name: "rose" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Rosa" }));
     fireEvent.click(screen.getByRole("button", { name: /salvar/i }));
 
     await waitFor(() =>
