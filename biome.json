@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!!**/dist"],
+    "includes": ["**", "!!**/dist", "!!public/img/undraw"],
     "ignoreUnknown": true
   },
   "formatter": {

@@ -17,12 +17,7 @@ export interface EmptyHeroProps {
  * `flex-1` + `justify-center` centralizam o bloco na altura que o pai ceder —
  * o pai (lista/dashboard) precisa ser flex column com altura mínima.
  */
-export function EmptyHero({
-  name,
-  title,
-  description,
-  class: className = "",
-}: EmptyHeroProps) {
+export function EmptyHero({ name, title, description, class: className = "" }: EmptyHeroProps) {
   return (
     <div
       class={`flex flex-1 flex-col items-center justify-center px-2 text-center

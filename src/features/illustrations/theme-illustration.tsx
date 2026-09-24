@@ -17,7 +17,10 @@ export function ThemeIllustration({ name, class: className = "" }: ThemeIllustra
   // Os dois imgs entram no fluxo; o CSS (.hf-brand-mark-*) controla display.
   // Sem utilitário `block`/`hidden` do Tailwind — ele vence o @layer base.
   return (
-    <div class={`hf-brand-mark mx-auto w-full max-w-[14rem] ${className}`.trim()} aria-hidden="true">
+    <div
+      class={`hf-brand-mark mx-auto w-full max-w-[14rem] ${className}`.trim()}
+      aria-hidden="true"
+    >
       <img
         src={pair.light}
         alt=""

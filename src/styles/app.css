@@ -282,10 +282,10 @@
     flex-direction: column;
     min-height: calc(
       100dvh -
-        var(--hf-header-h) -
-        var(--hf-nav-h) -
-        env(safe-area-inset-bottom, 0px) -
-        var(--hf-empty-chrome, 0px)
+      var(--hf-header-h) -
+      var(--hf-nav-h) -
+      env(safe-area-inset-bottom, 0px) -
+      var(--hf-empty-chrome, 0px)
     );
   }
 

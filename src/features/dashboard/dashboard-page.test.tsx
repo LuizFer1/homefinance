@@ -41,9 +41,7 @@ function stateWith(categories: CategoryRecord[] = []): ProjectionState {
 
 describe("DashboardPage", () => {
   it("diz quando não há lançamento nenhum", () => {
-    const { container } = render(
-      <DashboardPage items={[]} state={stateWith()} today={TODAY} />,
-    );
+    const { container } = render(<DashboardPage items={[]} state={stateWith()} today={TODAY} />);
 
     expect(screen.getByRole("heading", { name: /Nenhum lançamento ainda/i })).toBeDefined();
     expect(container.querySelector('img[src*="undraw_budgeting_light"]')).not.toBeNull();
