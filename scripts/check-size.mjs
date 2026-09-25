@@ -40,6 +40,10 @@ import { gzipSync } from "node:zlib";
  *           ponto); o resto e o Dashboard novo (ritmo, recorrentes a caminho,
  *           cashback) e os componentes do sistema. A fonte Inter fica fora do
  *           gate: e woff2 precacheado, nao JS nem CSS.
+ *   95kb  — importar fatura/extrato (90.89kb medidos, sendo 9.73kb de CSS): o
+ *           parser generico, a revisao e a store entram no shell; o pdf.js
+ *           nao — ele tem orcamento proprio (PDF_LIMIT_BYTES) e chega por
+ *           `import()` so na primeira importacao.
  * Alvo de projeto: ~140kb gzip, conforme o README.
  *
  * Service worker e runtime do Workbox **nao** entram neste teto: sao baixados
@@ -55,7 +59,7 @@ import { gzipSync } from "node:zlib";
  * e fica fora do precache. Somado ao shell, um recurso mensal pagaria o first
  * paint de todo dia.
  */
-export const LIMIT_BYTES = 90 * 1024;
+export const LIMIT_BYTES = 95 * 1024;
 
 /**
  * Teto da landing. Historico:
