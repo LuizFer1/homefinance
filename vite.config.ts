@@ -50,43 +50,45 @@ export default defineConfig({
         orientation: "portrait-primary",
         background_color: "#161826",
         theme_color: "#161826",
-        // Canvas real: 192x204 / 512x544 (nao quadrado). purpose any = fundo
-        // opaco claro; maskable = glifo transparente (claro e escuro).
+        // Quadrados de proposito: o Chrome so aceita icone principal quadrado, e
+        // com o canvas antigo (192x204 / 512x544) recusava instalar com
+        // `no-acceptable-icon`. pwa-icons.test.ts confere declarado vs arquivo.
+        // purpose any = fundo opaco claro; maskable = glifo transparente.
         // Caminho relativo: resolve contra a URL do manifest, que ja mora no BASE.
         icons: [
           {
             src: "img/icons/icon_light_not_maskable_192.png",
-            sizes: "192x204",
+            sizes: "192x192",
             type: "image/png",
             purpose: "any",
           },
           {
             src: "img/icons/icon_light_not_maskable_512.png",
-            sizes: "512x544",
+            sizes: "512x512",
             type: "image/png",
             purpose: "any",
           },
           {
             src: "img/icons/icon_light_maskable_192.png",
-            sizes: "192x204",
+            sizes: "192x192",
             type: "image/png",
             purpose: "maskable",
           },
           {
             src: "img/icons/icon_light_maskable_512.png",
-            sizes: "512x544",
+            sizes: "512x512",
             type: "image/png",
             purpose: "maskable",
           },
           {
             src: "img/icons/icon_dark_maskable_192.png",
-            sizes: "192x204",
+            sizes: "192x192",
             type: "image/png",
             purpose: "maskable",
           },
           {
             src: "img/icons/icon_dark_maskable_512.png",
-            sizes: "512x544",
+            sizes: "512x512",
             type: "image/png",
             purpose: "maskable",
           },
