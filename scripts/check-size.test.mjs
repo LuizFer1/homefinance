@@ -5,9 +5,11 @@ import { expect, test } from "vitest";
 import {
   isAppShellArtifact,
   isLandingArtifact,
+  isPdfArtifact,
   LANDING_LIMIT_BYTES,
   LIMIT_BYTES,
   measureDist,
+  PDF_LIMIT_BYTES,
 } from "./check-size.mjs";
 
 async function fixture(files) {
@@ -63,8 +65,8 @@ test("devolve total zero quando nao ha artefatos", async () => {
   expect(files).toEqual([]);
 });
 
-test("o teto esta declarado em 90kb", () => {
-  expect(LIMIT_BYTES).toBe(90 * 1024);
+test("o teto esta declarado em 500kb", () => {
+  expect(LIMIT_BYTES).toBe(500 * 1024);
 });
 
 test("o teto da landing esta declarado em 15kb", () => {
@@ -108,4 +110,21 @@ test("service worker e workbox ficam fora do teto do shell", async () => {
 
   const { files } = await measureDist(dir);
   expect(files.map((f) => path.basename(f.file))).toEqual(["app.js"]);
+});
+
+test("o teto do leitor de PDF esta declarado em 10mb", () => {
+  expect(PDF_LIMIT_BYTES).toBe(10 * 1024 * 1024);
+});
+
+test("o leitor de PDF sai do teto do app e mede o worker .mjs", async () => {
+  expect(isPdfArtifact("assets/pdf-text-abc123.js")).toBe(true);
+  expect(isPdfArtifact("assets/pdf.worker.min-abc123.mjs")).toBe(true);
+  expect(isPdfArtifact("assets/app-abc123.js")).toBe(false);
+
+  const dir = await fixture({
+    "assets/app-abc.js": "console.log('app');",
+    "assets/pdf-text-abc.js": "console.log('pdf');",
+  });
+  const { files } = await measureDist(dir);
+  expect(files.map((f) => path.basename(f.file))).toEqual(["app-abc.js"]);
 });

@@ -40,6 +40,15 @@ import { gzipSync } from "node:zlib";
  *           ponto); o resto e o Dashboard novo (ritmo, recorrentes a caminho,
  *           cashback) e os componentes do sistema. A fonte Inter fica fora do
  *           gate: e woff2 precacheado, nao JS nem CSS.
+ *   95kb  — importar fatura/extrato (90.89kb medidos, sendo 9.73kb de CSS): o
+ *           parser generico, a revisao e a store entram no shell; o pdf.js
+ *           nao — ele tem orcamento proprio (PDF_LIMIT_BYTES) e chega por
+ *           `import()` so na primeira importacao.
+ *   500kb — decisao do usuario (90.89kb medidos): o teto deixa de ser um
+ *           ratchet pago a cada fatia e passa a barrar so o acidente grosso
+ *           (uma dependencia pesada importada por engano no shell). Acima do
+ *           alvo do README de proposito; o numero medido continua no relatorio
+ *           de cada build, e e ele que diz se o app ainda cumpre o alvo.
  * Alvo de projeto: ~140kb gzip, conforme o README.
  *
  * Service worker e runtime do Workbox **nao** entram neste teto: sao baixados
@@ -49,8 +58,13 @@ import { gzipSync } from "node:zlib";
  * A landing (index.html na raiz, artefatos `landing-*`) tem orcamento proprio,
  * LANDING_LIMIT_BYTES, e nao entra no teto do app: sao paginas separadas, uma
  * nunca carrega a outra. Somar as duas faria a vitrine comer a folga do app.
+ *
+ * O leitor de PDF (artefatos `pdf*`) tambem tem orcamento proprio,
+ * PDF_LIMIT_BYTES: entra por `import()` so quando o usuario importa uma fatura,
+ * e fica fora do precache. Somado ao shell, um recurso mensal pagaria o first
+ * paint de todo dia.
  */
-export const LIMIT_BYTES = 90 * 1024;
+export const LIMIT_BYTES = 500 * 1024;
 
 /**
  * Teto da landing. Historico:
@@ -58,6 +72,18 @@ export const LIMIT_BYTES = 90 * 1024;
  *           framework (i18n EN/PT, prompt de instalacao, folha de doacao).
  */
 export const LANDING_LIMIT_BYTES = 15 * 1024;
+
+/**
+ * Teto do leitor de PDF (pdf.js + worker), baixado sob demanda. Historico:
+ *   500kb — importar fatura/extrato: pdfjs-dist 6.3 (124.83kb do modulo mais
+ *           367.28kb do worker, 492.11kb medidos). O worker e `.mjs`, que o
+ *           filtro do shell nao pegava — por isso este orcamento mede `.mjs`.
+ *   10mb  — decisao do usuario: a folga de 8kb estouraria na primeira
+ *           atualizacao do pdf.js, e o leitor nao pesa no first paint (sob
+ *           demanda, fora do precache). O teto so segura um acidente grosso,
+ *           como o build deixar de separar o pdf.js ou puxar os cmaps inteiros.
+ */
+export const PDF_LIMIT_BYTES = 10 * 1024 * 1024;
 
 const MEASURED = /\.(js|css)$/;
 
@@ -87,9 +113,24 @@ export function isLandingArtifact(relativePath) {
   return base.startsWith("landing-") && isAppShellArtifact(relativePath);
 }
 
+/**
+ * Artefatos do leitor de PDF: o chunk `pdf-text-*` e o worker `pdf.worker*`.
+ * O prefixo vem dos nomes dos modulos — renomear `pdf-text.ts` sem mudar aqui
+ * joga o pdf.js de volta no teto do app.
+ * @param {string} relativePath
+ */
+export function isPdfArtifact(relativePath) {
+  const base = path.basename(relativePath).toLowerCase();
+  return base.startsWith("pdf") && /\.m?js$/.test(base);
+}
+
 /** @param {string} relativePath */
 function isAppArtifact(relativePath) {
-  return isAppShellArtifact(relativePath) && !isLandingArtifact(relativePath);
+  return (
+    isAppShellArtifact(relativePath) &&
+    !isLandingArtifact(relativePath) &&
+    !isPdfArtifact(relativePath)
+  );
 }
 
 /**
@@ -156,8 +197,14 @@ async function main() {
     LANDING_LIMIT_BYTES,
     "LANDING_LIMIT_BYTES",
   );
-  // Os dois relatorios saem antes de falhar: estourar um nao esconde o outro.
-  if (!app || !landing) process.exit(1);
+  const pdf = report(
+    "pdf",
+    await measureDist(dir, isPdfArtifact),
+    PDF_LIMIT_BYTES,
+    "PDF_LIMIT_BYTES",
+  );
+  // Os relatorios saem todos antes de falhar: estourar um nao esconde o outro.
+  if (!app || !landing || !pdf) process.exit(1);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
