@@ -73,8 +73,12 @@ export const LANDING_LIMIT_BYTES = 15 * 1024;
  *   500kb — importar fatura/extrato: pdfjs-dist 6.3 (124.83kb do modulo mais
  *           367.28kb do worker, 492.11kb medidos). O worker e `.mjs`, que o
  *           filtro do shell nao pegava — por isso este orcamento mede `.mjs`.
+ *   10mb  — decisao do usuario: a folga de 8kb estouraria na primeira
+ *           atualizacao do pdf.js, e o leitor nao pesa no first paint (sob
+ *           demanda, fora do precache). O teto so segura um acidente grosso,
+ *           como o build deixar de separar o pdf.js ou puxar os cmaps inteiros.
  */
-export const PDF_LIMIT_BYTES = 500 * 1024;
+export const PDF_LIMIT_BYTES = 10 * 1024 * 1024;
 
 const MEASURED = /\.(js|css)$/;
 

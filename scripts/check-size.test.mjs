@@ -112,8 +112,8 @@ test("service worker e workbox ficam fora do teto do shell", async () => {
   expect(files.map((f) => path.basename(f.file))).toEqual(["app.js"]);
 });
 
-test("o teto do leitor de PDF esta declarado em 500kb", () => {
-  expect(PDF_LIMIT_BYTES).toBe(500 * 1024);
+test("o teto do leitor de PDF esta declarado em 10mb", () => {
+  expect(PDF_LIMIT_BYTES).toBe(10 * 1024 * 1024);
 });
 
 test("o leitor de PDF sai do teto do app e mede o worker .mjs", async () => {
