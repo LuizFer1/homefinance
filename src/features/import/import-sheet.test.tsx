@@ -9,7 +9,7 @@ import type { PaymentMethod } from "../../domain/model/payment-method";
 import { ALIVE } from "../../domain/model/row.fake";
 import type { Transaction } from "../../domain/model/transaction";
 import { ImportSheet } from "./import-sheet";
-import { PdfPasswordError, type ReadPdf } from "./read-pdf";
+import { PdfPasswordError, PdfReaderUnavailableError, type ReadPdf } from "./read-pdf";
 
 afterEach(cleanup);
 
@@ -140,6 +140,19 @@ describe("ImportSheet", () => {
 
     await screen.findByRole("list", { name: "Lançamentos encontrados" });
     expect(readPdf.mock.calls[1]?.[1]).toBe("123");
+  });
+
+  it("distingue leitor não baixado de versão velha", async () => {
+    // Online, o arquivo sumiu no deploy: pedir internet mandaria a pessoa
+    // procurar um problema que ela não tem.
+    renderSheet(() => Promise.reject(new PdfReaderUnavailableError(false, null)));
+    pickFile();
+    expect((await screen.findByRole("alert")).textContent).toContain("versão anterior");
+
+    cleanup();
+    renderSheet(() => Promise.reject(new PdfReaderUnavailableError(true, null)));
+    pickFile();
+    expect((await screen.findByRole("alert")).textContent).toContain("Conecte-se à internet");
   });
 
   it("linha já importada vem travada e desmarcada", async () => {
