@@ -4,6 +4,7 @@ import type { User } from "../../domain/model/user";
 import { filterByMonth } from "../../domain/projections/breakdown";
 import { monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { totals } from "../../domain/projections/selectors";
+import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
 import { TransactionList } from "../transactions/transaction-list";
 import { greetingFor } from "../ui/greeting";
@@ -17,6 +18,7 @@ export interface HomePageProps {
   today: string;
   hour: number;
   onCompose: (kind: TransactionKind) => void;
+  onImport: () => void;
   onEdit: (record: Transaction) => void;
   onOpenProfile: () => void;
 }
@@ -88,6 +90,7 @@ export function HomePage({
   today,
   hour,
   onCompose,
+  onImport,
   onEdit,
   onOpenProfile,
 }: HomePageProps) {
@@ -117,6 +120,20 @@ export function HomePage({
       {items.length > 0 && <MonthCard items={items} today={today} />}
 
       <QuickActions onExpense={() => onCompose("expense")} onIncome={() => onCompose("income")} />
+
+      {/*
+        Secundária e discreta: importar é mensal, lançar é diário. Com o mesmo
+        peso das duas ações, disputaria o polegar com elas.
+      */}
+      <button
+        type="button"
+        onClick={onImport}
+        class="hf-press mt-2.5 flex h-11 w-full items-center justify-center gap-2 rounded-lg border
+          border-divider text-sm text-fg/75 hover:bg-fg/[0.05]"
+      >
+        <Icon name="file-pdf" size={16} />
+        Importar fatura ou extrato
+      </button>
 
       <TransactionList items={items} state={state} today={today} onEdit={onEdit} />
     </>

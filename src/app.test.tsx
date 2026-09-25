@@ -6,6 +6,7 @@ import { buildRow } from "./data/repository";
 import { openTestDb, TEST_DEVICE_ID, testSessionDeps } from "./data/test-db.fake";
 import { createRowClock } from "./domain/clock/row-clock";
 import type { User } from "./domain/model/user";
+import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
 import { createProfileStore } from "./features/profile/store";
 import { createRecurrenceStore } from "./features/recurrence/store";
@@ -61,13 +62,16 @@ async function cadastrado(): Promise<HomeFinanceDb> {
 /** As stores partilham a mesma sessao, como em producao. */
 function buildStores(db: HomeFinanceDb) {
   const session = createSession(testSessionDeps(db));
+  const recurrence = createRecurrenceStore(session);
   return {
     session,
     store: createTransactionsStore(session),
     registry: createRegistryStore(session),
     profileStore: createProfileStore(session),
-    recurrence: createRecurrenceStore(session),
+    recurrence,
     onboarding: createOnboardingStore(session),
+    importer: createImportStore(session, recurrence),
+    readPdf: () => Promise.resolve([]),
     processFile: () => Promise.resolve("data:image/webp;base64,AAAA"),
     onReset: async () => {},
   };

@@ -68,6 +68,7 @@ const REGULAR = [
   "circle-dashed",
   "circle-half",
   "coins",
+  "file-pdf",
   "gear-six",
   "image",
   "lock-simple",

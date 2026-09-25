@@ -14,6 +14,9 @@ import { cssVarForToken } from "./features/colors/color-token";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
 import { HomePage } from "./features/home/home-page";
 import { Icon } from "./features/icons/icon";
+import { ImportSheet } from "./features/import/import-sheet";
+import type { ReadPdf } from "./features/import/read-pdf";
+import type { ImportStore } from "./features/import/store";
 import type { OnboardingStore } from "./features/onboarding/store";
 import { OnboardingWizard } from "./features/onboarding/wizard";
 import { ProfilePage } from "./features/profile/profile-page";
@@ -41,6 +44,9 @@ export interface AppProps {
   profileStore: ProfileStore;
   recurrence: RecurrenceStore;
   onboarding: OnboardingStore;
+  importer: ImportStore;
+  /** Leitor de PDF sob demanda. Injetado: o `happy-dom` não roda o pdf.js. */
+  readPdf: ReadPdf;
   /** Pipeline da foto já ligado ao canvas. Injetado: `happy-dom` não tem um. */
   processFile: (file: Blob) => Promise<string>;
   /** Rejeita se o banco não apagou; a tela de reset mostra o motivo. */
@@ -92,6 +98,8 @@ export function App({
   profileStore,
   recurrence,
   onboarding,
+  importer,
+  readPdf,
   processFile,
   onReset,
   today,
@@ -102,6 +110,7 @@ export function App({
   const [composing, setComposing] = useState<TransactionKind | null>(null);
   const [screen, setScreen] = useState<ScreenId>("inicio");
   const [section, setSection] = useState<SettingsSection | null>(null);
+  const [importing, setImporting] = useState(false);
   // Cor do brilho do topo enquanto o Perfil está aberto: acompanha a cor que a
   // pessoa está escolhendo, antes mesmo de salvar.
   const [glow, setGlow] = useState<string | null>(null);
@@ -138,7 +147,8 @@ export function App({
       session.status.value === "ready" &&
       !onboarding.needsOnboarding.value &&
       section === null &&
-      !modalOpen,
+      !modalOpen &&
+      !importing,
     onChange: goToScreen,
   });
 
@@ -254,6 +264,7 @@ export function App({
             today={today}
             hour={hour}
             onCompose={setComposing}
+            onImport={() => setImporting(true)}
             onEdit={setEditing}
             onOpenProfile={() => openSection("profile")}
           />
@@ -333,6 +344,19 @@ export function App({
           })}
         </div>
       </nav>
+
+      <Modal open={importing} title="Importar PDF" onClose={() => setImporting(false)}>
+        {/* Montada só enquanto aberta: fechar descarta a revisão pela metade. */}
+        {importing && (
+          <ImportSheet
+            state={state}
+            today={today}
+            readPdf={readPdf}
+            onImport={(plan) => importer.commit(plan, today)}
+            onClose={() => setImporting(false)}
+          />
+        )}
+      </Modal>
 
       <Modal
         open={modalOpen}

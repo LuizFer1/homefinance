@@ -20,6 +20,7 @@
   "dependencies": {
     "@preact/signals": "^2.11.0",
     "dexie": "^4.4.4",
+    "pdfjs-dist": "^6.3.289",
     "preact": "^10.29.8"
   },
   "devDependencies": {
