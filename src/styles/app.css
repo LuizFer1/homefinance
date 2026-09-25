@@ -1,6 +1,14 @@
 @import "tailwindcss";
 
 /*
+ * A landing tem CSS proprio e nao usa Tailwind. Sem isto o Tailwind le as
+ * classes dela (`hidden`, `flex`, `grid`…) e gera utilities que o app nao usa,
+ * cobradas no teto de 90kb do app.
+ */
+@source not "../../index.html";
+@source not "../landing";
+
+/*
  * Inter servida pelo proprio app, e nao pelo Google Fonts do handoff: o produto
  * nao fala com servico externo nenhum, nem para baixar fonte. So o subset latino
  * (portugues inteiro cabe nele); o arquivo e precacheado pelo service worker e

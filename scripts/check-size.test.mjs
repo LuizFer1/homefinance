@@ -2,7 +2,13 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { isAppShellArtifact, LIMIT_BYTES, measureDist } from "./check-size.mjs";
+import {
+  isAppShellArtifact,
+  isLandingArtifact,
+  LANDING_LIMIT_BYTES,
+  LIMIT_BYTES,
+  measureDist,
+} from "./check-size.mjs";
 
 async function fixture(files) {
   const dir = await mkdtemp(path.join(tmpdir(), "hf-size-"));
@@ -59,6 +65,33 @@ test("devolve total zero quando nao ha artefatos", async () => {
 
 test("o teto esta declarado em 90kb", () => {
   expect(LIMIT_BYTES).toBe(90 * 1024);
+});
+
+test("o teto da landing esta declarado em 15kb", () => {
+  expect(LANDING_LIMIT_BYTES).toBe(15 * 1024);
+});
+
+test("landing e app sao medidos em orcamentos separados", async () => {
+  // A landing nunca carrega o app, nem o contrario: somar as duas faria a
+  // vitrine comer a folga do app.
+  expect(isLandingArtifact("assets/landing-abc123.js")).toBe(true);
+  expect(isLandingArtifact("assets/landing-abc123.css")).toBe(true);
+  expect(isLandingArtifact("assets/app-abc123.js")).toBe(false);
+  expect(isLandingArtifact("assets/landing-qr.svg")).toBe(false);
+
+  const dir = await fixture({
+    "assets/app-1.js": "console.log('app');",
+    "assets/landing-1.js": "console.log('landing');",
+    "assets/landing-1.css": "body{margin:0}",
+  });
+
+  const app = await measureDist(dir);
+  const landing = await measureDist(dir, isLandingArtifact);
+  expect(app.files.map((f) => path.basename(f.file))).toEqual(["app-1.js"]);
+  expect(landing.files.map((f) => path.basename(f.file)).sort()).toEqual([
+    "landing-1.css",
+    "landing-1.js",
+  ]);
 });
 
 test("service worker e workbox ficam fora do teto do shell", async () => {
