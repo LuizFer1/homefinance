@@ -101,6 +101,18 @@ export default defineConfig({
         navigateFallback: `${BASE}app/index.html`,
         navigateFallbackAllowlist: [/\/app\//],
         globPatterns: ["**/*.{js,css,html,png,svg,ico,webp,woff2}"],
+        // O leitor de PDF (~490kb gzip) fica fora do precache: todo mundo que
+        // instala o app baixaria o pdf.js para um recurso mensal. Entra no
+        // cache na primeira importação e daí em diante funciona offline.
+        globIgnores: ["**/pdf-text-*.js", "**/pdf.worker*.mjs"],
+        runtimeCaching: [
+          {
+            urlPattern: /\/assets\/pdf(-text-|\.worker)[^/]*\.m?js$/,
+            // Nome com hash: o arquivo nunca muda, então rede de novo é desperdício.
+            handler: "CacheFirst",
+            options: { cacheName: "pdf-reader", expiration: { maxEntries: 4 } },
+          },
+        ],
       },
       // Em dev o SW atrapalha HMR; so entra no build de producao.
       devOptions: { enabled: false },

@@ -3,6 +3,8 @@ import { render } from "preact";
 import { App } from "./app";
 import { HomeFinanceDb } from "./data/db";
 import { cryptoRandomChunk } from "./domain/ids/ulid";
+import { readPdfLazy } from "./features/import/read-pdf";
+import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
 import { processAvatar } from "./features/profile/avatar";
 import { browserAvatarDeps } from "./features/profile/avatar-canvas";
@@ -71,6 +73,7 @@ const registry = createRegistryStore(session);
 const profileStore = createProfileStore(session);
 const recurrence = createRecurrenceStore(session);
 const onboarding = createOnboardingStore(session);
+const importer = createImportStore(session, recurrence);
 
 render(
   <App
@@ -80,6 +83,8 @@ render(
     profileStore={profileStore}
     recurrence={recurrence}
     onboarding={onboarding}
+    importer={importer}
+    readPdf={readPdfLazy}
     processFile={(file) => processAvatar(file, browserAvatarDeps)}
     onReset={() =>
       resetDevice({
