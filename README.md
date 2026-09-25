@@ -138,7 +138,7 @@ March's salary offline produce the same row instead of two salaries.
 
 ## Links
 
-- 📱 [Repository](https://github.com/LuizFer1/HomeFinance_Mobile)
+- 📱 [Repository](https://github.com/LuizFer1/homefinance)
 
 Detailed design documents (architecture, event model, implementation plans) are kept in
 the surrounding workspace under `docs/`, deliberately outside this repository — they are

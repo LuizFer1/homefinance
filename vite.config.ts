@@ -1,11 +1,26 @@
 /// <reference types="vitest/config" />
 
+import { resolve } from "node:path";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+// GitHub Pages de projeto serve o site em /<repo>/ — aqui o repositorio
+// `homefinance`, em https://luizfer1.github.io/homefinance/. Tudo que e caminho
+// absoluto (manifest, SW, icones) sai daqui; um "/" solto apontaria para a raiz
+// de luizfer1.github.io, que e outro site. Renomear o repositorio muda o
+// caminho: esta constante tem que acompanhar.
+const BASE = "/homefinance/";
+
 export default defineConfig({
+  base: BASE,
+  // Quick tunnel (`cloudflared`): Host = *.trycloudflare.com. O Vite bloqueia
+  // por padrao. Prefixo `.` cobre qualquer subdominio do trycloudflare.
+  // Config so aplica no boot — reinicie o `npm run dev` apos mudar.
+  server: {
+    allowedHosts: [".trycloudflare.com"],
+  },
   plugins: [
     preact(),
     tailwindcss(),
@@ -24,47 +39,53 @@ export default defineConfig({
         description: "Financas pessoais offline-first. Dados so neste aparelho.",
         lang: "pt-BR",
         dir: "ltr",
-        start_url: "/",
-        scope: "/",
+        // scope cobre a landing (raiz) e o app (/app/): o botao "Instalar" da
+        // landing so funciona numa pagina dentro do escopo do manifest. Ja
+        // start_url e id apontam para o app — o icone instalado nunca abre a
+        // landing, e mudar o id depois faria o navegador ver outro app.
+        id: `${BASE}app/`,
+        start_url: `${BASE}app/`,
+        scope: BASE,
         display: "standalone",
         orientation: "portrait-primary",
         background_color: "#161826",
         theme_color: "#161826",
         // Canvas real: 192x204 / 512x544 (nao quadrado). purpose any = fundo
         // opaco claro; maskable = glifo transparente (claro e escuro).
+        // Caminho relativo: resolve contra a URL do manifest, que ja mora no BASE.
         icons: [
           {
-            src: "/img/icons/icon_light_not_maskable_192.png",
+            src: "img/icons/icon_light_not_maskable_192.png",
             sizes: "192x204",
             type: "image/png",
             purpose: "any",
           },
           {
-            src: "/img/icons/icon_light_not_maskable_512.png",
+            src: "img/icons/icon_light_not_maskable_512.png",
             sizes: "512x544",
             type: "image/png",
             purpose: "any",
           },
           {
-            src: "/img/icons/icon_light_maskable_192.png",
+            src: "img/icons/icon_light_maskable_192.png",
             sizes: "192x204",
             type: "image/png",
             purpose: "maskable",
           },
           {
-            src: "/img/icons/icon_light_maskable_512.png",
+            src: "img/icons/icon_light_maskable_512.png",
             sizes: "512x544",
             type: "image/png",
             purpose: "maskable",
           },
           {
-            src: "/img/icons/icon_dark_maskable_192.png",
+            src: "img/icons/icon_dark_maskable_192.png",
             sizes: "192x204",
             type: "image/png",
             purpose: "maskable",
           },
           {
-            src: "/img/icons/icon_dark_maskable_512.png",
+            src: "img/icons/icon_dark_maskable_512.png",
             sizes: "512x544",
             type: "image/png",
             purpose: "maskable",
@@ -72,8 +93,11 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // SPA: navegacao desconhecida cai no shell cacheado.
-        navigateFallback: "/index.html",
+        // SPA: navegacao desconhecida dentro de /app/ cai no shell cacheado. A
+        // allowlist impede que uma URL perdida fora do app (um link velho, um
+        // typo na landing) abra o app no lugar da pagina que a pessoa pediu.
+        navigateFallback: `${BASE}app/index.html`,
+        navigateFallbackAllowlist: [/\/app\//],
         globPatterns: ["**/*.{js,css,html,png,svg,ico,webp,woff2}"],
       },
       // Em dev o SW atrapalha HMR; so entra no build de producao.
@@ -85,6 +109,15 @@ export default defineConfig({
     // PNGs de marca e SVGs pequenos nao podem virar data-URL no JS: ~8kb gzip
     // no shell so para o BrandMark. Arquivo separado em dist/assets/.
     assetsInlineLimit: 0,
+    // Duas paginas, um build: a landing na raiz e o app em /app/. A chave de
+    // cada entrada vira o prefixo dos arquivos (landing-*.js, app-*.js), e e por
+    // ele que o check-size separa os dois orcamentos.
+    rollupOptions: {
+      input: {
+        landing: resolve(import.meta.dirname, "index.html"),
+        app: resolve(import.meta.dirname, "app/index.html"),
+      },
+    },
   },
   test: {
     environment: "happy-dom",

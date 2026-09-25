@@ -175,7 +175,7 @@ describe("syncThemeColor", () => {
  * ignorada no carregamento, que é o bug mais difícil de notar.
  */
 describe("script pré-paint do index.html", () => {
-  const html = readFileSync(path.join(process.cwd(), "index.html"), "utf8");
+  const html = readFileSync(path.join(process.cwd(), "app", "index.html"), "utf8");
 
   it("usa a mesma chave de storage do módulo", () => {
     expect(html).toContain(`localStorage.getItem("${THEME_KEY}")`);

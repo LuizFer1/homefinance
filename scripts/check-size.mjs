@@ -45,8 +45,19 @@ import { gzipSync } from "node:zlib";
  * Service worker e runtime do Workbox **nao** entram neste teto: sao baixados
  * e cacheados a parte do shell da UI, e o tamanho deles e o preco de offline/
  * instalabilidade, nao do first paint da SPA. Ver isAppShellArtifact.
+ *
+ * A landing (index.html na raiz, artefatos `landing-*`) tem orcamento proprio,
+ * LANDING_LIMIT_BYTES, e nao entra no teto do app: sao paginas separadas, uma
+ * nunca carrega a outra. Somar as duas faria a vitrine comer a folga do app.
  */
 export const LIMIT_BYTES = 90 * 1024;
+
+/**
+ * Teto da landing. Historico:
+ *   15kb  — pagina de instalacao: HTML estatico, CSS a mao e um script sem
+ *           framework (i18n EN/PT, prompt de instalacao, folha de doacao).
+ */
+export const LANDING_LIMIT_BYTES = 15 * 1024;
 
 const MEASURED = /\.(js|css)$/;
 
@@ -66,11 +77,29 @@ export function isAppShellArtifact(relativePath) {
 }
 
 /**
- * Soma o tamanho gzipado de todos os artefatos JS e CSS de um diretorio.
+ * Artefatos da landing. O prefixo vem da chave `landing` do `rollupOptions.input`
+ * em vite.config.ts — renomear a entrada la sem mudar aqui joga a landing de
+ * volta no teto do app.
+ * @param {string} relativePath
+ */
+export function isLandingArtifact(relativePath) {
+  const base = path.basename(relativePath).toLowerCase();
+  return base.startsWith("landing-") && isAppShellArtifact(relativePath);
+}
+
+/** @param {string} relativePath */
+function isAppArtifact(relativePath) {
+  return isAppShellArtifact(relativePath) && !isLandingArtifact(relativePath);
+}
+
+/**
+ * Soma o tamanho gzipado dos artefatos JS e CSS de um diretorio que passam no
+ * filtro — por padrao, os do app (sem a landing).
  * @param {string} dir
+ * @param {(relativePath: string) => boolean} [include]
  * @returns {Promise<{ total: number, files: Array<{ file: string, size: number }> }>}
  */
-export async function measureDist(dir) {
+export async function measureDist(dir, include = isAppArtifact) {
   const entries = await readdir(dir, { recursive: true, withFileTypes: true });
   const files = [];
   let total = 0;
@@ -79,7 +108,7 @@ export async function measureDist(dir) {
     if (!entry.isFile()) continue;
     const full = path.join(entry.parentPath, entry.name);
     const relative = path.relative(dir, full);
-    if (!isAppShellArtifact(relative)) continue;
+    if (!include(relative)) continue;
 
     const size = gzipSync(await readFile(full)).length;
 
@@ -95,23 +124,40 @@ function kb(bytes) {
   return `${(bytes / 1024).toFixed(2)}kb`;
 }
 
-async function main() {
-  const dir = path.resolve("dist");
-  const { total, files } = await measureDist(dir);
-
+/**
+ * @param {string} label
+ * @param {{ total: number, files: Array<{ file: string, size: number }> }} measured
+ * @param {number} limit
+ * @param {string} constant
+ * @returns {boolean} true se coube no teto
+ */
+function report(label, { total, files }, limit, constant) {
+  console.log(`${label}:`);
   for (const { file, size } of files) {
     console.log(`  ${kb(size).padStart(9)}  ${file}`);
   }
-
-  if (total > LIMIT_BYTES) {
+  if (total > limit) {
     console.error(
-      `\nFALHOU: bundle em ${kb(total)} gzip, acima do teto de ${kb(LIMIT_BYTES)}.\n` +
-        "Reduza o bundle ou eleve LIMIT_BYTES em scripts/check-size.mjs de forma deliberada.",
+      `FALHOU: ${label} em ${kb(total)} gzip, acima do teto de ${kb(limit)}.\n` +
+        `Reduza o bundle ou eleve ${constant} em scripts/check-size.mjs de forma deliberada.\n`,
     );
-    process.exit(1);
+    return false;
   }
+  console.log(`OK: ${kb(total)} gzip, dentro do teto de ${kb(limit)}.\n`);
+  return true;
+}
 
-  console.log(`\nOK: ${kb(total)} gzip, dentro do teto de ${kb(LIMIT_BYTES)}.`);
+async function main() {
+  const dir = path.resolve("dist");
+  const app = report("app", await measureDist(dir), LIMIT_BYTES, "LIMIT_BYTES");
+  const landing = report(
+    "landing",
+    await measureDist(dir, isLandingArtifact),
+    LANDING_LIMIT_BYTES,
+    "LANDING_LIMIT_BYTES",
+  );
+  // Os dois relatorios saem antes de falhar: estourar um nao esconde o outro.
+  if (!app || !landing) process.exit(1);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
