@@ -49,8 +49,8 @@
   --demo-health: oklch(0.74 0.12 5);
   --demo-luiz: oklch(0.77 0.1 230);
   --demo-ana: oklch(0.78 0.11 340);
-  /* Amarelo da marca Buy Me a Coffee: o botao tem que ser reconhecivel de longe. */
-  --bmc: #ffdd00;
+  /* Coral da marca Ko-fi: o botao tem que ser reconhecivel de longe. */
+  --kofi: #ff5e5b;
 
   --shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0, 0, 0, 0.55);
   --shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgba(0, 0, 0, 0.65);
@@ -1629,8 +1629,8 @@ button.cta {
   display: inline-grid;
   place-items: center;
   font-size: 28px;
-  color: var(--bmc);
-  background: color-mix(in srgb, var(--bmc) 14%, transparent);
+  color: var(--kofi);
+  background: color-mix(in srgb, var(--kofi) 14%, transparent);
 }
 
 .sheet-title {
@@ -1668,7 +1668,7 @@ button.cta {
 
 .btn-coffee {
   border: 0;
-  background: var(--bmc);
+  background: var(--kofi);
   color: #161826;
 }
 

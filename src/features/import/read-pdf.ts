@@ -22,8 +22,44 @@ export class PdfPasswordError extends Error {
   }
 }
 
+/**
+ * O `import()` do leitor falhou. Offline na primeira vez, o pdf.js ainda não
+ * foi baixado; online, a causa é outra: a aba roda uma versão que o servidor
+ * já não tem, e o arquivo com o hash dela sumiu no último deploy.
+ */
+export class PdfReaderUnavailableError extends Error {
+  readonly offline: boolean;
+
+  constructor(offline: boolean, cause: unknown) {
+    super(offline ? "Leitor de PDF não baixado" : "Leitor de PDF da versão anterior", { cause });
+    this.name = "PdfReaderUnavailableError";
+    this.offline = offline;
+  }
+}
+
+export interface ReadPdfDeps {
+  /** Injetado no teste; em produção é o `import()` que separa o pdf.js do shell. */
+  load?: () => Promise<{ readPdfText: ReadPdf }>;
+  isOnline: () => boolean;
+  /** Chamado quando a versão aberta se mostrou velha — hora de buscar a nova. */
+  onStale: () => void;
+}
+
 /** Carrega o leitor sob demanda: o pdf.js só desce na primeira importação. */
-export const readPdfLazy: ReadPdf = async (file, password) => {
-  const { readPdfText } = await import("./pdf-text");
-  return readPdfText(file, password);
-};
+export function createReadPdf({
+  load = () => import("./pdf-text"),
+  isOnline,
+  onStale,
+}: ReadPdfDeps): ReadPdf {
+  return async (file, password) => {
+    let reader: { readPdfText: ReadPdf };
+    try {
+      reader = await load();
+    } catch (cause) {
+      const offline = !isOnline();
+      if (!offline) onStale();
+      throw new PdfReaderUnavailableError(offline, cause);
+    }
+    return reader.readPdfText(file, password);
+  };
+}

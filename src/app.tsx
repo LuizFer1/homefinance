@@ -31,6 +31,8 @@ import type { TransactionsStore } from "./features/transactions/store";
 import { TransactionWizard } from "./features/transactions/transaction-wizard";
 import { Modal } from "./features/ui/modal";
 import { useSwipeNav } from "./features/ui/use-swipe-nav";
+import type { UpdateStore } from "./features/update/store";
+import { UpdateBanner } from "./features/update/update-banner";
 
 export interface AppProps {
   /**
@@ -45,6 +47,8 @@ export interface AppProps {
   recurrence: RecurrenceStore;
   onboarding: OnboardingStore;
   importer: ImportStore;
+  /** Versão nova do app esperando a pessoa aceitar. */
+  update: UpdateStore;
   /** Leitor de PDF sob demanda. Injetado: o `happy-dom` não roda o pdf.js. */
   readPdf: ReadPdf;
   /** Pipeline da foto já ligado ao canvas. Injetado: `happy-dom` não tem um. */
@@ -99,6 +103,7 @@ export function App({
   recurrence,
   onboarding,
   importer,
+  update,
   readPdf,
   processFile,
   onReset,
@@ -241,6 +246,8 @@ export function App({
         data-swiping={swipe["data-swiping"]}
         style={swipe.style}
       >
+        {update.ready.value && <UpdateBanner onApply={update.apply} />}
+
         {session.error.value !== null && (
           <p role="alert" class="mb-4 rounded-lg bg-expense/10 p-3 text-sm text-expense-fg">
             {session.error.value}

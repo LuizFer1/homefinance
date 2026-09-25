@@ -3,7 +3,7 @@ import { render } from "preact";
 import { App } from "./app";
 import { HomeFinanceDb } from "./data/db";
 import { cryptoRandomChunk } from "./domain/ids/ulid";
-import { readPdfLazy } from "./features/import/read-pdf";
+import { createReadPdf } from "./features/import/read-pdf";
 import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
 import { processAvatar } from "./features/profile/avatar";
@@ -15,6 +15,7 @@ import { createSession } from "./features/session/session";
 import { type ResetDeps, resetDevice } from "./features/settings/reset";
 import type { ThemeStorage } from "./features/theme/theme";
 import { createTransactionsStore } from "./features/transactions/store";
+import { createUpdateStore, type SwContainer } from "./features/update/store";
 
 /** Data local em 'YYYY-MM-DD'. `toISOString` daria UTC e erraria o dia à noite. */
 function todayISO(): string {
@@ -75,6 +76,36 @@ const recurrence = createRecurrenceStore(session);
 const onboarding = createOnboardingStore(session);
 const importer = createImportStore(session, recurrence);
 
+// Só referenciar `navigator.serviceWorker` já lança em contexto sandbox.
+function serviceWorkerContainer(): SwContainer | undefined {
+  try {
+    return "serviceWorker" in navigator
+      ? (navigator.serviceWorker as unknown as SwContainer)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const update = createUpdateStore({
+  serviceWorker: serviceWorkerContainer(),
+  reload: () => {
+    window.location.reload();
+  },
+  now: () => Date.now(),
+});
+
+// PWA instalado fica dias aberto sem navegar, e é na navegação que o navegador
+// procura `sw.js` novo. Voltar para o app é o momento natural de perguntar.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void update.check();
+});
+
+const readPdf = createReadPdf({
+  isOnline: () => navigator.onLine,
+  onStale: () => void update.check(true),
+});
+
 render(
   <App
     session={session}
@@ -84,7 +115,8 @@ render(
     recurrence={recurrence}
     onboarding={onboarding}
     importer={importer}
-    readPdf={readPdfLazy}
+    update={update}
+    readPdf={readPdf}
     processFile={(file) => processAvatar(file, browserAvatarDeps)}
     onReset={() =>
       resetDevice({

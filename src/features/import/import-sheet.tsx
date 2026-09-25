@@ -18,7 +18,7 @@ import { RadioChip } from "../ui/chip";
 import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
 import { signedBRL } from "../ui/money";
 import { Segmented } from "../ui/segmented";
-import { PdfPasswordError, type ReadPdf } from "./read-pdf";
+import { PdfPasswordError, PdfReaderUnavailableError, type ReadPdf } from "./read-pdf";
 import type { ImportResult } from "./store";
 
 export interface ImportSheetProps {
@@ -51,10 +51,12 @@ function shortDate(date: string): string {
   return `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(2, 4)}`;
 }
 
-/** O pdf.js desce sob demanda; offline na primeira vez, o `import()` falha. */
+/** O pdf.js desce sob demanda, e o `import()` falha por dois motivos distintos. */
 function readError(cause: unknown): string {
-  if (cause instanceof TypeError && /import|fetch/i.test(cause.message)) {
-    return "O leitor de PDF ainda não foi baixado. Conecte-se à internet uma vez e tente de novo.";
+  if (cause instanceof PdfReaderUnavailableError) {
+    return cause.offline
+      ? "O leitor de PDF ainda não foi baixado. Conecte-se à internet uma vez e tente de novo."
+      : "O app foi atualizado e esta tela ainda é da versão anterior. Toque em “Atualizar” no aviso do início, ou feche e abra o app.";
   }
   return `Não foi possível ler o PDF: ${describeError(cause)}`;
 }
