@@ -1,3 +1,4 @@
+import { signal } from "@preact/signals";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app";
@@ -14,6 +15,7 @@ import { createRegistryStore } from "./features/registry/store";
 import { createSession, LOCAL_USER_ID_KEY } from "./features/session/session";
 import { createTransactionsStore } from "./features/transactions/store";
 import { HOLD_MS } from "./features/ui/hold-button";
+import { createUpdateStore } from "./features/update/store";
 
 const PERFIL_LOCAL = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
 
@@ -71,6 +73,8 @@ function buildStores(db: HomeFinanceDb) {
     recurrence,
     onboarding: createOnboardingStore(session),
     importer: createImportStore(session, recurrence),
+    // Sem service worker: nenhum aviso de versão nova, como no primeiro acesso.
+    update: createUpdateStore({ reload: () => {}, now: () => 0 }),
     readPdf: () => Promise.resolve([]),
     processFile: () => Promise.resolve("data:image/webp;base64,AAAA"),
     onReset: async () => {},
@@ -146,6 +150,18 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: /Bom dia/i })).toBeDefined());
     expect(screen.getByTestId("total-balance")).toBeDefined();
     expect(screen.getByText("Saldo total")).toBeDefined();
+  });
+
+  it("avisa da versão nova e atualiza só quando a pessoa pede", async () => {
+    const apply = vi.fn();
+    const stores = buildStores(await cadastrado());
+    const update = { ...stores.update, ready: signal(true), apply };
+    render(<App {...stores} update={update} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    await waitFor(() => expect(screen.getByText("Nova versão disponível.")).toBeDefined());
+    expect(apply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar" }));
+    expect(apply).toHaveBeenCalledTimes(1);
   });
 
   it("adiciona um lançamento e atualiza os totais", async () => {
