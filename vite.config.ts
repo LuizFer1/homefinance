@@ -24,11 +24,13 @@ export default defineConfig({
   plugins: [
     preact(),
     tailwindcss(),
-    // Instalabilidade e offline sem UI propria: o browser oferece "Instalar"
-    // quando ha manifest + service worker. injectRegister registra o SW no
-    // entry; autoUpdate aplica cache novo na proxima visita sem prompt.
+    // Instalabilidade e offline: o browser oferece "Instalar" quando ha
+    // manifest + service worker. `prompt` faz a versao nova instalar e esperar;
+    // o app avisa e so troca quando a pessoa aceita (features/update/store.ts
+    // manda o SKIP_WAITING). Com autoUpdate a troca era muda e a aba aberta
+    // seguia na versao velha, pedindo chunks que o deploy ja tinha apagado.
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       // Script externo em dist/registerSW.js — evita puxar workbox-window
       // para o chunk da SPA e estourar o teto de first paint.
       injectRegister: "script",
@@ -98,6 +100,10 @@ export default defineConfig({
         // SPA: navegacao desconhecida dentro de /app/ cai no shell cacheado. A
         // allowlist impede que uma URL perdida fora do app (um link velho, um
         // typo na landing) abra o app no lugar da pagina que a pessoa pediu.
+        // So vale na primeira instalacao (as seguintes esperam o SKIP_WAITING):
+        // a pagina ja nasce controlada e o leitor de PDF entra no cache na
+        // primeira importacao, e nao so a partir da segunda visita.
+        clientsClaim: true,
         navigateFallback: `${BASE}app/index.html`,
         navigateFallbackAllowlist: [/\/app\//],
         globPatterns: ["**/*.{js,css,html,png,svg,ico,webp,woff2}"],
