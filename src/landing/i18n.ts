@@ -115,13 +115,13 @@ const en = {
     "Not yet. A sync hub is on the way: a program that runs on your own computer, never on someone else's server.",
 
   "foot.made": "Made by someone tired of spam",
-  "foot.coffee": "Buy me a coffee",
+  "foot.coffee": "Support me on Ko-fi",
   "foot.source": "Source on GitHub",
 
   "sheet.title": "Before you install…",
   "sheet.body":
     "Like the idea of an app with no account and no spam? It's free and will stay that way. If you'd like to help, a coffee keeps the project going.",
-  "sheet.coffee": "Buy me a coffee",
+  "sheet.coffee": "Support me on Ko-fi",
   "sheet.install": "Install without donating",
   "sheet.note": "Donating is optional. Installing never depends on it.",
   "sheet.close": "Close",
@@ -249,13 +249,13 @@ const pt: Record<MessageKey, string> = {
     "Ainda não. Está a caminho um hub de sincronização — um programa que roda no seu computador, nunca num servidor de terceiros.",
 
   "foot.made": "Feito por alguém cansado de spam",
-  "foot.coffee": "Me pague um café",
+  "foot.coffee": "Me apoie no Ko-fi",
   "foot.source": "Código no GitHub",
 
   "sheet.title": "Antes de instalar…",
   "sheet.body":
     "Gostou da ideia de um app sem conta e sem spam? Ele é gratuito e vai continuar assim. Se quiser ajudar, um café mantém o projeto andando.",
-  "sheet.coffee": "Me pague um café",
+  "sheet.coffee": "Me apoie no Ko-fi",
   "sheet.install": "Instalar sem doar",
   "sheet.note": "Doar é opcional. A instalação nunca depende disso.",
   "sheet.close": "Fechar",
