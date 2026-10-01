@@ -21,6 +21,7 @@ import type { OnboardingStore } from "./features/onboarding/store";
 import { OnboardingWizard } from "./features/onboarding/wizard";
 import { ProfilePage } from "./features/profile/profile-page";
 import type { ProfileStore } from "./features/profile/store";
+import { AdjustSheet } from "./features/recurrence/adjust-sheet";
 import type { RecurrenceStore } from "./features/recurrence/store";
 import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
@@ -116,6 +117,10 @@ export function App({
   const [screen, setScreen] = useState<ScreenId>("inicio");
   const [section, setSection] = useState<SettingsSection | null>(null);
   const [importing, setImporting] = useState(false);
+  // Série em reajuste, ou null. Aberto a partir de uma ocorrência no
+  // assistente, que fecha antes: dois <dialog> modais empilhados disputariam
+  // o foco e o Esc.
+  const [adjusting, setAdjusting] = useState<Ulid | null>(null);
   // Cor do brilho do topo enquanto o Perfil está aberto: acompanha a cor que a
   // pessoa está escolhendo, antes mesmo de salvar.
   const [glow, setGlow] = useState<string | null>(null);
@@ -229,6 +234,7 @@ export function App({
   }
 
   const editingAuthor = editing === null ? null : findUser(state, editing.userId);
+  const editingSeriesId = editing?.recurrenceId ?? null;
 
   return (
     <div class={SHELL} style={glow === null ? undefined : { "--hf-glow": cssVarForToken(glow) }}>
@@ -396,6 +402,33 @@ export function App({
               closeModal();
               openSection("category");
             }}
+            onAdjustSeries={
+              editingSeriesId === null
+                ? undefined
+                : () => {
+                    closeModal();
+                    setAdjusting(editingSeriesId);
+                  }
+            }
+          />
+        )}
+      </Modal>
+
+      <Modal open={adjusting !== null} title="Reajustar série" onClose={() => setAdjusting(null)}>
+        {adjusting !== null && (
+          <AdjustSheet
+            key={adjusting}
+            state={state}
+            recurrenceId={adjusting}
+            today={today}
+            onConfirm={(input) => {
+              setAdjusting(null);
+              void recurrence.adjustSeries(input).catch(ignoreHandled);
+            }}
+            onRemove={(id) => {
+              void recurrence.removeAdjustment(id).catch(ignoreHandled);
+            }}
+            onClose={() => setAdjusting(null)}
           />
         )}
       </Modal>
