@@ -5,6 +5,7 @@ import { stableEntityId } from "../../domain/ids/stable-id";
 import { isAlive } from "../../domain/model/base";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
 import type { TransactionDraft } from "../../domain/model/transaction";
+import { MAX_MINOR } from "../../domain/money/mask";
 import { adjustmentId } from "../../domain/recurrence/adjustments";
 import { occurrenceKey } from "../../domain/recurrence/schedule";
 import { createSession, type Session, StaleRowsError } from "../session/session";
@@ -278,7 +279,7 @@ describe("adjustSeries", () => {
     expect(await db.recurrenceAdjustments.count()).toBe(0);
   });
 
-  it.each([0, 1.5])("valor %s rejeita e não grava nada", async (amountMinor) => {
+  it.each([0, 1.5, MAX_MINOR + 1])("valor %s rejeita e não grava nada", async (amountMinor) => {
     await store.createSeries(DRAFT, MENSAL, "2026-08-10");
     const series = onlySeries();
 

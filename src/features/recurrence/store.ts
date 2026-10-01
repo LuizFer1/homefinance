@@ -3,6 +3,7 @@ import type { Ulid } from "../../domain/ids/ulid";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
 import type { RecurrenceAdjustment } from "../../domain/model/recurrence-adjustment";
 import type { Transaction, TransactionDraft } from "../../domain/model/transaction";
+import { MAX_MINOR } from "../../domain/money/mask";
 import { type AdjustmentInput, planAdjustment } from "../../domain/recurrence/adjust-plan";
 import { planOccurrences } from "../../domain/recurrence/plan";
 import { describeError, type ExpectedVersions, type Session } from "../session/session";
@@ -58,8 +59,14 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
   async function adjustSeries(input: AdjustmentInput): Promise<void> {
     try {
       // Guarda para qualquer chamador, não só o sheet: centavo fracionário ou
-      // valor fora do inteiro seguro entraria no log, que é eterno.
-      if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) {
+      // valor acima do que o campo de dinheiro aceita entraria no log, que é
+      // eterno. O teto é o mesmo `MAX_MINOR` do sheet, para os dois não
+      // discordarem sobre o que é um valor válido.
+      if (
+        !Number.isSafeInteger(input.amountMinor) ||
+        input.amountMinor <= 0 ||
+        input.amountMinor > MAX_MINOR
+      ) {
         throw new Error("Valor de reajuste inválido");
       }
       const state = session.state.value;
