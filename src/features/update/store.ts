@@ -77,6 +77,9 @@ export function createUpdateStore(deps: UpdateDeps): UpdateStore {
       .then((found) => {
         registration = found;
         if (found.waiting !== null && container.controller) ready.value = true;
+        // O navegador busca `sw.js` ao abrir a página; se a versão nova começou
+        // a instalar antes deste `then`, o `updatefound` já passou sem ouvinte.
+        if (found.installing !== null) watch(found.installing);
         found.addEventListener("updatefound", () => {
           if (found.installing !== null) watch(found.installing);
         });

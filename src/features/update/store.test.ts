@@ -89,6 +89,19 @@ describe("createUpdateStore", () => {
     expect(store.ready.value).toBe(true);
   });
 
+  it("oferece a versão que já estava instalando quando a store se conectou", async () => {
+    // Ao abrir o app o navegador já busca `sw.js`; o `updatefound` pode disparar
+    // antes do `ready` resolver, e ninguém escutava ainda.
+    const sw = fakeContainer();
+    const worker = fakeWorker();
+    sw.registration.installing = worker;
+    const store = createUpdateStore({ serviceWorker: sw.container, reload: vi.fn(), now: () => 0 });
+    await settle();
+    expect(store.ready.value).toBe(false);
+    worker.become("installed");
+    expect(store.ready.value).toBe(true);
+  });
+
   it("a primeira instalação não é atualização", async () => {
     // Sem controller, a página ainda não roda sob nenhum SW: o worker que
     // instala agora é o primeiro, e não há versão velha a trocar.
