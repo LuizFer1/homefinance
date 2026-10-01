@@ -93,6 +93,7 @@ const update = createUpdateStore({
     window.location.reload();
   },
   now: () => Date.now(),
+  version: __BUILD_TIME__,
 });
 
 // PWA instalado fica dias aberto sem navegar, e é na navegação que o navegador

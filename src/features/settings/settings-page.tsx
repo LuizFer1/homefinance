@@ -8,6 +8,8 @@ import { ThemeToggle, type ThemeToggleProps } from "../theme/theme-toggle";
 import { Modal, SheetHeader } from "../ui/modal";
 import { PageHeader } from "../ui/page-header";
 import { IconTile } from "../ui/tile";
+import type { UpdateStore } from "../update/store";
+import { UpdateSection } from "../update/update-section";
 import { ResetSection } from "./reset-section";
 
 export type SettingsSection = "category" | "paymentMethod" | "profile";
@@ -18,6 +20,7 @@ export interface SettingsPageProps {
   /** Perfil local, ou null enquanto ele não existe. */
   profile: User | null;
   theme: ThemeToggleProps;
+  update: UpdateStore;
   onOpen: (section: SettingsSection) => void;
   onReset: () => Promise<void>;
 }
@@ -73,6 +76,7 @@ export function SettingsPage({
   paymentMethodCount,
   profile,
   theme,
+  update,
   onOpen,
   onReset,
 }: SettingsPageProps) {
@@ -159,6 +163,10 @@ export function SettingsPage({
             </span>
           </span>
         </div>
+      </Group>
+
+      <Group label="Aplicativo">
+        <UpdateSection update={update} />
       </Group>
 
       {/*
