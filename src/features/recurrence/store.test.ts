@@ -259,6 +259,10 @@ describe("adjustSeries", () => {
   it("falha na gravação não deixa reajuste nem ocorrência alterada", async () => {
     await store.createSeries(DRAFT, MENSAL, "2026-08-10");
     const series = onlySeries();
+    // Falha a SEGUNDA gravação do lote: `putRows` grava na ordem de TABLE_NAMES
+    // (transactions antes de recurrenceAdjustments), então a ocorrência de julho
+    // já foi gravada quando o reajuste falha — é isso que prova o rollback. Se a
+    // ordem mudar, este teste deixa de provar a atomicidade.
     vi.spyOn(db.recurrenceAdjustments, "bulkPut").mockRejectedValueOnce(
       new Error("quota exceeded"),
     );
@@ -279,6 +283,39 @@ describe("adjustSeries", () => {
       store.adjustSeries({ recurrenceId: "NADA", fromPeriod: "2026-07", amountMinor: 1 }),
     ).rejects.toThrow("Série não existe");
     expect(session.error.value).toBe("Série não existe");
+  });
+
+  it("refazer o reajuste da mesma competência reaproveita a linha, inclusive apagada", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+    const id = adjustmentId(series.id, "2026-09");
+    await store.adjustSeries({
+      recurrenceId: series.id,
+      fromPeriod: "2026-09",
+      amountMinor: 550_000,
+    });
+    const createdAt = session.state.value.recurrenceAdjustments[id]?.createdAt;
+    await store.removeAdjustment(id);
+
+    await store.adjustSeries({
+      recurrenceId: series.id,
+      fromPeriod: "2026-09",
+      amountMinor: 600_000,
+    });
+
+    expect(await db.recurrenceAdjustments.count()).toBe(1);
+    expect(session.state.value.recurrenceAdjustments[id]).toMatchObject({
+      amountMinor: 600_000,
+      deletedAt: null,
+      createdAt,
+    });
+    expect(await db.recurrenceAdjustments.get(id)).toMatchObject({
+      amountMinor: 600_000,
+      deletedAt: null,
+      createdAt,
+    });
+    await store.materializeDue("2026-09-10");
+    expect(amountOf(series.id, "2026-09")).toBe(600_000);
   });
 
   it("removeAdjustment apaga o reajuste e a série volta ao valor anterior", async () => {
