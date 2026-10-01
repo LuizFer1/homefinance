@@ -25,7 +25,9 @@ const PERCENT_INPUT = /^[+-]?\d+(?:[.,]\d+)?$/;
 export function parsePercent(text: string): number | null {
   const trimmed = text.trim();
   if (!PERCENT_INPUT.test(trimmed)) return null;
-  return Number(trimmed.replace(",", "."));
+  const value = Number(trimmed.replace(",", "."));
+  // Dígitos demais viram Infinity, que passaria por valor válido na tela e iria para o banco.
+  return Number.isFinite(value) ? value : null;
 }
 
 const PERCENT_FORMAT = new Intl.NumberFormat("pt-BR", {

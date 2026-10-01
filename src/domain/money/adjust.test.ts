@@ -45,6 +45,7 @@ describe("parsePercent", () => {
     expect(parsePercent("abc")).toBeNull();
     expect(parsePercent("12,")).toBeNull();
     expect(parsePercent("1,2,3")).toBeNull();
+    expect(parsePercent("9".repeat(400))).toBeNull();
   });
 });
 
