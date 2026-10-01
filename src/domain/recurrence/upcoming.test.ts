@@ -39,6 +39,28 @@ function stateWith(recurrences: Recurrence[], transactions: Transaction[] = []):
 }
 
 describe("upcomingRecurrences", () => {
+  it("projeta o valor reajustado a partir da competência do reajuste", () => {
+    const state: AppState = {
+      ...stateWith([series({})]),
+      recurrenceAdjustments: {
+        AJ: {
+          ...ALIVE,
+          id: "AJ",
+          recurrenceId: SERIES,
+          fromPeriod: "2026-09",
+          amountMinor: 13_000,
+        },
+      },
+    };
+
+    const found = upcomingRecurrences(state, "2026-08-10", 60);
+
+    expect(found.map((o) => [o.date, o.amountMinor])).toEqual([
+      ["2026-08-30", 12_000],
+      ["2026-09-30", 13_000],
+    ]);
+  });
+
   it("lista as ocorrências dos próximos dias, depois de hoje", () => {
     const state = stateWith([series({})]);
 

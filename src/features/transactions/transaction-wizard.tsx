@@ -51,6 +51,8 @@ export interface TransactionWizardProps {
   author?: { name: string; color: string } | null;
   /** "Gerenciar" e "+ Nova" da grade de categorias levam aos cadastros. */
   onManageCategories?: () => void;
+  /** Só em ocorrência de série: abre o reajuste da série. */
+  onAdjustSeries?: () => void;
 }
 
 /**
@@ -92,6 +94,7 @@ export function TransactionWizard({
   onDelete,
   author,
   onManageCategories,
+  onAdjustSeries,
 }: TransactionWizardProps) {
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"next" | "back">("next");
@@ -352,6 +355,21 @@ export function TransactionWizard({
                 <Icon name="repeat" size={14} />
                 Faz parte de uma série. Alterar aqui muda só esta ocorrência.
               </p>
+            )}
+            {/*
+              `type="button"`: dentro do <form>, um botão sem tipo é submit e
+              gravaria a edição em curso no caminho para o reajuste.
+            */}
+            {editing?.recurrenceId != null && onAdjustSeries !== undefined && (
+              <button
+                type="button"
+                onClick={onAdjustSeries}
+                class="hf-press mt-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5
+                  text-[13px] font-medium text-accent-300 hover:bg-fg/[0.06]"
+              >
+                <Icon name="trend-up" size={14} />
+                Reajustar série
+              </button>
             )}
           </>
         )}

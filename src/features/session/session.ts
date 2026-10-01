@@ -32,6 +32,24 @@ export const LOCAL_USER_ID_KEY = "localUserId";
  */
 export type SessionMeta = Partial<Record<typeof LOCAL_USER_ID_KEY, Ulid>>;
 
+/**
+ * Versão (`updatedAt`) que quem chama leu de cada linha antes de planejar a
+ * escrita; `null` quer dizer "esta linha ainda não pode existir".
+ */
+export type ExpectedVersions = { [K in TableName]?: Record<Ulid, string | null> };
+
+/**
+ * O banco já não tem o que a sessão leu: outra aba (ou o sync) mudou, apagou
+ * ou criou uma das linhas depois do boot. Gravar mesmo assim ressuscitaria a
+ * linha apagada ou atropelaria a edição feita lá.
+ */
+export class StaleRowsError extends Error {
+  constructor() {
+    super("Os dados mudaram em outra aba. Feche e abra o reajuste de novo.");
+    this.name = "StaleRowsError";
+  }
+}
+
 export type SessionStatus = "loading" | "ready" | "error";
 
 export interface SessionDeps {
@@ -78,6 +96,19 @@ export interface Session {
    * nenhum dos dois tem motivo para reescrever a identidade do aparelho.
    */
   putRows: (rows: RowsByTable, meta?: SessionMeta) => Promise<void>;
+  /**
+   * Como `putRows`, mas só grava se cada linha de `expected` ainda estiver no
+   * banco com o `updatedAt` esperado (ou ausente, se o esperado for `null`).
+   * Para lotes planejados a partir do `state` em memória que regravam linhas
+   * inteiras: o state pode estar velho (outra aba, sync), e um `bulkPut` cego
+   * reviveria uma linha apagada lá ou desfaria uma edição à mão.
+   *
+   * A checagem e a escrita são uma transação só. Divergiu: nada é gravado,
+   * `error` é preenchido, o `state` recebe o que o banco realmente tem para
+   * aqueles ids (a sessão se cura, como em `insertMissing`) e lança
+   * `StaleRowsError`.
+   */
+  putRowsIfCurrent: (rows: RowsByTable, expected: ExpectedVersions) => Promise<void>;
   /**
    * Insere só as linhas cujo id ainda não existe no banco — nunca sobrescreve.
    * Para identidade determinística (materialização): o state em memória pode
@@ -165,19 +196,22 @@ export function createSession(deps: SessionDeps): Session {
       if (stored === undefined) await deps.db.meta.put({ key: DEVICE_ID_KEY, value: deviceId });
 
       const perfil = (await deps.db.meta.get(LOCAL_USER_ID_KEY))?.value ?? null;
-      const [users, categories, paymentMethods, transactions, recurrences] = await Promise.all([
-        deps.db.users.toArray(),
-        deps.db.categories.toArray(),
-        deps.db.paymentMethods.toArray(),
-        deps.db.transactions.toArray(),
-        deps.db.recurrences.toArray(),
-      ]);
+      const [users, categories, paymentMethods, transactions, recurrences, recurrenceAdjustments] =
+        await Promise.all([
+          deps.db.users.toArray(),
+          deps.db.categories.toArray(),
+          deps.db.paymentMethods.toArray(),
+          deps.db.transactions.toArray(),
+          deps.db.recurrences.toArray(),
+          deps.db.recurrenceAdjustments.toArray(),
+        ]);
       const loaded: AppState = {
         users: toRecord(users),
         categories: toRecord(categories),
         paymentMethods: toRecord(paymentMethods),
         transactions: toRecord(transactions),
         recurrences: toRecord(recurrences),
+        recurrenceAdjustments: toRecord(recurrenceAdjustments),
       };
 
       rowClock = createRowClock({
@@ -259,6 +293,54 @@ export function createSession(deps: SessionDeps): Session {
     });
   }
 
+  async function putRowsIfCurrent(rows: RowsByTable, expected: ExpectedVersions): Promise<void> {
+    const tables = TABLE_NAMES.filter(
+      (table) => (rows[table]?.length ?? 0) > 0 || Object.keys(expected[table] ?? {}).length > 0,
+    );
+    let actual: RowsByTable = {};
+    let stale = false;
+    try {
+      // Ler e gravar na mesma transação: checar fora dela abriria uma janela
+      // em que a outra aba grava entre a checagem e o `bulkPut`.
+      await deps.db.transaction(
+        "rw",
+        tables.map((table) => deps.db.table(table)),
+        async () => {
+          const found: RowsByTable = {};
+          for (const table of tables) {
+            const versions = expected[table] ?? {};
+            const ids = Object.keys(versions);
+            if (ids.length === 0) continue;
+            const current = await deps.db.table<BaseRow, string>(table).bulkGet(ids);
+            const present = current.filter((row): row is BaseRow => row !== undefined);
+            (found as Record<TableName, BaseRow[]>)[table] = present;
+            ids.forEach((id, index) => {
+              if ((current[index]?.updatedAt ?? null) !== versions[id]) stale = true;
+            });
+          }
+          actual = found;
+          // Lança antes de qualquer escrita: a transação nem chega a gravar.
+          if (stale) throw new StaleRowsError();
+          for (const table of tables) {
+            const list = rows[table] ?? [];
+            if (list.length > 0) await deps.db.table(table).bulkPut(list);
+          }
+        },
+      );
+    } catch (cause) {
+      batch(() => {
+        error.value = describeError(cause);
+        if (stale) state.value = withRows(state.value, actual);
+      });
+      throw cause;
+    }
+
+    batch(() => {
+      error.value = null;
+      state.value = withRows(state.value, rows);
+    });
+  }
+
   async function insertMissing<K extends TableName>(
     table: K,
     rows: RowOf<K>[],
@@ -293,5 +375,16 @@ export function createSession(deps: SessionDeps): Session {
     return inserted;
   }
 
-  return { state, status, error, localUserId, init, clock, mutate, putRows, insertMissing };
+  return {
+    state,
+    status,
+    error,
+    localUserId,
+    init,
+    clock,
+    mutate,
+    putRows,
+    putRowsIfCurrent,
+    insertMissing,
+  };
 }

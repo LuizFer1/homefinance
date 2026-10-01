@@ -27,13 +27,38 @@ describe("HomeFinanceDb", () => {
     await db.delete();
   });
 
-  it("banco novo abre com as cinco tabelas vazias", async () => {
+  it("banco novo abre com as seis tabelas vazias", async () => {
     const db = new HomeFinanceDb(`homefinance-novo-${Date.now()}`);
     expect(await db.users.count()).toBe(0);
     expect(await db.categories.count()).toBe(0);
     expect(await db.paymentMethods.count()).toBe(0);
     expect(await db.transactions.count()).toBe(0);
     expect(await db.recurrences.count()).toBe(0);
+    expect(await db.recurrenceAdjustments.count()).toBe(0);
+    await db.delete();
+  });
+
+  it("upgrade da v2 cria recurrenceAdjustments e mantém os lançamentos", async () => {
+    const name = `homefinance-v2-${Date.now()}`;
+    const v2 = new Dexie(name);
+    v2.version(2).stores({
+      users: "id, dirty",
+      categories: "id, dirty",
+      paymentMethods: "id, dirty",
+      transactions: "id, occurredOn, recurrenceId, dirty",
+      recurrences: "id, dirty",
+      meta: "key",
+    });
+    await v2
+      .table("transactions")
+      .put({ id: "T1", occurredOn: "2026-08-05", recurrenceId: null, dirty: 0 });
+    v2.close();
+
+    const db = new HomeFinanceDb(name);
+    await db.open();
+
+    expect(await db.transactions.get("T1")).toMatchObject({ id: "T1" });
+    expect(await db.recurrenceAdjustments.count()).toBe(0);
     await db.delete();
   });
 });

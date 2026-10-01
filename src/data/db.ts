@@ -2,6 +2,7 @@ import Dexie, { type Table } from "dexie";
 import type { Category } from "../domain/model/category";
 import type { PaymentMethod } from "../domain/model/payment-method";
 import type { Recurrence } from "../domain/model/recurrence";
+import type { RecurrenceAdjustment } from "../domain/model/recurrence-adjustment";
 import type { Transaction } from "../domain/model/transaction";
 import type { User } from "../domain/model/user";
 
@@ -26,6 +27,7 @@ export class HomeFinanceDb extends Dexie {
   readonly paymentMethods: Table<PaymentMethod, string>;
   readonly transactions: Table<Transaction, string>;
   readonly recurrences: Table<Recurrence, string>;
+  readonly recurrenceAdjustments: Table<RecurrenceAdjustment, string>;
   readonly meta: Table<MetaRow, string>;
 
   constructor(name = "homefinance") {
@@ -42,11 +44,15 @@ export class HomeFinanceDb extends Dexie {
         meta: "key",
       })
       .upgrade((tx) => tx.table("meta").delete("localUserId"));
+    // Só acrescenta a tabela de reajustes: o Dexie herda as outras da v2, e
+    // nenhuma linha existente muda de forma.
+    this.version(3).stores({ recurrenceAdjustments: "id, recurrenceId, dirty" });
     this.users = this.table("users");
     this.categories = this.table("categories");
     this.paymentMethods = this.table("paymentMethods");
     this.transactions = this.table("transactions");
     this.recurrences = this.table("recurrences");
+    this.recurrenceAdjustments = this.table("recurrenceAdjustments");
     this.meta = this.table("meta");
   }
 }

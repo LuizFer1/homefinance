@@ -68,6 +68,25 @@ function occurrenceOf(series: Recurrence, period: string, occurredOn: string): T
 }
 
 describe("planOccurrences", () => {
+  it("ocorrência nasce com o valor reajustado da competência", () => {
+    const state: AppState = {
+      ...stateWith(SALARIO),
+      recurrenceAdjustments: {
+        AJ: {
+          ...BASE,
+          id: "AJ",
+          recurrenceId: "SERIE-1",
+          fromPeriod: "2026-07",
+          amountMinor: 550_000,
+        },
+      },
+    };
+
+    const plans = planOccurrences(state, "2026-08-10");
+
+    expect(plans.map((p) => p.draft.amountMinor)).toEqual([500_000, 550_000, 550_000]);
+  });
+
   it("planeja uma ocorrência por competência vencida", () => {
     const plans = planOccurrences(stateWith(SALARIO), "2026-08-10");
     expect(plans.map((p) => p.draft.occurredOn)).toEqual([
