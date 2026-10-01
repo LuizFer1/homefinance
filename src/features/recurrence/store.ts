@@ -5,7 +5,7 @@ import type { RecurrenceAdjustment } from "../../domain/model/recurrence-adjustm
 import type { Transaction, TransactionDraft } from "../../domain/model/transaction";
 import { type AdjustmentInput, planAdjustment } from "../../domain/recurrence/adjust-plan";
 import { planOccurrences } from "../../domain/recurrence/plan";
-import { describeError, type Session } from "../session/session";
+import { describeError, type ExpectedVersions, type Session } from "../session/session";
 
 /**
  * Série de recorrência: cria a partir de um lançamento + regra, materializa o
@@ -96,10 +96,24 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         dirty: 1,
       }));
 
+      // O plano veio do `state` em memória, que pode estar velho: se outra
+      // aba apagou ou editou à mão uma dessas ocorrências (ou mexeu no
+      // reajuste) depois do boot, gravar as linhas inteiras desfaria isso.
+      // Cada linha só é regravada se ainda estiver na versão que foi lida.
+      const expected: ExpectedVersions = {
+        recurrenceAdjustments: { [plan.adjustmentId]: existing?.updatedAt ?? null },
+        transactions: Object.fromEntries(
+          plan.updates.map(({ transaction }) => [transaction.id, transaction.updatedAt]),
+        ),
+      };
+
       // Um lote só: reajuste e ocorrências entram juntos ou nada entra. Em duas
       // gravações, uma falha no meio deixaria o extrato com o valor novo e a
       // série com o velho, sem nada na tela que contasse a diferença.
-      await session.putRows({ recurrenceAdjustments: [adjustment], transactions });
+      await session.putRowsIfCurrent(
+        { recurrenceAdjustments: [adjustment], transactions },
+        expected,
+      );
     } catch (cause) {
       session.error.value = describeError(cause);
       throw cause;

@@ -7,7 +7,7 @@ import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/m
 import type { TransactionDraft } from "../../domain/model/transaction";
 import { adjustmentId } from "../../domain/recurrence/adjustments";
 import { occurrenceKey } from "../../domain/recurrence/schedule";
-import { createSession, type Session } from "../session/session";
+import { createSession, type Session, StaleRowsError } from "../session/session";
 import { createRecurrenceStore, type RecurrenceStore } from "./store";
 
 const DRAFT: TransactionDraft = {
@@ -259,7 +259,7 @@ describe("adjustSeries", () => {
   it("falha na gravação não deixa reajuste nem ocorrência alterada", async () => {
     await store.createSeries(DRAFT, MENSAL, "2026-08-10");
     const series = onlySeries();
-    // Falha a SEGUNDA gravação do lote: `putRows` grava na ordem de TABLE_NAMES
+    // Falha a SEGUNDA gravação do lote: `putRowsIfCurrent` grava na ordem de TABLE_NAMES
     // (transactions antes de recurrenceAdjustments), então a ocorrência de julho
     // já foi gravada quando o reajuste falha — é isso que prova o rollback. Se a
     // ordem mudar, este teste deixa de provar a atomicidade.
@@ -290,6 +290,29 @@ describe("adjustSeries", () => {
     expect(await db.recurrenceAdjustments.count()).toBe(0);
     const julho = await db.transactions.get(stableEntityId(occurrenceKey(series.id, "2026-07")));
     expect(julho?.amountMinor).toBe(500_000);
+  });
+
+  it("sessão desatualizada não revive ocorrência apagada por outra sessão", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+    const julho = stableEntityId(occurrenceKey(series.id, "2026-07"));
+
+    // A sessão B nasce depois da materialização e apaga julho; a sessão A
+    // continua com julho vivo no `state` em memória.
+    const sessionB = createSession(testSessionDeps(db));
+    await sessionB.init();
+    await sessionB.mutate("transactions", (repo) => repo.remove(julho));
+
+    await expect(
+      store.adjustSeries({ recurrenceId: series.id, fromPeriod: "2026-07", amountMinor: 550_000 }),
+    ).rejects.toBeInstanceOf(StaleRowsError);
+
+    expect((await db.transactions.get(julho))?.deletedAt).not.toBeNull();
+    expect((await db.transactions.get(julho))?.amountMinor).toBe(500_000);
+    expect(await db.recurrenceAdjustments.count()).toBe(0);
+    // A tela de A passa a ver o que o banco tem, para o próximo reajuste já
+    // planejar sem julho.
+    expect(session.state.value.transactions[julho]?.deletedAt).not.toBeNull();
   });
 
   it("série inexistente rejeita e preenche error", async () => {

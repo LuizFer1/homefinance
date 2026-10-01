@@ -4,7 +4,7 @@ import { buildRow } from "../../data/repository";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
 import type { Category } from "../../domain/model/category";
 import type { User } from "../../domain/model/user";
-import { createSession, LOCAL_USER_ID_KEY } from "./session";
+import { createSession, LOCAL_USER_ID_KEY, StaleRowsError } from "./session";
 
 const MERCADO = { name: "Mercado", icon: "utensils", color: "emerald", kind: "expense" } as const;
 const LUIZ = { name: "Luiz", color: "teal", avatar: null } as const;
@@ -251,5 +251,67 @@ describe("createSession", () => {
     expect(await db.categories.count()).toBe(0);
     expect(session.state.value.categories).toEqual({});
     expect(session.error.value).toBe("quota exceeded");
+  });
+
+  it("putRowsIfCurrent grava quando as versões batem", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    const created = await session.mutate("categories", (repo) => repo.create(MERCADO));
+    const novo = buildRow<User>(session.clock(), LUIZ);
+    const edited = { ...created, name: "Feira", updatedAt: session.clock().stamp().hlc };
+
+    await session.putRowsIfCurrent(
+      { categories: [edited], users: [novo] },
+      { categories: { [created.id]: created.updatedAt }, users: { [novo.id]: null } },
+    );
+
+    expect(await db.categories.get(created.id)).toEqual(edited);
+    expect(await db.users.get(novo.id)).toEqual(novo);
+    expect(session.state.value.categories[created.id]).toEqual(edited);
+    expect(session.state.value.users[novo.id]).toEqual(novo);
+  });
+
+  it("putRowsIfCurrent recusa sem gravar nada quando outra sessão mudou a linha", async () => {
+    const stale = createSession(testSessionDeps(db));
+    await stale.init();
+    const created = await stale.mutate("categories", (repo) => repo.create(MERCADO));
+
+    // Outra aba apaga a linha depois que `stale` a leu.
+    const other = createSession(testSessionDeps(db));
+    await other.init();
+    const removed = await other.mutate("categories", (repo) => repo.remove(created.id));
+
+    const novo = buildRow<User>(stale.clock(), LUIZ);
+    const edited = { ...created, name: "Feira", updatedAt: stale.clock().stamp().hlc };
+    await expect(
+      stale.putRowsIfCurrent(
+        { categories: [edited], users: [novo] },
+        { categories: { [created.id]: created.updatedAt }, users: { [novo.id]: null } },
+      ),
+    ).rejects.toBeInstanceOf(StaleRowsError);
+
+    expect(await db.categories.get(created.id)).toEqual(removed);
+    expect(await db.users.count()).toBe(0);
+    expect(stale.error.value).toBe(new StaleRowsError().message);
+    // O state se cura com o que o banco tem, como em `insertMissing`.
+    expect(stale.state.value.categories[created.id]).toEqual(removed);
+    expect(stale.state.value.users[novo.id]).toBeUndefined();
+  });
+
+  it("putRowsIfCurrent com expectativa nula recusa se a linha já existe", async () => {
+    const stale = createSession(testSessionDeps(db));
+    await stale.init();
+
+    const other = createSession(testSessionDeps(db));
+    await other.init();
+    const created = await other.mutate("categories", (repo) => repo.create(MERCADO));
+
+    const attempt = buildRow<Category>(stale.clock(), { ...MERCADO, name: "Outra" }, created.id);
+    await expect(
+      stale.putRowsIfCurrent({ categories: [attempt] }, { categories: { [created.id]: null } }),
+    ).rejects.toBeInstanceOf(StaleRowsError);
+
+    expect(await db.categories.get(created.id)).toEqual(created);
+    expect(stale.state.value.categories[created.id]).toEqual(created);
   });
 });
