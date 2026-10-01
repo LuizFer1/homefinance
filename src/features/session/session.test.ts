@@ -43,6 +43,19 @@ describe("createSession", () => {
     expect(segunda.localUserId.value).toBe("U1");
   });
 
+  it("boot carrega os reajustes de série", async () => {
+    const primeira = createSession(testSessionDeps(db));
+    await primeira.init();
+    const row = await primeira.mutate("recurrenceAdjustments", (repo) =>
+      repo.create({ recurrenceId: "S1", fromPeriod: "2027-01", amountMinor: 350_000 }),
+    );
+
+    const segunda = createSession(testSessionDeps(db));
+    await segunda.init();
+
+    expect(segunda.state.value.recurrenceAdjustments[row.id]).toEqual(row);
+  });
+
   it("reabrir reusa o deviceId gravado no primeiro boot", async () => {
     const primeira = createSession(testSessionDeps(db));
     await primeira.init();

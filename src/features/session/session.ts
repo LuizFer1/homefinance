@@ -165,19 +165,22 @@ export function createSession(deps: SessionDeps): Session {
       if (stored === undefined) await deps.db.meta.put({ key: DEVICE_ID_KEY, value: deviceId });
 
       const perfil = (await deps.db.meta.get(LOCAL_USER_ID_KEY))?.value ?? null;
-      const [users, categories, paymentMethods, transactions, recurrences] = await Promise.all([
-        deps.db.users.toArray(),
-        deps.db.categories.toArray(),
-        deps.db.paymentMethods.toArray(),
-        deps.db.transactions.toArray(),
-        deps.db.recurrences.toArray(),
-      ]);
+      const [users, categories, paymentMethods, transactions, recurrences, recurrenceAdjustments] =
+        await Promise.all([
+          deps.db.users.toArray(),
+          deps.db.categories.toArray(),
+          deps.db.paymentMethods.toArray(),
+          deps.db.transactions.toArray(),
+          deps.db.recurrences.toArray(),
+          deps.db.recurrenceAdjustments.toArray(),
+        ]);
       const loaded: AppState = {
         users: toRecord(users),
         categories: toRecord(categories),
         paymentMethods: toRecord(paymentMethods),
         transactions: toRecord(transactions),
         recurrences: toRecord(recurrences),
+        recurrenceAdjustments: toRecord(recurrenceAdjustments),
       };
 
       rowClock = createRowClock({
