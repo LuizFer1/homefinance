@@ -28,7 +28,25 @@ export interface UpdateDeps {
   /** Injetado: no teste, recarregar derrubaria o runner. */
   reload: () => void;
   now: () => number;
+  /** Data do build em ISO. Não há número de versão: um build novo *é* a versão nova. */
+  version?: string;
 }
+
+/**
+ * O que a busca por versão nova encontrou. A tela de ajustes precisa disso para
+ * responder ao toque; o aviso de fundo só olha `ready`.
+ */
+export type CheckResult =
+  /** Sem service worker (navegador sem suporte, `npm run dev`, aba sandbox). */
+  | "unavailable"
+  /** Já buscou há menos de `CHECK_INTERVAL_MS`. */
+  | "skipped"
+  /** A busca não chegou ao servidor. */
+  | "offline"
+  | "current"
+  /** Achou `sw.js` novo; `ready` liga quando ele terminar de baixar. */
+  | "installing"
+  | "ready";
 
 export interface UpdateStore {
   /** Há uma versão nova instalada, esperando só a pessoa aceitar. */
@@ -37,9 +55,11 @@ export interface UpdateStore {
    * Pergunta ao servidor se há `sw.js` novo. Com `force`, ignora o intervalo —
    * para quando a versão aberta acabou de se mostrar velha.
    */
-  check: (force?: boolean) => Promise<void>;
+  check: (force?: boolean) => Promise<CheckResult>;
   /** Troca para a versão nova e recarrega. */
   apply: () => void;
+  /** Data do build que está rodando, ou null se o build não a informou. */
+  version: string | null;
 }
 
 /**
@@ -91,16 +111,23 @@ export function createUpdateStore(deps: UpdateDeps): UpdateStore {
 
   return {
     ready,
+    version: deps.version ?? null,
     async check(force = false) {
-      if (registration === null) return;
+      if (registration === null) return "unavailable";
       const now = deps.now();
-      if (!force && now - lastCheck < CHECK_INTERVAL_MS) return;
+      if (!force && now - lastCheck < CHECK_INTERVAL_MS) return "skipped";
       lastCheck = now;
       try {
         await registration.update();
       } catch {
         // Offline é o estado normal deste app, não um erro.
+        return "offline";
       }
+      if (ready.value) return "ready";
+      // `update()` resolve assim que o `sw.js` novo começa a instalar, antes de
+      // ele baixar o precache: dizer "mais recente" aqui seria mentira.
+      if (registration.installing !== null) return "installing";
+      return "current";
     },
     apply() {
       const waiting = registration?.waiting ?? null;
