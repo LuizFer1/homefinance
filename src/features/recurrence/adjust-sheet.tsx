@@ -116,7 +116,12 @@ export function AdjustSheet({
           chips alarga o sheet em vez de rolar dentro dele. */}
       <fieldset class="mt-5 min-w-0">
         <legend class={LABEL}>A partir de</legend>
-        <div class="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1">
+        {/*
+          `relative`: o rádio de cada chip é `sr-only` (absoluto). Sem um ancestral
+          posicionado aqui, os rádios dos chips fora da tela contam na largura do
+          <dialog> e o sheet inteiro ganha rolagem horizontal.
+        */}
+        <div class="relative -mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1">
           {choices.periods.map((period) => (
             <RadioChip
               key={period}
