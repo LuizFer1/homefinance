@@ -2,6 +2,7 @@ import { stableEntityId } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import type { TransactionDraft } from "../model/transaction";
+import { amountFor } from "./adjustments";
 import { eachPeriod, occurrenceKey, occurrenceOn } from "./schedule";
 
 export interface OccurrencePlan {
@@ -20,6 +21,8 @@ export interface OccurrencePlan {
  */
 export function planOccurrences(state: AppState, today: string): OccurrencePlan[] {
   const plans: OccurrencePlan[] = [];
+
+  const adjustments = Object.values(state.recurrenceAdjustments);
 
   for (const series of Object.values(state.recurrences)) {
     if (series.deletedAt !== null || !series.active) continue;
@@ -44,7 +47,9 @@ export function planOccurrences(state: AppState, today: string): OccurrencePlan[
         draft: {
           kind: series.kind,
           description: series.description,
-          amountMinor: series.amountMinor,
+          // O valor da competência, não o da série: um reajuste a partir de
+          // janeiro tem que fazer o salário de janeiro nascer com o valor novo.
+          amountMinor: amountFor(series, adjustments, period),
           currency: "BRL",
           categoryId: series.categoryId,
           paymentMethodId: series.paymentMethodId,

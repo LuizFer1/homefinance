@@ -4,6 +4,7 @@ import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
 import type { RecurrenceFrequency, ScheduleType } from "../model/recurrence";
+import { amountFor } from "./adjustments";
 import { eachPeriod, FREQUENCY_MONTHS, occurrenceKey, occurrenceOn } from "./schedule";
 
 export interface UpcomingOccurrence {
@@ -40,6 +41,7 @@ export function upcomingRecurrences(
 ): UpcomingOccurrence[] {
   const limit = shiftDay(today, days);
   const found: UpcomingOccurrence[] = [];
+  const adjustments = Object.values(state.recurrenceAdjustments);
 
   for (const series of Object.values(state.recurrences)) {
     if (!isAlive(series) || !series.active) continue;
@@ -59,7 +61,7 @@ export function upcomingRecurrences(
         date,
         kind: series.kind,
         description: series.description,
-        amountMinor: series.amountMinor,
+        amountMinor: amountFor(series, adjustments, period),
         categoryId: series.categoryId,
       });
     }
