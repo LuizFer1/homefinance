@@ -112,7 +112,9 @@ export function AdjustSheet({
         {series.description} · hoje <span class="hf-num text-fg">{formatBRL(currentMinor)}</span>
       </p>
 
-      <fieldset class="mt-5">
+      {/* Fieldset tem min-width: min-content por padrão; sem `min-w-0` a fileira de
+          chips alarga o sheet em vez de rolar dentro dele. */}
+      <fieldset class="mt-5 min-w-0">
         <legend class={LABEL}>A partir de</legend>
         <div class="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1">
           {choices.periods.map((period) => (
