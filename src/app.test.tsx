@@ -420,6 +420,43 @@ describe("navegacao", () => {
 });
 
 describe("modal de lançamento", () => {
+  it("reajustar série troca o lançamento pelo sheet de reajuste", async () => {
+    const stores = buildStores(await cadastrado());
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
+    await act(() =>
+      stores.recurrence.createSeries(
+        {
+          kind: "expense",
+          description: "Aluguel",
+          amountMinor: 150_000,
+          currency: "BRL",
+          categoryId: null,
+          paymentMethodId: null,
+          cashbackMinor: null,
+          occurredOn: "2026-08-05",
+          recurrenceId: null,
+          occurrenceKey: null,
+        },
+        { frequency: "monthly", scheduleType: "dayOfMonth", scheduleN: 5, endOn: null },
+        "2026-08-08",
+      ),
+    );
+
+    await abrirEdicao("Aluguel");
+    fireEvent.click(screen.getByRole("button", { name: "Reajustar série" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Confirmar reajuste" })).toBeDefined(),
+    );
+    // O `close` nativo do primeiro diálogo chega depois e não pode derrubar o segundo.
+    expect(screen.queryByLabelText("Descrição")).toBeNull();
+    const sheet = screen.getByRole("dialog", { name: "Reajustar série" }) as HTMLDialogElement;
+    expect(sheet.open).toBe(true);
+  });
+
   async function pronto() {
     render(
       <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,

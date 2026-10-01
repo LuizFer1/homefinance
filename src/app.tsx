@@ -414,6 +414,11 @@ export function App({
         )}
       </Modal>
 
+      {/*
+        Este Modal tem que ficar DEPOIS do de lançamento: os efeitos rodam na
+        ordem do JSX, e o `close()` do lançamento (que devolve o foco) precisa
+        rodar antes do `showModal()` deste.
+      */}
       <Modal open={adjusting !== null} title="Reajustar série" onClose={() => setAdjusting(null)}>
         {adjusting !== null && (
           <AdjustSheet
