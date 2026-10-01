@@ -57,6 +57,11 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
 
   async function adjustSeries(input: AdjustmentInput): Promise<void> {
     try {
+      // Guarda para qualquer chamador, não só o sheet: centavo fracionário ou
+      // valor fora do inteiro seguro entraria no log, que é eterno.
+      if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) {
+        throw new Error("Valor de reajuste inválido");
+      }
       const state = session.state.value;
       const plan = planAdjustment(state, input);
       if (plan === null) throw new Error("Série não existe");

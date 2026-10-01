@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/preact";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { stableEntityId } from "../../domain/ids/stable-id";
@@ -64,6 +64,16 @@ function estado(transactions: Transaction[], adjustments: RecurrenceAdjustment[]
     recurrences: { [SALARIO.id]: SALARIO },
     transactions: Object.fromEntries(transactions.map((t) => [t.id, t])),
     recurrenceAdjustments: Object.fromEntries(adjustments.map((a) => [a.id, a])),
+  };
+}
+
+function reajuste(fromPeriod: string, amountMinor: number): RecurrenceAdjustment {
+  return {
+    ...ALIVE,
+    id: adjustmentId(SALARIO.id, fromPeriod),
+    recurrenceId: SALARIO.id,
+    fromPeriod,
+    amountMinor,
   };
 }
 
@@ -146,14 +156,8 @@ describe("AdjustSheet", () => {
 
   it("histórico remove o reajuste segurando a lixeira", () => {
     vi.useFakeTimers();
-    const reajuste: RecurrenceAdjustment = {
-      ...ALIVE,
-      id: adjustmentId(SALARIO.id, "2026-09"),
-      recurrenceId: SALARIO.id,
-      fromPeriod: "2026-09",
-      amountMinor: 350_000,
-    };
-    const { onRemove } = montar(estado(LANCADAS, [reajuste]));
+    const setembro = reajuste("2026-09", 350_000);
+    const { onRemove } = montar(estado(LANCADAS, [setembro]));
 
     const lixeira = screen.getByRole("button", {
       name: "Excluir reajuste de set/2026 (segure para confirmar)",
@@ -163,7 +167,52 @@ describe("AdjustSheet", () => {
       vi.advanceTimersByTime(HOLD_MS);
     });
 
-    expect(onRemove).toHaveBeenCalledWith(reajuste.id);
+    expect(onRemove).toHaveBeenCalledWith(setembro.id);
     vi.useRealTimers();
+  });
+
+  it("percentual acima do teto da máscara não confirma", () => {
+    montar(estado(LANCADAS));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
+    fireEvent.input(screen.getByLabelText("Percentual (%)"), {
+      target: { value: "99999999999" },
+    });
+
+    const confirmar = screen.getByRole("button", { name: "Confirmar reajuste" });
+    expect((confirmar as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Valor acima do permitido.")).toBeTruthy();
+  });
+
+  it("histórico lista do reajuste mais novo para o mais antigo", () => {
+    montar(estado(LANCADAS, [reajuste("2026-09", 350_000), reajuste("2026-11", 400_000)]));
+
+    const nomes = screen
+      .getAllByRole("button", { name: /Excluir reajuste/ })
+      .map((botao) => botao.getAttribute("aria-label"));
+    expect(nomes).toEqual([
+      "Excluir reajuste de nov/2026 (segure para confirmar)",
+      "Excluir reajuste de set/2026 (segure para confirmar)",
+    ]);
+  });
+
+  it("percentual parte do valor já reajustado antes da competência", () => {
+    const { onConfirm } = montar(estado(LANCADAS, [reajuste("2026-09", 350_000)]));
+
+    fireEvent.click(screen.getByRole("radio", { name: "out/2026" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
+    fireEvent.input(screen.getByLabelText("Percentual (%)"), { target: { value: "10" } });
+
+    // O histórico também mostra R$ 3.500,00; o resumo é a região `aria-live`.
+    const resumo = within(document.querySelector("[aria-live]") as HTMLElement);
+    expect(resumo.getByText(brl(350_000))).toBeTruthy();
+    expect(resumo.getByText(brl(385_000))).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reajuste" }));
+    expect(onConfirm).toHaveBeenCalledWith({
+      recurrenceId: SALARIO.id,
+      fromPeriod: "2026-10",
+      amountMinor: 385_000,
+    });
   });
 });

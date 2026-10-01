@@ -278,6 +278,20 @@ describe("adjustSeries", () => {
     expect(await db.recurrenceAdjustments.count()).toBe(0);
   });
 
+  it.each([0, 1.5])("valor %s rejeita e não grava nada", async (amountMinor) => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+
+    await expect(
+      store.adjustSeries({ recurrenceId: series.id, fromPeriod: "2026-07", amountMinor }),
+    ).rejects.toThrow("Valor de reajuste inválido");
+
+    expect(session.error.value).toBe("Valor de reajuste inválido");
+    expect(await db.recurrenceAdjustments.count()).toBe(0);
+    const julho = await db.transactions.get(stableEntityId(occurrenceKey(series.id, "2026-07")));
+    expect(julho?.amountMinor).toBe(500_000);
+  });
+
   it("série inexistente rejeita e preenche error", async () => {
     await expect(
       store.adjustSeries({ recurrenceId: "NADA", fromPeriod: "2026-07", amountMinor: 1 }),

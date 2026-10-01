@@ -9,7 +9,7 @@ import {
   parsePercent,
   percentChange,
 } from "../../domain/money/adjust";
-import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
+import { MAX_DIGITS, maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
 import { formatBRL } from "../../domain/money/money";
 import { monthLabelShort } from "../../domain/projections/periods";
 import {
@@ -35,6 +35,9 @@ export interface AdjustSheetProps {
 }
 
 type Mode = "amount" | "percent";
+
+// O mesmo teto do campo de valor: o percentual não pode furar o que a máscara recusa.
+const MAX_MINOR = 10 ** MAX_DIGITS - 1;
 
 const MODES = [
   { value: "amount", label: "Valor" },
@@ -98,7 +101,7 @@ export function AdjustSheet({
       : parsedPercent === null
         ? 0
         : applyPercent(baseMinor, parsedPercent);
-  const valid = nextMinor > 0 && nextMinor !== baseMinor;
+  const valid = nextMinor > 0 && nextMinor <= MAX_MINOR && nextMinor !== baseMinor;
   const plan = valid
     ? planAdjustment(state, { recurrenceId: series.id, fromPeriod, amountMinor: nextMinor })
     : null;
@@ -192,9 +195,11 @@ export function AdjustSheet({
           </>
         ) : (
           <p class="text-fg/60">
-            {nextMinor > 0 && nextMinor === baseMinor
-              ? "O valor novo é igual ao atual."
-              : "Informe o valor novo ou o percentual."}
+            {nextMinor > MAX_MINOR
+              ? "Valor acima do permitido."
+              : nextMinor > 0 && nextMinor === baseMinor
+                ? "O valor novo é igual ao atual."
+                : "Informe o valor novo ou o percentual."}
           </p>
         )}
       </div>
