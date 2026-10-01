@@ -1,7 +1,9 @@
 import { buildRow } from "../../data/repository";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
+import type { RecurrenceAdjustment } from "../../domain/model/recurrence-adjustment";
 import type { Transaction, TransactionDraft } from "../../domain/model/transaction";
+import { type AdjustmentInput, planAdjustment } from "../../domain/recurrence/adjust-plan";
 import { planOccurrences } from "../../domain/recurrence/plan";
 import { describeError, type Session } from "../session/session";
 
@@ -17,6 +19,13 @@ export interface RecurrenceStore {
   materializeDue: (today: string) => Promise<void>;
   editSeries: (id: Ulid, draft: RecurrenceDraft) => Promise<Recurrence>;
   removeSeries: (id: Ulid) => Promise<Recurrence>;
+  /**
+   * Reajusta a série a partir de uma competência e atualiza as ocorrências já
+   * lançadas que ainda seguem a série (ver `planAdjustment`).
+   */
+  adjustSeries: (input: AdjustmentInput) => Promise<void>;
+  /** Desfaz um reajuste (exclusão lógica). Ocorrências já lançadas ficam como estão. */
+  removeAdjustment: (id: Ulid) => Promise<RecurrenceAdjustment>;
 }
 
 export function createRecurrenceStore(session: Session): RecurrenceStore {
@@ -40,6 +49,52 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         buildRow<Transaction>(clock, { ...plan.draft, userId }, plan.entityId),
       );
       await session.insertMissing("transactions", rows);
+    } catch (cause) {
+      session.error.value = describeError(cause);
+      throw cause;
+    }
+  }
+
+  async function adjustSeries(input: AdjustmentInput): Promise<void> {
+    try {
+      const state = session.state.value;
+      const plan = planAdjustment(state, input);
+      if (plan === null) throw new Error("Série não existe");
+
+      const clock = session.clock();
+      const existing = state.recurrenceAdjustments[plan.adjustmentId];
+      // Mesma competência é a mesma linha (id determinístico), inclusive uma
+      // apagada: refazer o reajuste de janeiro é o mesmo fato, e criar outra
+      // linha com o mesmo id derrubaria o lote.
+      const adjustment: RecurrenceAdjustment =
+        existing === undefined
+          ? buildRow<RecurrenceAdjustment>(
+              clock,
+              {
+                recurrenceId: input.recurrenceId,
+                fromPeriod: input.fromPeriod,
+                amountMinor: input.amountMinor,
+              },
+              plan.adjustmentId,
+            )
+          : {
+              ...existing,
+              amountMinor: input.amountMinor,
+              deletedAt: null,
+              updatedAt: clock.stamp().hlc,
+              dirty: 1,
+            };
+      const transactions: Transaction[] = plan.updates.map(({ transaction, amountMinor }) => ({
+        ...transaction,
+        amountMinor,
+        updatedAt: clock.stamp().hlc,
+        dirty: 1,
+      }));
+
+      // Um lote só: reajuste e ocorrências entram juntos ou nada entra. Em duas
+      // gravações, uma falha no meio deixaria o extrato com o valor novo e a
+      // série com o velho, sem nada na tela que contasse a diferença.
+      await session.putRows({ recurrenceAdjustments: [adjustment], transactions });
     } catch (cause) {
       session.error.value = describeError(cause);
       throw cause;
@@ -72,5 +127,7 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
 
     editSeries: (id, draft) => session.mutate("recurrences", (repo) => repo.update(id, draft)),
     removeSeries: (id) => session.mutate("recurrences", (repo) => repo.remove(id)),
+    adjustSeries,
+    removeAdjustment: (id) => session.mutate("recurrenceAdjustments", (repo) => repo.remove(id)),
   };
 }

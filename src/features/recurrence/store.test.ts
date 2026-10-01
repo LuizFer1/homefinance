@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
+import { stableEntityId } from "../../domain/ids/stable-id";
 import { isAlive } from "../../domain/model/base";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
 import type { TransactionDraft } from "../../domain/model/transaction";
+import { adjustmentId } from "../../domain/recurrence/adjustments";
+import { occurrenceKey } from "../../domain/recurrence/schedule";
 import { createSession, type Session } from "../session/session";
 import { createRecurrenceStore, type RecurrenceStore } from "./store";
 
@@ -74,6 +77,17 @@ function mensalDraft(): RecurrenceDraft {
     endOn: MENSAL.endOn,
     active: true,
   };
+}
+
+function onlySeries(): Recurrence {
+  const [series] = Object.values(session.state.value.recurrences);
+  if (series === undefined) throw new Error("nenhuma série no estado");
+  return series;
+}
+
+function amountOf(seriesId: string, period: string): number | undefined {
+  return session.state.value.transactions[stableEntityId(occurrenceKey(seriesId, period))]
+    ?.amountMinor;
 }
 
 beforeEach(async () => {
@@ -200,5 +214,86 @@ describe("createRecurrenceStore", () => {
 
     expect((await db.transactions.get(junho.id))?.deletedAt).not.toBeNull();
     expect(await db.transactions.count()).toBe(3);
+  });
+});
+
+describe("adjustSeries", () => {
+  it("reajuste futuro grava o reajuste, não toca o extrato e vale na materialização", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+
+    await store.adjustSeries({
+      recurrenceId: series.id,
+      fromPeriod: "2026-09",
+      amountMinor: 550_000,
+    });
+
+    const id = adjustmentId(series.id, "2026-09");
+    expect(session.state.value.recurrenceAdjustments[id]).toMatchObject({ amountMinor: 550_000 });
+    expect(await db.recurrenceAdjustments.get(id)).toMatchObject({ amountMinor: 550_000 });
+    expect(alive().every((t) => t.amountMinor === 500_000)).toBe(true);
+
+    await store.materializeDue("2026-09-10");
+    expect(amountOf(series.id, "2026-09")).toBe(550_000);
+  });
+
+  it("retroativo atualiza as lançadas e mantém a editada à mão", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+    const agosto = stableEntityId(occurrenceKey(series.id, "2026-08"));
+    await session.mutate("transactions", (repo) => repo.update(agosto, { amountMinor: 520_000 }));
+
+    await store.adjustSeries({
+      recurrenceId: series.id,
+      fromPeriod: "2026-07",
+      amountMinor: 550_000,
+    });
+
+    expect(amountOf(series.id, "2026-06")).toBe(500_000);
+    expect(amountOf(series.id, "2026-07")).toBe(550_000);
+    expect(amountOf(series.id, "2026-08")).toBe(520_000);
+    const julho = await db.transactions.get(stableEntityId(occurrenceKey(series.id, "2026-07")));
+    expect(julho).toMatchObject({ amountMinor: 550_000, dirty: 1 });
+  });
+
+  it("falha na gravação não deixa reajuste nem ocorrência alterada", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+    vi.spyOn(db.recurrenceAdjustments, "bulkPut").mockRejectedValueOnce(
+      new Error("quota exceeded"),
+    );
+
+    await expect(
+      store.adjustSeries({ recurrenceId: series.id, fromPeriod: "2026-07", amountMinor: 550_000 }),
+    ).rejects.toThrow("quota exceeded");
+
+    expect(session.error.value).toBe("quota exceeded");
+    expect(amountOf(series.id, "2026-07")).toBe(500_000);
+    const julho = await db.transactions.get(stableEntityId(occurrenceKey(series.id, "2026-07")));
+    expect(julho?.amountMinor).toBe(500_000);
+    expect(await db.recurrenceAdjustments.count()).toBe(0);
+  });
+
+  it("série inexistente rejeita e preenche error", async () => {
+    await expect(
+      store.adjustSeries({ recurrenceId: "NADA", fromPeriod: "2026-07", amountMinor: 1 }),
+    ).rejects.toThrow("Série não existe");
+    expect(session.error.value).toBe("Série não existe");
+  });
+
+  it("removeAdjustment apaga o reajuste e a série volta ao valor anterior", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+    await store.adjustSeries({
+      recurrenceId: series.id,
+      fromPeriod: "2026-09",
+      amountMinor: 550_000,
+    });
+
+    const removed = await store.removeAdjustment(adjustmentId(series.id, "2026-09"));
+
+    expect(removed.deletedAt).not.toBeNull();
+    await store.materializeDue("2026-09-10");
+    expect(amountOf(series.id, "2026-09")).toBe(500_000);
   });
 });
