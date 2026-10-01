@@ -174,6 +174,37 @@ describe("planAdjustment", () => {
     ]);
   });
 
+  it("ocorrência que já tem o valor novo não aparece como mantida", () => {
+    const plan = planAdjustment(estado([ocorrencia("2026-07"), ocorrencia("2026-08", 550_000)]), {
+      recurrenceId: SALARIO.id,
+      fromPeriod: "2026-07",
+      amountMinor: 550_000,
+    });
+
+    expect(plan?.updates.map((u) => u.transaction.occurredOn)).toEqual(["2026-07-05"]);
+    expect(plan?.kept).toEqual([]);
+  });
+
+  it("atualizadas e mantidas saem em ordem de data", () => {
+    const plan = planAdjustment(
+      estado([
+        ocorrencia("2026-08"),
+        ocorrencia("2026-06"),
+        ocorrencia("2026-10", 530_000),
+        ocorrencia("2026-07"),
+        ocorrencia("2026-09", 520_000),
+      ]),
+      { recurrenceId: SALARIO.id, fromPeriod: "2026-06", amountMinor: 550_000 },
+    );
+
+    expect(plan?.updates.map((u) => u.transaction.occurredOn)).toEqual([
+      "2026-06-05",
+      "2026-07-05",
+      "2026-08-05",
+    ]);
+    expect(plan?.kept.map((t) => t.occurredOn)).toEqual(["2026-09-05", "2026-10-05"]);
+  });
+
   it("a base é o valor vigente antes da competência, já reajustado", () => {
     const plan = planAdjustment(estado(LANCADAS, [ajuste("2026-07", 550_000)]), {
       recurrenceId: SALARIO.id,

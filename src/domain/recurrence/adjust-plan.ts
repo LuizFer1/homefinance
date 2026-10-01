@@ -83,6 +83,9 @@ export function planAdjustment(state: AppState, input: AdjustmentInput): Adjustm
     const expected = amountFor(series, current, period);
     const next = amountFor(series, after, period);
     if (next === expected) continue;
+    // Já tem o valor novo: não há o que atualizar nem o que avisar como
+    // mantido; contá-la como editada faria a sheet anunciar uma exceção falsa.
+    if (transaction.amountMinor === next) continue;
 
     if (transaction.amountMinor === expected) updates.push({ transaction, amountMinor: next });
     else kept.push(transaction);
