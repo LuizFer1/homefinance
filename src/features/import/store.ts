@@ -1,4 +1,5 @@
 import { buildRow } from "../../data/repository";
+import { confirmedImportKeys } from "../../domain/import/link";
 import type { ImportPlan } from "../../domain/import/plan";
 import type { Recurrence } from "../../domain/model/recurrence";
 import type { Transaction } from "../../domain/model/transaction";
@@ -9,6 +10,8 @@ export interface ImportResult {
   /** Linhas novas, avulsas mais parcelas materializadas agora. */
   transactions: number;
   series: number;
+  /** Estimativas de série variável confirmadas por uma linha do PDF. */
+  confirmed: number;
 }
 
 export interface ImportStore {
@@ -31,6 +34,7 @@ export function createImportStore(session: Session, recurrence: RecurrenceStore)
     async commit(plan, today) {
       let transactions = 0;
       let series = 0;
+      let confirmed = 0;
       try {
         const clock = session.clock();
         const userId = session.localUserId.value;
@@ -45,6 +49,42 @@ export function createImportStore(session: Session, recurrence: RecurrenceStore)
         if (plan.series.length > 0) {
           const rows = plan.series.map(({ id, draft }) => buildRow<Recurrence>(clock, draft, id));
           series = (await session.insertMissing("recurrences", rows)).length;
+        }
+
+        // Linha que já confirmou alguma ocorrência fica de fora, como o id
+        // que já existe fica de fora do `insertMissing`: reimportar não pode
+        // regravar a conta de luz com o valor do PDF por cima de uma edição.
+        const done = confirmedImportKeys(session.state.value);
+        const pending = plan.confirmations.filter((item) => !done.has(item.importKey));
+        if (pending.length > 0) {
+          const state = session.state.value;
+          const rows: Transaction[] = [];
+          const versions: Record<string, string> = {};
+          for (const item of pending) {
+            const current = state.transactions[item.transactionId];
+            if (current === undefined || current.deletedAt !== null) {
+              throw new Error("A estimativa vinculada não existe mais. Revise de novo.");
+            }
+            // Confirmada à mão depois da revisão abrir: o valor que a pessoa
+            // digitou vale mais que o do PDF.
+            if (current.estimated !== true) continue;
+            rows.push({
+              ...current,
+              amountMinor: item.amountMinor,
+              occurredOn: item.occurredOn,
+              estimated: false,
+              importKey: item.importKey,
+              updatedAt: clock.stamp().hlc,
+              dirty: 1,
+            });
+            versions[current.id] = current.updatedAt;
+          }
+          // Regrava linhas inteiras planejadas do `state` em memória: se outra
+          // aba ou o sync mexeu numa delas, recusa o lote em vez de desfazer.
+          if (rows.length > 0) {
+            await session.putRowsIfCurrent({ transactions: rows }, { transactions: versions });
+            confirmed = rows.length;
+          }
         }
       } catch (cause) {
         session.error.value = describeError(cause);
@@ -61,7 +101,7 @@ export function createImportStore(session: Session, recurrence: RecurrenceStore)
         transactions += Object.keys(session.state.value.transactions).length - before;
       }
 
-      return { transactions, series };
+      return { transactions, series, confirmed };
     },
   };
 }

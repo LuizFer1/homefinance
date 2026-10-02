@@ -1,4 +1,5 @@
 import { buildRow } from "../../data/repository";
+import { floorHlc } from "../../domain/clock/hlc";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
 import type { RecurrenceAdjustment } from "../../domain/model/recurrence-adjustment";
@@ -20,6 +21,12 @@ export interface RecurrenceStore {
   materializeDue: (today: string) => Promise<void>;
   editSeries: (id: Ulid, draft: RecurrenceDraft) => Promise<Recurrence>;
   removeSeries: (id: Ulid) => Promise<Recurrence>;
+  /**
+   * Série fixa passa a ter valor variável. Nada já lançado é reescrito: as
+   * ocorrências existentes não têm `estimated` e por isso contam como
+   * confirmadas na média da próxima.
+   */
+  makeVariable: (id: Ulid) => Promise<Recurrence>;
   /**
    * Reajusta a série a partir de uma competência e atualiza as ocorrências já
    * lançadas que ainda seguem a série (ver `planAdjustment`).
@@ -46,9 +53,15 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
       // é quem grava, porque ele nunca sobrescreve uma linha que já existe no
       // banco. Sem isso, a ocorrência que o usuário apagou nesta ou noutra
       // aba voltaria viva no próximo boot.
-      const rows = plans.map((plan) =>
-        buildRow<Transaction>(clock, { ...plan.draft, userId }, plan.entityId),
-      );
+      const rows = plans.map((plan) => {
+        const row = buildRow<Transaction>(clock, { ...plan.draft, userId }, plan.entityId);
+        // Estimativa nasce "velha" (ver `floorHlc`): se outro aparelho já
+        // confirmou esta competência e o sync ainda não trouxe, a confirmação
+        // tem que vencer esta linha no LWW, e não o contrário.
+        return plan.anchored
+          ? { ...row, updatedAt: floorHlc(plan.draft.occurredOn, clock.deviceId) }
+          : row;
+      });
       await session.insertMissing("transactions", rows);
     } catch (cause) {
       session.error.value = describeError(cause);
@@ -70,6 +83,11 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         throw new Error("Valor de reajuste inválido");
       }
       const state = session.state.value;
+      // A estimativa da variável é a média das confirmadas: um reajuste seria
+      // ignorado por ela e ficaria na tabela como um fato que não vale.
+      if (state.recurrences[input.recurrenceId]?.variable === true) {
+        throw new Error("Série de valor variável não tem reajuste");
+      }
       const plan = planAdjustment(state, input);
       if (plan === null) throw new Error("Série não existe");
 
@@ -143,6 +161,8 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         startOn: draft.occurredOn,
         endOn: rule.endOn,
         active: true,
+        // Só na variável: série fixa continua sem a coluna, como antes dela.
+        ...(rule.variable ? { variable: true } : {}),
       };
       // Se a série não gravar, `mutate` rejeita e a materialização nem começa.
       await session.mutate("recurrences", (repo) => repo.create(series));
@@ -153,6 +173,8 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
 
     editSeries: (id, draft) => session.mutate("recurrences", (repo) => repo.update(id, draft)),
     removeSeries: (id) => session.mutate("recurrences", (repo) => repo.remove(id)),
+    makeVariable: (id) =>
+      session.mutate("recurrences", (repo) => repo.update(id, { variable: true })),
     adjustSeries,
     removeAdjustment: (id) => session.mutate("recurrenceAdjustments", (repo) => repo.remove(id)),
   };

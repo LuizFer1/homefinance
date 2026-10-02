@@ -57,3 +57,8 @@ export function occurrenceOn(
 export function occurrenceKey(recurrenceId: string, period: string): string {
   return `${recurrenceId}:${period}`;
 }
+
+/** 'YYYY-MM' da ocorrência, tirado da chave `${recurrenceId}:${YYYY-MM}`. */
+export function periodOfKey(key: string): string {
+  return key.slice(key.lastIndexOf(":") + 1);
+}

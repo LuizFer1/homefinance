@@ -41,7 +41,7 @@ describe("createImportStore", () => {
       "2026-10-01",
     );
 
-    expect(result).toEqual({ transactions: 4, series: 1 });
+    expect(result).toEqual({ transactions: 4, series: 1, confirmed: 0 });
     expect(
       alive()
         .map((t) => `${t.occurredOn} ${t.description}`)
@@ -60,7 +60,7 @@ describe("createImportStore", () => {
     await store.commit(plan, "2026-10-01");
     const again = await store.commit(plan, "2026-10-01");
 
-    expect(again).toEqual({ transactions: 0, series: 0 });
+    expect(again).toEqual({ transactions: 0, series: 0, confirmed: 0 });
     expect(await db.transactions.count()).toBe(4);
     expect(await db.recurrences.count()).toBe(1);
   });
@@ -82,5 +82,86 @@ describe("createImportStore", () => {
 
     await store.commit(plan, "2026-10-01");
     expect(alive()).toHaveLength(0);
+  });
+
+  it("linha vinculada confirma a estimativa, e reimportar não duplica nem regrava", async () => {
+    const estimada = await session.mutate("transactions", (repo) =>
+      repo.create({
+        kind: "expense",
+        description: "Conta de luz",
+        amountMinor: 20_000,
+        currency: "BRL",
+        categoryId: "CASA",
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn: "2026-09-10",
+        userId: null,
+        recurrenceId: "SERIE",
+        occurrenceKey: "SERIE:2026-09",
+        estimated: true,
+      }),
+    );
+    const ctx: ImportContext = { paymentMethodId: "CARTAO-1", referenceMonth: "2026-10" };
+    const entries = parseStatement(["12/09 ENEL 320,00"], "card", "2026-10").map((e) => ({
+      ...e,
+      categoryId: "CASA",
+      linkTo: estimada.id,
+    }));
+    const plan = planImport(entries, ctx);
+
+    expect(await store.commit(plan, "2026-10-01")).toEqual({
+      transactions: 0,
+      series: 0,
+      confirmed: 1,
+    });
+    const depois = await db.transactions.get(estimada.id);
+    expect(depois).toMatchObject({
+      amountMinor: 32_000,
+      occurredOn: "2026-09-12",
+      estimated: false,
+      importKey: plan.confirmations[0]?.importKey,
+      description: "Conta de luz",
+    });
+
+    await session.mutate("transactions", (repo) =>
+      repo.update(estimada.id, { amountMinor: 31_000 }),
+    );
+    expect(await store.commit(plan, "2026-10-01")).toEqual({
+      transactions: 0,
+      series: 0,
+      confirmed: 0,
+    });
+    expect(await db.transactions.count()).toBe(1);
+    expect((await db.transactions.get(estimada.id))?.amountMinor).toBe(31_000);
+  });
+
+  it("estimativa já confirmada à mão não é sobrescrita pelo PDF", async () => {
+    const confirmada = await session.mutate("transactions", (repo) =>
+      repo.create({
+        kind: "expense",
+        description: "Conta de luz",
+        amountMinor: 31_000,
+        currency: "BRL",
+        categoryId: "CASA",
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn: "2026-09-10",
+        userId: null,
+        recurrenceId: "SERIE",
+        occurrenceKey: "SERIE:2026-09",
+        estimated: false,
+      }),
+    );
+    const ctx: ImportContext = { paymentMethodId: "CARTAO-1", referenceMonth: "2026-10" };
+    const entries = parseStatement(["12/09 ENEL 320,00"], "card", "2026-10").map((e) => ({
+      ...e,
+      categoryId: "CASA",
+      linkTo: confirmada.id,
+    }));
+
+    const result = await store.commit(planImport(entries, ctx), "2026-10-01");
+
+    expect(result.confirmed).toBe(0);
+    expect((await db.transactions.get(confirmada.id))?.amountMinor).toBe(31_000);
   });
 });

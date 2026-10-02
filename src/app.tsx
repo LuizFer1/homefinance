@@ -22,6 +22,7 @@ import { OnboardingWizard } from "./features/onboarding/wizard";
 import { ProfilePage } from "./features/profile/profile-page";
 import type { ProfileStore } from "./features/profile/store";
 import { AdjustSheet } from "./features/recurrence/adjust-sheet";
+import { ConfirmSheet } from "./features/recurrence/confirm-sheet";
 import type { RecurrenceStore } from "./features/recurrence/store";
 import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
@@ -128,6 +129,8 @@ export function App({
   // assistente, que fecha antes: dois <dialog> modais empilhados disputariam
   // o foco e o Esc.
   const [adjusting, setAdjusting] = useState<Ulid | null>(null);
+  // Estimativa em confirmação, ou null. Aberta pelo bloco "A confirmar".
+  const [confirming, setConfirming] = useState<Transaction | null>(null);
   // Cor do brilho do topo enquanto o Perfil está aberto: acompanha a cor que a
   // pessoa está escolhendo, antes mesmo de salvar.
   const [glow, setGlow] = useState<string | null>(null);
@@ -259,6 +262,10 @@ export function App({
 
   const editingAuthor = editing === null ? null : findUser(state, editing.userId);
   const editingSeriesId = editing?.recurrenceId ?? null;
+  // Variável não tem reajuste (a estimativa é a média) nem volta a ser fixa:
+  // as duas ações só existem na ocorrência de série fixa.
+  const editingSeriesFixed =
+    editingSeriesId !== null && state.recurrences[editingSeriesId]?.variable !== true;
 
   return (
     <div class={SHELL} style={glow === null ? undefined : { "--hf-glow": cssVarForToken(glow) }}>
@@ -303,6 +310,7 @@ export function App({
             onCompose={setComposing}
             onImport={() => setImporting(true)}
             onEdit={setEditing}
+            onConfirm={setConfirming}
             onOpenProfile={() => openSection("profile")}
           />
         )}
@@ -435,11 +443,19 @@ export function App({
               openSection("category");
             }}
             onAdjustSeries={
-              editingSeriesId === null
+              editingSeriesId === null || !editingSeriesFixed
                 ? undefined
                 : () => {
                     closeModal();
                     setAdjusting(editingSeriesId);
+                  }
+            }
+            onMakeVariable={
+              editingSeriesId === null || !editingSeriesFixed
+                ? undefined
+                : () => {
+                    closeModal();
+                    void recurrence.makeVariable(editingSeriesId).catch(ignoreHandled);
                   }
             }
           />
@@ -466,6 +482,22 @@ export function App({
               void recurrence.removeAdjustment(id).catch(ignoreHandled);
             }}
             onClose={() => setAdjusting(null)}
+          />
+        )}
+      </Modal>
+
+      <Modal open={confirming !== null} title="Confirmar valor" onClose={() => setConfirming(null)}>
+        {confirming !== null && (
+          <ConfirmSheet
+            key={confirming.id}
+            record={confirming}
+            today={today}
+            onConfirm={(actual) => {
+              const id = confirming.id;
+              setConfirming(null);
+              void store.confirm(id, actual).catch(ignoreHandled);
+            }}
+            onClose={() => setConfirming(null)}
           />
         )}
       </Modal>

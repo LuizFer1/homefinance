@@ -5,6 +5,7 @@ import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
 import type { RecurrenceFrequency, ScheduleType } from "../model/recurrence";
 import { amountFor } from "./adjustments";
+import { estimateFor } from "./estimate";
 import { eachPeriod, FREQUENCY_MONTHS, occurrenceKey, occurrenceOn } from "./schedule";
 
 export interface UpcomingOccurrence {
@@ -15,6 +16,8 @@ export interface UpcomingOccurrence {
   description: string;
   amountMinor: number;
   categoryId: Ulid | null;
+  /** Série variável: `amountMinor` é a estimativa de hoje, não um valor certo. */
+  estimated: boolean;
 }
 
 function isFrequency(value: string): value is RecurrenceFrequency {
@@ -42,6 +45,7 @@ export function upcomingRecurrences(
   const limit = shiftDay(today, days);
   const found: UpcomingOccurrence[] = [];
   const adjustments = Object.values(state.recurrenceAdjustments);
+  const transactions = Object.values(state.transactions);
 
   for (const series of Object.values(state.recurrences)) {
     if (!isAlive(series) || !series.active) continue;
@@ -56,13 +60,17 @@ export function upcomingRecurrences(
         continue;
       }
 
+      const variable = series.variable === true;
       found.push({
         recurrenceId: series.id,
         date,
         kind: series.kind,
         description: series.description,
-        amountMinor: amountFor(series, adjustments, period),
+        amountMinor: variable
+          ? estimateFor(series, transactions, period)
+          : amountFor(series, adjustments, period),
         categoryId: series.categoryId,
+        estimated: variable,
       });
     }
   }

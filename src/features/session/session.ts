@@ -45,7 +45,7 @@ export type ExpectedVersions = { [K in TableName]?: Record<Ulid, string | null> 
  */
 export class StaleRowsError extends Error {
   constructor() {
-    super("Os dados mudaram em outra aba. Feche e abra o reajuste de novo.");
+    super("Os dados mudaram em outra aba. Feche e abra de novo.");
     this.name = "StaleRowsError";
   }
 }

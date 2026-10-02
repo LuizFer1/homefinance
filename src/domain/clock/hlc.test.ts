@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareHlc, createHlcClock, formatHlc, parseHlc } from "./hlc";
+import { compareHlc, createHlcClock, floorHlc, formatHlc, parseHlc } from "./hlc";
 
 const DEVICE_A = "01J9F3K2M7QX8YB4TVWZ0DCEHR";
 const DEVICE_B = "01J9F3K2M7QX8YB4TVWZ0DCEHS";
@@ -128,5 +128,26 @@ describe("createHlcClock", () => {
     expect(() => clock.tick(-1)).toThrow(/inteiro e não-negativo/);
     expect(() => clock.tick(1.5)).toThrow(/inteiro e não-negativo/);
     expect(() => clock.tick(Number.NaN)).toThrow(/inteiro e não-negativo/);
+  });
+});
+
+describe("floorHlc", () => {
+  it("é a meia-noite UTC do dia anterior, contador zero", () => {
+    expect(floorHlc("2026-10-10", DEVICE_A)).toBe(
+      formatHlc({ millis: Date.UTC(2026, 9, 9), counter: 0, deviceId: DEVICE_A }),
+    );
+  });
+
+  it("perde para qualquer escrita feita a partir do próprio dia, em qualquer fuso", () => {
+    const floor = floorHlc("2026-10-10", DEVICE_B);
+    // 00:00 do dia 10 em UTC+14 é 10:00 do dia 9 em UTC.
+    const earliest = createHlcClock(DEVICE_A).tick(Date.UTC(2026, 9, 9, 10));
+
+    expect(parseHlc(floor)).not.toBeNull();
+    expect(compareHlc(floor, earliest)).toBeLessThan(0);
+  });
+
+  it("rejeita data fora do formato", () => {
+    expect(() => floorHlc("10/10/2026", DEVICE_A)).toThrow(/YYYY-MM-DD/);
   });
 });

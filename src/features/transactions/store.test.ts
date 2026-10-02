@@ -122,4 +122,35 @@ describe("createTransactionsStore", () => {
     expect(await db.transactions.get(created.id)).toEqual(created);
     expect(session.error.value).toBe("quota exceeded");
   });
+
+  it("confirm grava valor e data reais e tira a marca de estimada", async () => {
+    const estimada = await store.add({ ...MERCADO, estimated: true });
+
+    const row = await store.confirm(estimada.id, { amountMinor: 32_000, occurredOn: "2026-09-26" });
+
+    expect(row).toMatchObject({ amountMinor: 32_000, occurredOn: "2026-09-26", estimated: false });
+    expect((await db.transactions.get(estimada.id))?.estimated).toBe(false);
+  });
+
+  it("confirm com o mesmo valor ainda confirma", async () => {
+    const estimada = await store.add({ ...MERCADO, estimated: true });
+
+    const row = await store.confirm(estimada.id, {
+      amountMinor: MERCADO.amountMinor,
+      occurredOn: MERCADO.occurredOn,
+    });
+
+    expect(row.estimated).toBe(false);
+    expect(row.updatedAt).not.toBe(estimada.updatedAt);
+  });
+
+  it("confirm recusa valor inválido e não grava", async () => {
+    const estimada = await store.add({ ...MERCADO, estimated: true });
+
+    await expect(
+      store.confirm(estimada.id, { amountMinor: 0, occurredOn: MERCADO.occurredOn }),
+    ).rejects.toThrow(/inválido/);
+    expect(session.error.value).toMatch(/inválido/);
+    expect((await db.transactions.get(estimada.id))?.estimated).toBe(true);
+  });
 });
