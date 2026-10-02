@@ -321,6 +321,15 @@ describe("runSync — pull", () => {
     expect((await db.categories.get(category(1).id))?.dirty).toBe(1);
   });
 
+  it("entrada de rows que não é objeto é erro de protocolo, não TypeError", async () => {
+    deps.transport = {
+      ...deps.transport,
+      pull: async () => ({ epoch: hub.epoch, rows: [null as never], cursor: 1, hasMore: false }),
+    };
+    await expect(runSync(deps)).rejects.toMatchObject({ name: "SyncError", kind: "protocol" });
+    expect((await readHubLink(db))?.cursor).toBe(0);
+  });
+
   it("cursor que não avança com hasMore é erro de protocolo, não laço", async () => {
     deps.transport = {
       ...deps.transport,

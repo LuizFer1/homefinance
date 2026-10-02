@@ -70,7 +70,7 @@ export type RemoteRowCheck =
 
 const INVALID: RemoteRowCheck = { ok: false, reason: "invalid_row" };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

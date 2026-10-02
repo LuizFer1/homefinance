@@ -12,7 +12,7 @@ import { compareHlc } from "../domain/clock/hlc";
 import type { Ulid } from "../domain/ids/ulid";
 import { TABLE_NAMES, type TableName } from "../domain/model/app-state";
 import type { BaseRow } from "../domain/model/base";
-import { checkRemoteRow, PULL_LIMIT, PUSH_BATCH, type PushEntry } from "./protocol";
+import { checkRemoteRow, isRecord, PULL_LIMIT, PUSH_BATCH, type PushEntry } from "./protocol";
 import { type HubTransport, SyncError } from "./transport";
 
 export interface SyncEngineDeps {
@@ -177,7 +177,10 @@ async function pullPages(deps: SyncEngineDeps, link: HubLink, summary: SyncSumma
     });
 
     const valid: { table: TableName; row: BaseRow }[] = [];
-    for (const entry of response.rows) {
+    for (const entry of response.rows as unknown[]) {
+      // O guard da resposta só olha se `rows` é lista; o envelope de cada
+      // entrada também vem da rede, e `null.table` viraria TypeError cru.
+      if (!isRecord(entry)) throw new SyncError("protocol", "Resposta inesperada do hub.");
       const check = checkRemoteRow(entry.table, entry.row);
       if (!check.ok) {
         if (check.reason === "unknown_table") {
