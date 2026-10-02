@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
+import { floorHlc } from "../../domain/clock/hlc";
 import { stableEntityId } from "../../domain/ids/stable-id";
 import { isAlive } from "../../domain/model/base";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
@@ -371,5 +372,73 @@ describe("adjustSeries", () => {
     expect(removed.deletedAt).not.toBeNull();
     await store.materializeDue("2026-09-10");
     expect(amountOf(series.id, "2026-09")).toBe(500_000);
+  });
+});
+
+describe("série variável", () => {
+  const VARIAVEL: RecurrenceRule = { ...MENSAL, variable: true };
+  const LUZ: TransactionDraft = {
+    ...DRAFT,
+    kind: "expense",
+    description: "Luz",
+    amountMinor: 20_000,
+  };
+
+  it("createSeries grava a série variável e as ocorrências estimadas, ancoradas", async () => {
+    await store.createSeries(LUZ, VARIAVEL, "2026-07-10");
+
+    const series = onlySeries();
+    expect(series.variable).toBe(true);
+    const junho =
+      session.state.value.transactions[stableEntityId(occurrenceKey(series.id, "2026-06"))];
+    expect(junho).toMatchObject({ amountMinor: 20_000, estimated: true });
+    expect(junho?.updatedAt).toBe(floorHlc("2026-06-05", session.clock().deviceId));
+    expect((await db.transactions.get(junho?.id ?? ""))?.updatedAt).toBe(junho?.updatedAt);
+  });
+
+  it("a próxima ocorrência nasce com a média das confirmadas", async () => {
+    await store.createSeries(LUZ, VARIAVEL, "2026-06-10");
+    const series = onlySeries();
+    const junho = stableEntityId(occurrenceKey(series.id, "2026-06"));
+    await session.mutate("transactions", (repo) =>
+      repo.update(junho, { amountMinor: 32_000, estimated: false }),
+    );
+
+    await store.materializeDue("2026-07-10");
+
+    expect(amountOf(series.id, "2026-07")).toBe(32_000);
+  });
+
+  it("série fixa continua sem a coluna `variable` e sem âncora", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-06-10");
+
+    expect(onlySeries()).not.toHaveProperty("variable");
+    expect(alive()[0]).not.toHaveProperty("estimated");
+  });
+
+  it("makeVariable converte sem reescrever as ocorrências lançadas", async () => {
+    await store.createSeries({ ...LUZ, amountMinor: 18_000 }, MENSAL, "2026-07-10");
+    const series = onlySeries();
+    const antes = alive().map((t) => t.updatedAt);
+
+    await store.makeVariable(series.id);
+    await store.materializeDue("2026-08-10");
+
+    expect(session.state.value.recurrences[series.id]?.variable).toBe(true);
+    expect(amountOf(series.id, "2026-08")).toBe(18_000);
+    expect(
+      alive()
+        .filter((t) => t.occurredOn < "2026-08-01")
+        .map((t) => t.updatedAt),
+    ).toEqual(antes);
+  });
+
+  it("adjustSeries recusa série variável", async () => {
+    await store.createSeries(LUZ, VARIAVEL, "2026-06-10");
+
+    await expect(
+      store.adjustSeries({ recurrenceId: onlySeries().id, fromPeriod: "2026-07", amountMinor: 1 }),
+    ).rejects.toThrow(/variável/);
+    expect(await db.recurrenceAdjustments.count()).toBe(0);
   });
 });
