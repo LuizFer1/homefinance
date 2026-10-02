@@ -103,6 +103,19 @@ describe("planImport", () => {
     });
   });
 
+  it("linha vinculada vira confirmação da estimativa, não transação nova", () => {
+    const [entry] = reviewed(["12/09 ENEL 320,00"], "2026-10");
+    if (entry === undefined) throw new Error("sem linha");
+    const [id] = identify([entry], ctx);
+
+    const plan = planImport([{ ...entry, linkTo: "OCORRENCIA" }], ctx);
+
+    expect(plan.transactions).toEqual([]);
+    expect(plan.confirmations).toEqual([
+      { transactionId: "OCORRENCIA", amountMinor: 32_000, occurredOn: "2026-09-12", importKey: id },
+    ]);
+  });
+
   it("parcela vira série mensal da 1ª à última parcela", () => {
     const plan = planImport(reviewed(["15/07 LOJA 03/10 150,00"], "2026-10"), ctx);
     expect(plan.transactions).toEqual([]);
@@ -123,6 +136,6 @@ describe("planImport", () => {
       ...e,
       selected: false,
     }));
-    expect(planImport(entries, ctx)).toEqual({ transactions: [], series: [] });
+    expect(planImport(entries, ctx)).toEqual({ transactions: [], series: [], confirmations: [] });
   });
 });

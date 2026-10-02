@@ -1,6 +1,7 @@
 import { useMemo, useState } from "preact/hooks";
 import type { Ulid } from "../../domain/ids/ulid";
 import { groupLines } from "../../domain/import/lines";
+import { confirmedImportKeys, suggestLinks } from "../../domain/import/link";
 import { type DocumentKind, detectReferenceMonth, parseStatement } from "../../domain/import/parse";
 import {
   type ImportContext,
@@ -10,8 +11,11 @@ import {
 } from "../../domain/import/plan";
 import { buildCategoryIndex, suggestCategory } from "../../domain/import/suggest-category";
 import type { AppState } from "../../domain/model/app-state";
+import { formatBRL } from "../../domain/money/money";
+import { pendingEstimates } from "../../domain/projections/estimates";
 import { listCategoriesFor, listPaymentMethods } from "../../domain/projections/selectors";
 import { Icon } from "../icons/icon";
+import { periodLabel } from "../recurrence/adjust-sheet";
 import { describeError } from "../session/session";
 import { Button, SECONDARY } from "../ui/button";
 import { RadioChip } from "../ui/chip";
@@ -82,23 +86,41 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
   const [saving, setSaving] = useState(false);
 
   const categoryIndex = useMemo(() => buildCategoryIndex(state), [state]);
+  const estimates = pendingEstimates(state);
   const needsCard = doc === "card" && methodId === null;
 
   function buildRows(source: string[], month: string): Row[] {
     const entries = parseStatement(source, doc, month);
     const ctx: ImportContext = { paymentMethodId: methodId, referenceMonth: month };
     const ids = identify(entries, ctx);
-    return entries.map((entry, index) => {
+    // Uma linha que confirmou uma estimativa não criou transação com o próprio
+    // id: sem olhar `importKey`, ela voltaria aqui como nova.
+    const confirmed = confirmedImportKeys(state);
+    const built = entries.map((entry, index) => {
       const id = ids[index] ?? "";
-      const existing = state.transactions[id] !== undefined || state.recurrences[id] !== undefined;
+      const existing =
+        state.transactions[id] !== undefined ||
+        state.recurrences[id] !== undefined ||
+        confirmed.has(id);
       return {
         ...entry,
         categoryId: suggestCategory(categoryIndex, entry.rawDescription, entry.kind),
         selected: entry.selected && !existing,
         note: existing ? "Já importado" : entry.note,
         existing,
+        linkTo: null,
       };
     });
+    const links = suggestLinks(
+      state,
+      built.map((row) => ({
+        date: row.date,
+        kind: row.kind,
+        categoryId: row.categoryId,
+        eligible: row.selected && !row.existing && row.installment === null,
+      })),
+    );
+    return built.map((row, index) => ({ ...row, linkTo: links[index] ?? null }));
   }
 
   function chooseDoc(next: DocumentKind) {
@@ -148,6 +170,16 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
 
   function patch(index: number, changes: Partial<Row>) {
     setRows((current) => current.map((row, i) => (i === index ? { ...row, ...changes } : row)));
+  }
+
+  /** Uma estimativa só pode ser confirmada por uma linha: tira de quem a tinha. */
+  function link(index: number, linkTo: Ulid | null) {
+    setRows((current) =>
+      current.map((row, i) => {
+        if (i === index) return { ...row, linkTo };
+        return linkTo !== null && row.linkTo === linkTo ? { ...row, linkTo: null } : row;
+      }),
+    );
   }
 
   async function confirm() {
@@ -214,14 +246,22 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
   }
 
   if (phase.step === "done") {
-    const { transactions, series } = phase.result;
+    const { transactions, series, confirmed } = phase.result;
     return (
       <div class="py-6 text-center">
         <p class="text-lg font-medium" role="status">
-          {transactions === 0
+          {transactions === 0 && confirmed === 0
             ? "Nada novo para importar"
-            : `${transactions} ${transactions === 1 ? "lançamento importado" : "lançamentos importados"}`}
+            : transactions === 0
+              ? `${confirmed} ${confirmed === 1 ? "estimativa confirmada" : "estimativas confirmadas"}`
+              : `${transactions} ${transactions === 1 ? "lançamento importado" : "lançamentos importados"}`}
         </p>
+        {transactions > 0 && confirmed > 0 && (
+          <p class={HINT}>
+            {confirmed} {confirmed === 1 ? "estimativa confirmada" : "estimativas confirmadas"} com
+            o valor do PDF.
+          </p>
+        )}
         {series > 0 && (
           <p class={HINT}>
             {series} {series === 1 ? "parcelamento virou série" : "parcelamentos viraram séries"}:
@@ -258,6 +298,8 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
         <ul class="mt-4 divide-y divide-divider" aria-label="Lançamentos encontrados">
           {rows.map((row, index) => {
             const categories = listCategoriesFor(state, row.kind);
+            const linkable = estimates.filter((estimate) => estimate.kind === row.kind);
+            const linked = linkable.find((estimate) => estimate.id === row.linkTo) ?? null;
             const minor = row.kind === "income" ? row.amountMinor : -row.amountMinor;
             return (
               <li
@@ -297,7 +339,8 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
                   <select
                     aria-label={`Categoria de ${row.description}`}
                     value={row.categoryId ?? ""}
-                    disabled={row.existing}
+                    // Vinculada, a linha herda a categoria da série.
+                    disabled={row.existing || row.linkTo != null}
                     onChange={(event) =>
                       patch(index, { categoryId: event.currentTarget.value || null })
                     }
@@ -319,6 +362,37 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
                   )}
                   {row.note !== null && <span class="text-xs text-fg/55">{row.note}</span>}
                 </div>
+                {/*
+                  Só avulsa: parcela vira série própria. A sugestão já vem
+                  marcada quando há uma candidata só; o seletor é o caminho
+                  manual e o jeito de desfazer.
+                */}
+                {row.installment === null && !row.existing && linkable.length > 0 && (
+                  <div class="mt-2 flex flex-wrap items-center gap-2 pl-8">
+                    <select
+                      aria-label={`Estimativa que ${row.description} confirma`}
+                      value={row.linkTo ?? ""}
+                      onChange={(event) => link(index, event.currentTarget.value || null)}
+                      class="h-8 max-w-[15rem] rounded-md border border-divider bg-bg px-2 text-[13px]
+                        text-fg"
+                    >
+                      <option value="">Lançamento novo</option>
+                      {linkable.map((estimate) => (
+                        <option key={estimate.id} value={estimate.id}>
+                          Confirma {estimate.description} ·{" "}
+                          {periodLabel(estimate.occurredOn.slice(0, 7))} · ~
+                          {formatBRL(estimate.amountMinor)}
+                        </option>
+                      ))}
+                    </select>
+                    {linked !== null && (
+                      <span class="inline-flex items-center gap-1 text-xs text-accent-300">
+                        <Icon name="check" size={12} />
+                        confirma {linked.description} · {periodLabel(linked.occurredOn.slice(0, 7))}
+                      </span>
+                    )}
+                  </div>
+                )}
               </li>
             );
           })}
