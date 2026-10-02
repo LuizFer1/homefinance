@@ -628,6 +628,15 @@ describe("as tres telas", () => {
     expect(screen.getByRole("region", { name: "Seu perfil" })).toBeDefined();
   });
 
+  it("a ligação com o hub é lida mesmo se a materialização falhar no boot", async () => {
+    const stores = buildStores(await cadastrado());
+    vi.spyOn(stores.recurrence, "materializeDue").mockRejectedValueOnce(new Error("quota"));
+    const syncInit = vi.spyOn(stores.sync, "init");
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    await waitFor(() => expect(syncInit).toHaveBeenCalledTimes(1));
+  });
+
   it("deep link do hub abre a sub-tela preenchida depois do boot", async () => {
     const stores = buildStores(await cadastrado());
     stores.sync.pendingDeepLink.value = { address: "192.168.0.5:7777", token: "ABCDEF" };

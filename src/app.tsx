@@ -134,10 +134,11 @@ export function App({
     //
     // Depois, a ligação com o hub vem do disco e, se existir, a primeira rodada
     // é automática (com throttle e silenciosa); o `afterPull` da store
-    // materializa de novo o que uma série recebida trouxer.
+    // materializa de novo o que uma série recebida trouxer. A falha da
+    // materialização (já em `session.error`) não pode deixar o hub sem ler.
     void session
       .init()
-      .then(() => recurrence.materializeDue(today))
+      .then(() => recurrence.materializeDue(today).catch(ignoreHandled))
       .then(() => sync.init())
       .then(() => sync.sync({ auto: true }))
       .catch(ignoreHandled);
