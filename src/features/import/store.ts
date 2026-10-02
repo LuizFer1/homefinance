@@ -65,6 +65,9 @@ export function createImportStore(session: Session, recurrence: RecurrenceStore)
             if (current === undefined || current.deletedAt !== null) {
               throw new Error("A estimativa vinculada não existe mais. Revise de novo.");
             }
+            // Confirmada à mão depois da revisão abrir: o valor que a pessoa
+            // digitou vale mais que o do PDF.
+            if (current.estimated !== true) continue;
             rows.push({
               ...current,
               amountMinor: item.amountMinor,
@@ -78,8 +81,10 @@ export function createImportStore(session: Session, recurrence: RecurrenceStore)
           }
           // Regrava linhas inteiras planejadas do `state` em memória: se outra
           // aba ou o sync mexeu numa delas, recusa o lote em vez de desfazer.
-          await session.putRowsIfCurrent({ transactions: rows }, { transactions: versions });
-          confirmed = rows.length;
+          if (rows.length > 0) {
+            await session.putRowsIfCurrent({ transactions: rows }, { transactions: versions });
+            confirmed = rows.length;
+          }
         }
       } catch (cause) {
         session.error.value = describeError(cause);
