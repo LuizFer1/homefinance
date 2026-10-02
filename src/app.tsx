@@ -27,6 +27,8 @@ import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
 import { ignoreHandled, type Session } from "./features/session/session";
 import { SettingsPage, type SettingsSection } from "./features/settings/settings-page";
+import { HubPage } from "./features/sync/hub-page";
+import type { SyncStore } from "./features/sync/store";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
 import type { TransactionsStore } from "./features/transactions/store";
 import { TransactionWizard } from "./features/transactions/transaction-wizard";
@@ -50,6 +52,9 @@ export interface AppProps {
   importer: ImportStore;
   /** Versão nova do app esperando a pessoa aceitar. */
   update: UpdateStore;
+  sync: SyncStore;
+  /** Sugestão para "Nome deste aparelho" ao parear (`guessDeviceName`). */
+  deviceNameGuess: string;
   /** Leitor de PDF sob demanda. Injetado: o `happy-dom` não roda o pdf.js. */
   readPdf: ReadPdf;
   /** Pipeline da foto já ligado ao canvas. Injetado: `happy-dom` não tem um. */
@@ -105,6 +110,8 @@ export function App({
   onboarding,
   importer,
   update,
+  sync,
+  deviceNameGuess,
   readPdf,
   processFile,
   onReset,
@@ -129,11 +136,28 @@ export function App({
     // Materializa depois do init: o boot e o "virar do mês" são o mesmo caminho.
     // Sem isto, o salário de março só existiria se o usuário abrisse a tela de
     // edição da série — o extrato ficaria mentindo por omissão.
+    //
+    // Depois, a ligação com o hub vem do disco e, se existir, a primeira rodada
+    // é automática (com throttle e silenciosa); o `afterPull` da store
+    // materializa de novo o que uma série recebida trouxer. A falha da
+    // materialização (já em `session.error`) não pode deixar o hub sem ler.
     void session
       .init()
-      .then(() => recurrence.materializeDue(today))
+      .then(() => recurrence.materializeDue(today).catch(ignoreHandled))
+      .then(() => sync.init())
+      .then(() => sync.sync({ auto: true }))
       .catch(ignoreHandled);
-  }, [session, recurrence, today]);
+  }, [session, recurrence, sync, today]);
+
+  // Deep link do QR: espera a sessão e o primeiro uso, porque o pareamento
+  // manda o perfil local e o wizard ainda não o criou.
+  const deepLink = sync.pendingDeepLink.value;
+  const canPair = session.status.value === "ready" && !onboarding.needsOnboarding.value;
+  useEffect(() => {
+    if (deepLink === null || !canPair) return;
+    setScreen("config");
+    setSection("hub");
+  }, [deepLink, canPair]);
 
   // Uma condição só para os dois casos: o modal está aberto para criar
   // (`editing` nulo) ou para editar. Dois estados independentes permitiriam
@@ -293,6 +317,7 @@ export function App({
               update={update}
               onOpen={openSection}
               onReset={onReset}
+              sync={sync}
             />
           ) : section === "profile" ? (
             profile !== null ? (
@@ -310,6 +335,12 @@ export function App({
                 }}
               />
             ) : null
+          ) : section === "hub" ? (
+            <HubPage
+              sync={sync}
+              deviceNameGuess={deviceNameGuess}
+              onBack={() => setSection(null)}
+            />
           ) : (
             <RegistryPage
               entity={section}

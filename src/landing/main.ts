@@ -1,8 +1,14 @@
 import "./landing.css";
+import { hubDeepLinkTarget } from "./deep-link";
 import { currency, type DemoFrame, demoFrame, LOOP_MS, moneyParts, STILL_T } from "./demo";
 import { applyLang, LANG_KEY, type Lang, pickLang } from "./i18n";
 import { createInstallFlow, type InstallPromptEvent } from "./install";
 import { detectPlatform, type Platform } from "./platform";
+
+// Deep link do hub: a pessoa quer o app, nao a vitrine. Antes de qualquer
+// coisa, para a pagina nem precisar pintar.
+const hubTarget = hubDeepLinkTarget(location.hash, location.href);
+if (hubTarget !== null) location.replace(hubTarget);
 
 const root = document.documentElement;
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;

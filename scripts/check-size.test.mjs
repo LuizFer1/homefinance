@@ -6,10 +6,12 @@ import {
   isAppShellArtifact,
   isLandingArtifact,
   isPdfArtifact,
+  isSyncArtifact,
   LANDING_LIMIT_BYTES,
   LIMIT_BYTES,
   measureDist,
   PDF_LIMIT_BYTES,
+  SYNC_LIMIT_BYTES,
 } from "./check-size.mjs";
 
 async function fixture(files) {
@@ -127,4 +129,23 @@ test("o leitor de PDF sai do teto do app e mede o worker .mjs", async () => {
   });
   const { files } = await measureDist(dir);
   expect(files.map((f) => path.basename(f.file))).toEqual(["app-abc.js"]);
+});
+
+test("o teto do modulo de sync esta declarado em 30kb", () => {
+  expect(SYNC_LIMIT_BYTES).toBe(30 * 1024);
+});
+
+test("o modulo de sync sai do teto do app", async () => {
+  expect(isSyncArtifact("assets/sync-hub-abc123.js")).toBe(true);
+  expect(isSyncArtifact("assets/app-abc123.js")).toBe(false);
+  expect(isSyncArtifact("assets/sync-hub-abc123.css")).toBe(false);
+
+  const dir = await fixture({
+    "assets/app-abc.js": "console.log('app');",
+    "assets/sync-hub-abc.js": "console.log('sync');",
+  });
+  const { files } = await measureDist(dir);
+  expect(files.map((f) => path.basename(f.file))).toEqual(["app-abc.js"]);
+  const sync = await measureDist(dir, isSyncArtifact);
+  expect(sync.files.map((f) => path.basename(f.file))).toEqual(["sync-hub-abc.js"]);
 });

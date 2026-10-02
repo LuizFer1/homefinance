@@ -1,7 +1,11 @@
+import "fake-indexeddb/auto";
+import { effect } from "@preact/signals";
+import Dexie from "dexie";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
 import { buildRow } from "../../data/repository";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
+import { compareHlc } from "../../domain/clock/hlc";
 import type { Category } from "../../domain/model/category";
 import type { User } from "../../domain/model/user";
 import { createSession, LOCAL_USER_ID_KEY, StaleRowsError } from "./session";
@@ -313,5 +317,81 @@ describe("createSession", () => {
 
     expect(await db.categories.get(created.id)).toEqual(created);
     expect(stale.state.value.categories[created.id]).toEqual(created);
+  });
+
+  it("reload publica o que foi gravado fora da sessão, numa atualização só", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    const row = buildRow<Category>(session.clock(), MERCADO);
+    await db.categories.put(row);
+    let renders = 0;
+    const dispose = effect(() => {
+      void session.state.value;
+      renders += 1;
+    });
+
+    await session.reload();
+    dispose();
+
+    expect(session.state.value.categories[row.id]).toEqual(row);
+    // Uma na assinatura, uma no reload: nenhum render intermediário com estado rasgado.
+    expect(renders).toBe(2);
+  });
+
+  it("reload faz o relógio saltar acima do maior HLC do disco", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    const ahead = "1999999999999-0000-01J9F3K2M7QX8YB4TVWZ0DCEHA";
+    await db.categories.put({ ...buildRow<Category>(session.clock(), MERCADO), updatedAt: ahead });
+
+    await session.reload();
+
+    expect(compareHlc(session.clock().stamp().hlc, ahead)).toBeGreaterThan(0);
+  });
+
+  it("reload que falha preenche error e relança", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    vi.spyOn(db.users, "toArray").mockRejectedValueOnce(new Error("disco sumiu"));
+
+    await expect(session.reload()).rejects.toThrow("disco sumiu");
+
+    expect(session.error.value).toBe("disco sumiu");
+  });
+
+  it("edição que começa durante o reload continua visível depois dele", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    const row = await session.mutate("categories", (repo) => repo.create(MERCADO));
+    const readRecurrences = db.recurrences.toArray.bind(db.recurrences);
+    let editing: Promise<unknown> = Promise.resolve();
+    vi.spyOn(db.recurrences, "toArray").mockImplementationOnce((() => {
+      // A edição começa com a leitura do reload em andamento, por fora dela.
+      editing = Dexie.ignoreTransaction(() =>
+        session.mutate("categories", (repo) => repo.update(row.id, { ...MERCADO, name: "Feira" })),
+      );
+      // Leituras soltas: nada impede a edição de gravar e publicar entre a
+      // leitura de `categories` e a publicação do reload — o teste força esse
+      // caso, que no navegador depende do agendamento. Numa transação "r", a
+      // edição espera a leitura acabar, e esperar por ela aqui travaria.
+      return Dexie.currentTransaction !== null
+        ? readRecurrences()
+        : editing.then(() => readRecurrences());
+    }) as unknown as typeof db.recurrences.toArray);
+
+    await session.reload();
+    await editing;
+
+    expect(session.state.value.categories[row.id]?.name).toBe("Feira");
+  });
+
+  it("reload não apaga um erro que a tela ainda mostra", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    session.error.value = "quota exceeded";
+
+    await session.reload();
+
+    expect(session.error.value).toBe("quota exceeded");
   });
 });

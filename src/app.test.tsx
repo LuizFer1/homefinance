@@ -13,6 +13,7 @@ import { createProfileStore } from "./features/profile/store";
 import { createRecurrenceStore } from "./features/recurrence/store";
 import { createRegistryStore } from "./features/registry/store";
 import { createSession, LOCAL_USER_ID_KEY } from "./features/session/session";
+import { createSyncStore } from "./features/sync/store";
 import { createTransactionsStore } from "./features/transactions/store";
 import { HOLD_MS } from "./features/ui/hold-button";
 import { createUpdateStore } from "./features/update/store";
@@ -75,6 +76,17 @@ function buildStores(db: HomeFinanceDb) {
     importer: createImportStore(session, recurrence),
     // Sem service worker: nenhum aviso de versão nova, como no primeiro acesso.
     update: createUpdateStore({ reload: () => {}, now: () => 0 }),
+    // Nunca chega à rede nos testes do App: o `fetch` rejeita como um hub fora
+    // de alcance, e sem ligação gravada o sync automático nem o chama.
+    sync: createSyncStore({
+      db,
+      session,
+      fetch: () => Promise.reject(new TypeError("sem rede")),
+      now: () => 0,
+      isOnline: () => true,
+      onStale: () => {},
+    }),
+    deviceNameGuess: "Celular de teste",
     readPdf: () => Promise.resolve([]),
     processFile: () => Promise.resolve("data:image/webp;base64,AAAA"),
     onReset: async () => {},
@@ -633,22 +645,46 @@ describe("as tres telas", () => {
     expect(screen.getByRole("button", { name: /^Formas de pagamento/ })).toBeDefined();
   });
 
-  it("hub aparece desabilitado, com o motivo; perfil abre a edicao", async () => {
-    // Hub desabilitado comunica que sync existe no projeto e e opcional.
-    // Perfil e editavel: o cadastro ja aconteceu no wizard.
+  it("hub e uma entrada tocavel que abre a sub-tela; perfil abre a edicao", async () => {
+    // Sync existe no projeto, e opcional e roda na maquina da pessoa — a linha
+    // diz isso antes de parear. Perfil e editavel: o cadastro ja aconteceu.
     await pronto();
 
     fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
 
     expect(screen.getByRole("button", { name: /Luiz/ })).toBeDefined();
-    expect(screen.getByText("Hub de sincronização")).toBeDefined();
-    expect(
-      screen.getByText(/roda no seu computador — nunca num servidor de terceiros/),
-    ).toBeDefined();
-    expect(screen.queryByRole("button", { name: /Hub de sincronização/ })).toBeNull();
+    expect(screen.getByText(/nunca um servidor de terceiros/)).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Sincronizar" })).toBeNull();
 
+    fireEvent.click(screen.getByRole("button", { name: /Sincronizar com o hub/ }));
+    expect(screen.getByRole("region", { name: "Hub de sincronização" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Parear" })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Voltar para configurações" }));
     fireEvent.click(screen.getByRole("button", { name: /Luiz/ }));
     expect(screen.getByRole("region", { name: "Seu perfil" })).toBeDefined();
+  });
+
+  it("a ligação com o hub é lida mesmo se a materialização falhar no boot", async () => {
+    const stores = buildStores(await cadastrado());
+    vi.spyOn(stores.recurrence, "materializeDue").mockRejectedValueOnce(new Error("quota"));
+    const syncInit = vi.spyOn(stores.sync, "init");
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    await waitFor(() => expect(syncInit).toHaveBeenCalledTimes(1));
+  });
+
+  it("deep link do hub abre a sub-tela preenchida depois do boot", async () => {
+    const stores = buildStores(await cadastrado());
+    stores.sync.pendingDeepLink.value = { address: "192.168.0.5:7777", token: "ABCDEF" };
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Hub de sincronização" })).toBeDefined(),
+    );
+    expect((screen.getByLabelText("Código") as HTMLInputElement).value).toBe("ABCDEF");
+    // O efeito que consome o link roda depois da pintura da sub-tela.
+    await waitFor(() => expect(stores.sync.pendingDeepLink.value).toBeNull());
   });
 
   it("o avatar do cabecalho abre a edicao de perfil de qualquer tela", async () => {

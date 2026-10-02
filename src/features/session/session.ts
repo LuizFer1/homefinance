@@ -118,6 +118,13 @@ export interface Session {
    * ConstraintError.
    */
   insertMissing: <K extends TableName>(table: K, rows: RowOf<K>[]) => Promise<RowOf<K>[]>;
+  /**
+   * Relê todas as tabelas do banco e publica o estado numa atualização só.
+   * Para quem grava fora de `mutate`/`putRows` — o sync grava páginas inteiras
+   * por conta própria —, é o jeito de o estado em memória voltar a ser o
+   * espelho do disco. Falha preenche `error` e relança; sucesso não o limpa.
+   */
+  reload: () => Promise<void>;
 }
 
 /** Mensagem legível de uma falha qualquer, para `error` e para as telas. */
@@ -189,6 +196,50 @@ export function createSession(deps: SessionDeps): Session {
     return deps.db.table<RowOf<K>, string>(table);
   }
 
+  async function loadAll(): Promise<AppState> {
+    // Uma transação "r" sobre todas as tabelas: um snapshot só. Com leituras
+    // soltas, uma edição podia gravar e publicar entre a leitura da tabela
+    // dela e a publicação do reload, que então a cobria com o valor velho. Na
+    // transação, a escrita espera a leitura acabar e publica por cima dela.
+    const tables = TABLE_NAMES.map((table) => deps.db.table(table));
+    const [users, categories, paymentMethods, transactions, recurrences, recurrenceAdjustments] =
+      await deps.db.transaction("r", tables, () =>
+        Promise.all([
+          deps.db.users.toArray(),
+          deps.db.categories.toArray(),
+          deps.db.paymentMethods.toArray(),
+          deps.db.transactions.toArray(),
+          deps.db.recurrences.toArray(),
+          deps.db.recurrenceAdjustments.toArray(),
+        ]),
+      );
+    return {
+      users: toRecord(users),
+      categories: toRecord(categories),
+      paymentMethods: toRecord(paymentMethods),
+      transactions: toRecord(transactions),
+      recurrences: toRecord(recurrences),
+      recurrenceAdjustments: toRecord(recurrenceAdjustments),
+    };
+  }
+
+  async function reload(): Promise<void> {
+    let loaded: AppState;
+    try {
+      loaded = await loadAll();
+    } catch (cause) {
+      error.value = describeError(cause);
+      throw cause;
+    }
+    // O relógio salta para o maior HLC do disco: uma linha recebida do hub pode
+    // estar à frente dele, e uma escrita local carimbada abaixo perderia o LWW.
+    const latest = latestHlc(loaded);
+    if (latest !== null) rowClock?.observe(latest);
+    // `error` fica como está: ele é de uma escrita da pessoa, que a tela ainda
+    // mostra, e um reload bem-sucedido não diz nada sobre ela.
+    state.value = loaded;
+  }
+
   async function init(): Promise<void> {
     try {
       const stored = await deps.db.meta.get(DEVICE_ID_KEY);
@@ -196,23 +247,7 @@ export function createSession(deps: SessionDeps): Session {
       if (stored === undefined) await deps.db.meta.put({ key: DEVICE_ID_KEY, value: deviceId });
 
       const perfil = (await deps.db.meta.get(LOCAL_USER_ID_KEY))?.value ?? null;
-      const [users, categories, paymentMethods, transactions, recurrences, recurrenceAdjustments] =
-        await Promise.all([
-          deps.db.users.toArray(),
-          deps.db.categories.toArray(),
-          deps.db.paymentMethods.toArray(),
-          deps.db.transactions.toArray(),
-          deps.db.recurrences.toArray(),
-          deps.db.recurrenceAdjustments.toArray(),
-        ]);
-      const loaded: AppState = {
-        users: toRecord(users),
-        categories: toRecord(categories),
-        paymentMethods: toRecord(paymentMethods),
-        transactions: toRecord(transactions),
-        recurrences: toRecord(recurrences),
-        recurrenceAdjustments: toRecord(recurrenceAdjustments),
-      };
+      const loaded = await loadAll();
 
       rowClock = createRowClock({
         deviceId,
@@ -386,5 +421,6 @@ export function createSession(deps: SessionDeps): Session {
     putRows,
     putRowsIfCurrent,
     insertMissing,
+    reload,
   };
 }
