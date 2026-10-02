@@ -484,6 +484,57 @@ describe("modal de lançamento", () => {
     );
   }
 
+  it("série variável: a estimativa aparece em A confirmar e sai de lá ao confirmar", async () => {
+    const stores = buildStores(await cadastrado());
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
+    await act(() =>
+      stores.recurrence.createSeries(
+        {
+          kind: "expense",
+          description: "Conta de luz",
+          amountMinor: 20_000,
+          currency: "BRL",
+          categoryId: null,
+          paymentMethodId: null,
+          cashbackMinor: null,
+          occurredOn: "2026-08-05",
+          recurrenceId: null,
+          occurrenceKey: null,
+        },
+        {
+          frequency: "monthly",
+          scheduleType: "dayOfMonth",
+          scheduleN: 5,
+          endOn: null,
+          variable: true,
+        },
+        "2026-08-08",
+      ),
+    );
+
+    const bloco = await screen.findByRole("region", { name: "A confirmar" });
+    expect(bloco.textContent).toContain("A confirmar (1)");
+    expect(screen.getByTestId("month-estimated").textContent).toContain("200,00");
+
+    // Série variável não tem reajuste nem "tornar variável".
+    await abrirEdicao("Conta de luz");
+    expect(screen.queryByRole("button", { name: "Reajustar série" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Tornar valor variável" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
+
+    fireEvent.click(within(bloco).getByRole("button", { name: "Confirmar Conta de luz" }));
+    fireEvent.input(await screen.findByLabelText("Valor real"), { target: { value: "32000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar" }));
+
+    await waitFor(() => expect(screen.queryByRole("region", { name: "A confirmar" })).toBeNull());
+    expect(screen.queryByTestId("month-estimated")).toBeNull();
+    const [row] = Object.values(stores.session.state.value.transactions);
+    expect(row).toMatchObject({ amountMinor: 32_000, estimated: false });
+  });
+
   it("o formulário não fica na tela até a ação ser tocada", async () => {
     // A tela principal e a lista. O formulario so aparece quando pedido — e o
     // que libera espaco vertical num celular.

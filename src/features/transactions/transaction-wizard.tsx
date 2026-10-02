@@ -51,8 +51,10 @@ export interface TransactionWizardProps {
   author?: { name: string; color: string } | null;
   /** "Gerenciar" e "+ Nova" da grade de categorias levam aos cadastros. */
   onManageCategories?: () => void;
-  /** Só em ocorrência de série: abre o reajuste da série. */
+  /** Só em ocorrência de série fixa: abre o reajuste da série. */
   onAdjustSeries?: () => void;
+  /** Só em ocorrência de série fixa: passa a série a ter valor variável. */
+  onMakeVariable?: () => void;
 }
 
 /**
@@ -95,6 +97,7 @@ export function TransactionWizard({
   author,
   onManageCategories,
   onAdjustSeries,
+  onMakeVariable,
 }: TransactionWizardProps) {
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"next" | "back">("next");
@@ -217,6 +220,10 @@ export function TransactionWizard({
         // Avulso: a série e a competência só entram pela materialização.
         recurrenceId: editing?.recurrenceId ?? null,
         occurrenceKey: editing?.occurrenceKey ?? null,
+        // Salvar uma estimativa pelo assistente é confirmá-la, mesmo sem mudar
+        // o valor: abrir e salvar é um ato deliberado, e deixá-la estimada
+        // depois de mexer na data seria um limbo sem explicação.
+        ...(editing?.estimated === true ? { estimated: false } : {}),
       },
       canConfigureRecurrence && repeats ? recurrenceInput() : null,
     );
@@ -367,17 +374,39 @@ export function TransactionWizard({
               `type="button"`: dentro do <form>, um botão sem tipo é submit e
               gravaria a edição em curso no caminho para o reajuste.
             */}
-            {editing?.recurrenceId != null && onAdjustSeries !== undefined && (
-              <button
-                type="button"
-                onClick={onAdjustSeries}
-                class="hf-press mt-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5
-                  text-[13px] font-medium text-accent-300 hover:bg-fg/[0.06]"
-              >
-                <Icon name="trend-up" size={14} />
-                Reajustar série
-              </button>
+            {editing?.estimated === true && (
+              <p class={`${HINT} flex items-center gap-1.5`}>
+                <Icon name="info" size={14} />
+                Valor estimado. Salvar confirma este lançamento.
+              </p>
             )}
+            {editing?.recurrenceId != null &&
+              (onAdjustSeries !== undefined || onMakeVariable !== undefined) && (
+                <div class="mt-2 flex flex-wrap gap-1">
+                  {onAdjustSeries !== undefined && (
+                    <button
+                      type="button"
+                      onClick={onAdjustSeries}
+                      class="hf-press inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5
+                        text-[13px] font-medium text-accent-300 hover:bg-fg/[0.06]"
+                    >
+                      <Icon name="trend-up" size={14} />
+                      Reajustar série
+                    </button>
+                  )}
+                  {onMakeVariable !== undefined && (
+                    <button
+                      type="button"
+                      onClick={onMakeVariable}
+                      class="hf-press inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5
+                        text-[13px] font-medium text-accent-300 hover:bg-fg/[0.06]"
+                    >
+                      <Icon name="wave-sine" size={14} />
+                      Tornar valor variável
+                    </button>
+                  )}
+                </div>
+              )}
           </>
         )}
 

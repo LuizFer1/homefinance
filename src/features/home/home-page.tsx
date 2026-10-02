@@ -1,11 +1,14 @@
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction, TransactionKind } from "../../domain/model/transaction";
 import type { User } from "../../domain/model/user";
+import { formatBRL } from "../../domain/money/money";
 import { filterByMonth } from "../../domain/projections/breakdown";
+import { estimatedTotals, pendingEstimates } from "../../domain/projections/estimates";
 import { monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { totals } from "../../domain/projections/selectors";
 import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
+import { periodLabel } from "../recurrence/adjust-sheet";
 import { TransactionList } from "../transactions/transaction-list";
 import { greetingFor } from "../ui/greeting";
 import { MINUS, Money, moneyParts } from "../ui/money";
@@ -20,6 +23,8 @@ export interface HomePageProps {
   onCompose: (kind: TransactionKind) => void;
   onImport: () => void;
   onEdit: (record: Transaction) => void;
+  /** Abre a confirmação de valor de uma estimativa. */
+  onConfirm: (record: Transaction) => void;
   onOpenProfile: () => void;
 }
 
@@ -38,8 +43,11 @@ function monthName(month: string): string {
  */
 function MonthCard({ items, today }: { items: Transaction[]; today: string }) {
   const month = monthOf(today);
-  const summary = totals(filterByMonth(items, month));
+  const monthItems = filterByMonth(items, month);
+  const summary = totals(monthItems);
   const moved = summary.incomeMinor + summary.expenseMinor;
+  const estimated = estimatedTotals(monthItems);
+  const estimatedMinor = estimated.incomeMinor + estimated.expenseMinor;
 
   return (
     <section aria-label={`Resumo de ${monthName(month)}`} class="mt-6 rounded-lg bg-surface p-4">
@@ -72,6 +80,59 @@ function MonthCard({ items, today }: { items: Transaction[]; today: string }) {
           </>
         )}
       </div>
+      {/*
+        Os números acima já contam as estimativas — o mês "fecha" com elas. A
+        linha só diz quanto disso ainda é palpite.
+      */}
+      {estimatedMinor > 0 && (
+        <p data-testid="month-estimated" class="mt-2.5 text-xs text-fg/55">
+          Inclui <span class="hf-num">~{formatBRL(estimatedMinor)}</span> estimado
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * "A confirmar": estimativas de séries variáveis esperando o valor real, de
+ * todos os meses. Sem notificação (o app é offline), este é o lembrete — e uma
+ * estimativa de agosto esquecida ficaria enterrada no extrato sem ele.
+ */
+function PendingEstimates({
+  state,
+  onConfirm,
+}: {
+  state: AppState;
+  onConfirm: (record: Transaction) => void;
+}) {
+  const pending = pendingEstimates(state);
+  if (pending.length === 0) return null;
+
+  return (
+    <section aria-label="A confirmar" class="mt-3.5 rounded-lg bg-surface p-4">
+      <h2 class="hf-label">A confirmar ({pending.length})</h2>
+      <ul class="mt-1">
+        {pending.map((record) => (
+          <li key={record.id} class="flex items-center gap-3 py-2">
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-sm font-medium">{record.description}</span>
+              <span class="mt-0.5 block text-xs text-fg/55">
+                {periodLabel(record.occurredOn.slice(0, 7))} ·{" "}
+                <span class="hf-num">~{formatBRL(record.amountMinor)}</span>
+              </span>
+            </span>
+            <button
+              type="button"
+              aria-label={`Confirmar ${record.description}`}
+              onClick={() => onConfirm(record)}
+              class="hf-press shrink-0 rounded-lg px-2.5 py-1.5 text-[13px] font-medium
+                text-accent-300 hover:bg-fg/[0.06]"
+            >
+              Confirmar
+            </button>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -92,6 +153,7 @@ export function HomePage({
   onCompose,
   onImport,
   onEdit,
+  onConfirm,
   onOpenProfile,
 }: HomePageProps) {
   const summary = totals(items);
@@ -118,6 +180,8 @@ export function HomePage({
       </p>
 
       {items.length > 0 && <MonthCard items={items} today={today} />}
+
+      <PendingEstimates state={state} onConfirm={onConfirm} />
 
       <QuickActions onExpense={() => onCompose("expense")} onIncome={() => onCompose("income")} />
 
