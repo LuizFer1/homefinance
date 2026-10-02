@@ -39,7 +39,9 @@ export function describeFailure(cause: unknown): SyncFailure {
       kind: "module",
       message: offline
         ? "O módulo de sincronização ainda não foi baixado. Conecte à internet uma vez e tente de novo."
-        : "Esta versão do app ficou para trás. Atualize o app e tente de novo.",
+        : // `onLine` também vale para Wi-Fi de casa sem internet: o chunk pode
+          // ser de uma versão que o deploy apagou ou nunca ter sido baixado.
+          "Não foi possível carregar o módulo de sincronização. Atualize o app ou, se este aparelho nunca sincronizou, conecte à internet uma vez para baixá-lo, e tente de novo.",
     };
   }
   if (isSyncError(cause))

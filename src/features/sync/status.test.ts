@@ -45,7 +45,9 @@ describe("describeFailure", () => {
       offline: false,
     });
     expect(describeFailure(offline).message).toContain("internet");
+    // Online pode ser só a LAN, sem internet: as duas causas cabem.
     expect(describeFailure(stale).message).toContain("Atualize");
+    expect(describeFailure(stale).message).toContain("internet");
   });
 
   it("qualquer outra coisa vira unknown com a mensagem", () => {
