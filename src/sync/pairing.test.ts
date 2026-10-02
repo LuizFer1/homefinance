@@ -92,6 +92,9 @@ describe("pairWithHub", () => {
     await expect(
       pairWithHub(deps, { address: "192.168.0.5", token: "ABCDEF", deviceName: " " }),
     ).rejects.toThrow("Nome");
+    await expect(
+      pairWithHub(deps, { address: "evil.example:443", token: "ABCDEF", deviceName: "X" }),
+    ).rejects.toThrow("rede de casa");
     expect(hub.calls).toEqual([]);
   });
 });

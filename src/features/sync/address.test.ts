@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { caGuideUrl, hubBaseUrl, normalizeAddress, normalizeToken } from "./address";
+import {
+  addressProblem,
+  caGuideUrl,
+  hubBaseUrl,
+  normalizeAddress,
+  normalizeToken,
+} from "./address";
 
 describe("normalizeAddress", () => {
   it("aceita ip, ip:porta e url, com porta padrão 7777", () => {
@@ -16,6 +22,38 @@ describe("normalizeAddress", () => {
     expect(normalizeAddress("192.168.0.5:0")).toBeNull();
     expect(normalizeAddress("a:b:c")).toBeNull();
     expect(normalizeAddress("sem espaço aqui")).toBeNull();
+  });
+
+  it("aceita só localhost, loopback e as faixas privadas, como a CA do hub", () => {
+    expect(normalizeAddress("127.0.0.1")).toBe("127.0.0.1:7777");
+    expect(normalizeAddress("127.255.0.9:8000")).toBe("127.255.0.9:8000");
+    expect(normalizeAddress("10.0.0.2")).toBe("10.0.0.2:7777");
+    expect(normalizeAddress("10.255.255.255")).toBe("10.255.255.255:7777");
+    expect(normalizeAddress("172.16.0.1")).toBe("172.16.0.1:7777");
+    expect(normalizeAddress("172.31.255.254")).toBe("172.31.255.254:7777");
+    expect(normalizeAddress("192.168.255.1")).toBe("192.168.255.1:7777");
+  });
+
+  it("recusa hostname público e IP fora das faixas, inclusive nas bordas", () => {
+    expect(normalizeAddress("evil.example:443")).toBeNull();
+    expect(normalizeAddress("https://evil.example/")).toBeNull();
+    expect(normalizeAddress("hub.local")).toBeNull();
+    expect(normalizeAddress("8.8.8.8")).toBeNull();
+    expect(normalizeAddress("172.15.255.255")).toBeNull();
+    expect(normalizeAddress("172.32.0.1")).toBeNull();
+    expect(normalizeAddress("192.169.0.1")).toBeNull();
+    expect(normalizeAddress("11.0.0.1")).toBeNull();
+    expect(normalizeAddress("192.168.0.256")).toBeNull();
+  });
+});
+
+describe("addressProblem", () => {
+  it("explica em português por que o endereço foi recusado", () => {
+    expect(addressProblem("192.168.0.5")).toBeNull();
+    expect(addressProblem("evil.example:443")).toContain("rede de casa");
+    expect(addressProblem("172.32.0.1")).toContain("rede de casa");
+    expect(addressProblem("a:b:c")).toContain("192.168.0.5:7777");
+    expect(addressProblem("")).toContain("192.168.0.5:7777");
   });
 });
 

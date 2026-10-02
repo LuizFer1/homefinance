@@ -82,6 +82,16 @@ describe("HubPage — não pareado", () => {
     );
   });
 
+  it("endereço fora da rede de casa explica o motivo e não deixa parear", () => {
+    montar(fakeStore());
+    preencher("evil.example:443", "ABCDEF");
+
+    expect(screen.getByText(/Endereços da internet são recusados/)).toBeDefined();
+    expect((screen.getByRole("button", { name: "Parear" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
   it("deep link preenche os campos e é consumido", () => {
     const store = fakeStore({ deepLink: { address: "10.0.0.2:7777", token: "QWERTY" } });
     montar(store);

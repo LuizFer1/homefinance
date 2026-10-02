@@ -3,7 +3,7 @@ import { ignoreHandled } from "../session/session";
 import { Button } from "../ui/button";
 import { FIELD_PAGE, HINT, LABEL } from "../ui/field";
 import { PageHeader } from "../ui/page-header";
-import { caGuideUrl, normalizeAddress, normalizeToken } from "./address";
+import { addressProblem, caGuideUrl, normalizeAddress, normalizeToken } from "./address";
 import type { HubDeepLink } from "./deep-link";
 import { describeHubStatus } from "./status";
 import type { SyncStore } from "./store";
@@ -42,6 +42,8 @@ function PairForm({
   const [problem, setProblem] = useState<string | null>(null);
 
   const normalizedAddress = normalizeAddress(address);
+  // Campo vazio não é erro ainda; preenchido e recusado, a pessoa precisa saber por quê.
+  const addressHint = address.trim() === "" ? null : addressProblem(address);
   const normalizedToken = normalizeToken(token);
   const name = deviceName.trim();
   const valid =
@@ -78,6 +80,7 @@ function PairForm({
         value={address}
         onInput={(event) => setAddress(event.currentTarget.value)}
       />
+      {addressHint !== null && <p class={`${HINT} text-expense-fg`}>{addressHint}</p>}
 
       <label class={`${LABEL} mt-4`} for="hub-token">
         Código

@@ -1,7 +1,7 @@
 import type { HomeFinanceDb } from "../data/db";
 import { type HubLink, readHubLink, writeHubLink } from "../data/hub-link";
 import type { Ulid } from "../domain/ids/ulid";
-import { normalizeAddress, normalizeToken } from "../features/sync/address";
+import { addressProblem, normalizeAddress, normalizeToken } from "../features/sync/address";
 import { type HubTransport, SyncError } from "./transport";
 
 export interface PairDeps {
@@ -27,7 +27,7 @@ const MAX_NAME = 64;
 export async function pairWithHub(deps: PairDeps, input: PairInput): Promise<HubLink> {
   const address = normalizeAddress(input.address);
   if (address === null)
-    throw new SyncError("hub", "Endereço do hub inválido. Use ip:porta, como 192.168.0.5:7777.");
+    throw new SyncError("hub", addressProblem(input.address) ?? "Endereço do hub inválido.");
   const token = normalizeToken(input.token);
   if (token === null)
     throw new SyncError("hub", "Código inválido: são 6 letras e números, como ABC-DEF.");

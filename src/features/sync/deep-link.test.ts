@@ -15,6 +15,8 @@ describe("parseHubDeepLink", () => {
     expect(parseHubDeepLink("#hub=192.168.0.5:7777")).toBeNull();
     expect(parseHubDeepLink("#hub=&token=ABCDEF")).toBeNull();
     expect(parseHubDeepLink("#hub=192.168.0.5:7777&token=ABCDE")).toBeNull();
+    // Um QR adulterado não pode apontar o app para fora da rede de casa.
+    expect(parseHubDeepLink("#hub=evil.example:443&token=ABCDEF")).toBeNull();
   });
 });
 
