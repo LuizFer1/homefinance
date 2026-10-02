@@ -15,6 +15,11 @@ const BASE = "/homefinance/";
 
 export default defineConfig({
   base: BASE,
+  // Sem numero de versao: cada push no main e um build novo, e a data dele e o
+  // que os Ajustes mostram para a pessoa saber qual versao esta aberta.
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   // Quick tunnel (`cloudflared`): Host = *.trycloudflare.com. O Vite bloqueia
   // por padrao. Prefixo `.` cobre qualquer subdominio do trycloudflare.
   // Config so aplica no boot — reinicie o `npm run dev` apos mudar.
@@ -107,16 +112,22 @@ export default defineConfig({
         navigateFallback: `${BASE}app/index.html`,
         navigateFallbackAllowlist: [/\/app\//],
         globPatterns: ["**/*.{js,css,html,png,svg,ico,webp,woff2}"],
-        // O leitor de PDF (~490kb gzip) fica fora do precache: todo mundo que
-        // instala o app baixaria o pdf.js para um recurso mensal. Entra no
-        // cache na primeira importação e daí em diante funciona offline.
-        globIgnores: ["**/pdf-text-*.js", "**/pdf.worker*.mjs"],
+        // O leitor de PDF (~490kb gzip) e o módulo de sync ficam fora do
+        // precache: todo mundo que instala o app baixaria o pdf.js para um
+        // recurso mensal, e quem nunca pareou não baixa um byte do sync. Os
+        // dois entram no cache na primeira vez e daí em diante funcionam offline.
+        globIgnores: ["**/pdf-text-*.js", "**/pdf.worker*.mjs", "**/sync-hub-*.js"],
         runtimeCaching: [
           {
             urlPattern: /\/assets\/pdf(-text-|\.worker)[^/]*\.m?js$/,
             // Nome com hash: o arquivo nunca muda, então rede de novo é desperdício.
             handler: "CacheFirst",
             options: { cacheName: "pdf-reader", expiration: { maxEntries: 4 } },
+          },
+          {
+            urlPattern: /\/assets\/sync-hub-[^/]*\.js$/,
+            handler: "CacheFirst",
+            options: { cacheName: "sync-hub", expiration: { maxEntries: 2 } },
           },
         ],
       },

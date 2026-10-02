@@ -24,6 +24,12 @@ export interface RowClock {
   /** Um `now()` só alimenta o HLC e o ISO, para os dois falarem do mesmo instante. */
   stamp: () => Stamp;
   newId: () => Ulid;
+  /**
+   * Salta para `max(local, remoto)` ao receber uma linha de fora (sync). Sem
+   * isto, a primeira edição depois de um sync nasceria abaixo do `updatedAt`
+   * que acabou de chegar e perderia o LWW para ele.
+   */
+  observe: (remote: string) => void;
 }
 
 export function createRowClock(deps: RowClockDeps): RowClock {
@@ -37,5 +43,6 @@ export function createRowClock(deps: RowClockDeps): RowClock {
       return { hlc: hlc.tick(millis), iso: new Date(millis).toISOString() };
     },
     newId: () => nextUlid(deps.now()),
+    observe: (remote) => hlc.observe(remote),
   };
 }

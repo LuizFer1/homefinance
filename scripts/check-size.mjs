@@ -49,6 +49,9 @@ import { gzipSync } from "node:zlib";
  *           (uma dependencia pesada importada por engano no shell). Acima do
  *           alvo do README de proposito; o numero medido continua no relatorio
  *           de cada build, e e ele que diz se o app ainda cumpre o alvo.
+ *   (sem mudanca de teto) — sync com o hub: store, sub-tela e deep link entram no
+ *           shell (95.70kb medidos); o protocolo vai num chunk proprio, `sync-hub-*`,
+ *           com orcamento SYNC_LIMIT_BYTES.
  * Alvo de projeto: ~140kb gzip, conforme o README.
  *
  * Service worker e runtime do Workbox **nao** entram neste teto: sao baixados
@@ -84,6 +87,15 @@ export const LANDING_LIMIT_BYTES = 15 * 1024;
  *           como o build deixar de separar o pdf.js ou puxar os cmaps inteiros.
  */
 export const PDF_LIMIT_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Teto do modulo de sync (`sync-hub-*.js`), baixado por `import()` no primeiro
+ * pareamento e fora do precache. Historico:
+ *   30kb  — cliente do hub: transporte, engine de push/pull e pareamento
+ *           (2.65kb medidos). Folga larga de proposito, como nos outros tetos:
+ *           so segura o acidente de o chunk arrastar o shell inteiro.
+ */
+export const SYNC_LIMIT_BYTES = 30 * 1024;
 
 const MEASURED = /\.(js|css)$/;
 
@@ -124,12 +136,23 @@ export function isPdfArtifact(relativePath) {
   return base.startsWith("pdf") && /\.m?js$/.test(base);
 }
 
+/**
+ * Artefato do modulo de sync. O prefixo vem do nome de `src/sync/sync-hub.ts`
+ * — renomear la sem mudar aqui joga o sync de volta no teto do app.
+ * @param {string} relativePath
+ */
+export function isSyncArtifact(relativePath) {
+  const base = path.basename(relativePath).toLowerCase();
+  return base.startsWith("sync-hub-") && base.endsWith(".js");
+}
+
 /** @param {string} relativePath */
 function isAppArtifact(relativePath) {
   return (
     isAppShellArtifact(relativePath) &&
     !isLandingArtifact(relativePath) &&
-    !isPdfArtifact(relativePath)
+    !isPdfArtifact(relativePath) &&
+    !isSyncArtifact(relativePath)
   );
 }
 
@@ -203,8 +226,14 @@ async function main() {
     PDF_LIMIT_BYTES,
     "PDF_LIMIT_BYTES",
   );
+  const sync = report(
+    "sync",
+    await measureDist(dir, isSyncArtifact),
+    SYNC_LIMIT_BYTES,
+    "SYNC_LIMIT_BYTES",
+  );
   // Os relatorios saem todos antes de falhar: estourar um nao esconde o outro.
-  if (!app || !landing || !pdf) process.exit(1);
+  if (!app || !landing || !pdf || !sync) process.exit(1);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

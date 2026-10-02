@@ -569,6 +569,24 @@ describe("recorrência", () => {
 });
 
 describe("edição", () => {
+  it("ocorrência de série oferece reajustar a série", () => {
+    const onAdjustSeries = vi.fn();
+    montar({
+      editing: { ...RECORD, recurrenceId: "SERIE-1", occurrenceKey: "SERIE-1:2026-08" },
+      onAdjustSeries,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reajustar série" }));
+
+    expect(onAdjustSeries).toHaveBeenCalledTimes(1);
+  });
+
+  it("lançamento avulso não oferece reajuste", () => {
+    montar({ editing: RECORD, onAdjustSeries: vi.fn() });
+
+    expect(screen.queryByRole("button", { name: "Reajustar série" })).toBeNull();
+  });
+
   it("salva direto do primeiro passo, sem percorrer os outros", () => {
     const { onSubmit } = montar({ editing: RECORD });
     fireEvent.input(screen.getByLabelText("Descrição"), { target: { value: "Feira" } });

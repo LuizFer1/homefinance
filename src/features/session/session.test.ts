@@ -1,10 +1,14 @@
+import "fake-indexeddb/auto";
+import { effect } from "@preact/signals";
+import Dexie from "dexie";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
 import { buildRow } from "../../data/repository";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
+import { compareHlc } from "../../domain/clock/hlc";
 import type { Category } from "../../domain/model/category";
 import type { User } from "../../domain/model/user";
-import { createSession, LOCAL_USER_ID_KEY } from "./session";
+import { createSession, LOCAL_USER_ID_KEY, StaleRowsError } from "./session";
 
 const MERCADO = { name: "Mercado", icon: "utensils", color: "emerald", kind: "expense" } as const;
 const LUIZ = { name: "Luiz", color: "teal", avatar: null } as const;
@@ -41,6 +45,19 @@ describe("createSession", () => {
 
     expect(segunda.state.value.categories[row.id]).toEqual(row);
     expect(segunda.localUserId.value).toBe("U1");
+  });
+
+  it("boot carrega os reajustes de série", async () => {
+    const primeira = createSession(testSessionDeps(db));
+    await primeira.init();
+    const row = await primeira.mutate("recurrenceAdjustments", (repo) =>
+      repo.create({ recurrenceId: "S1", fromPeriod: "2027-01", amountMinor: 350_000 }),
+    );
+
+    const segunda = createSession(testSessionDeps(db));
+    await segunda.init();
+
+    expect(segunda.state.value.recurrenceAdjustments[row.id]).toEqual(row);
   });
 
   it("reabrir reusa o deviceId gravado no primeiro boot", async () => {
@@ -237,6 +254,144 @@ describe("createSession", () => {
     await expect(session.insertMissing("categories", [novo])).rejects.toThrow("quota exceeded");
     expect(await db.categories.count()).toBe(0);
     expect(session.state.value.categories).toEqual({});
+    expect(session.error.value).toBe("quota exceeded");
+  });
+
+  it("putRowsIfCurrent grava quando as versões batem", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    const created = await session.mutate("categories", (repo) => repo.create(MERCADO));
+    const novo = buildRow<User>(session.clock(), LUIZ);
+    const edited = { ...created, name: "Feira", updatedAt: session.clock().stamp().hlc };
+
+    await session.putRowsIfCurrent(
+      { categories: [edited], users: [novo] },
+      { categories: { [created.id]: created.updatedAt }, users: { [novo.id]: null } },
+    );
+
+    expect(await db.categories.get(created.id)).toEqual(edited);
+    expect(await db.users.get(novo.id)).toEqual(novo);
+    expect(session.state.value.categories[created.id]).toEqual(edited);
+    expect(session.state.value.users[novo.id]).toEqual(novo);
+  });
+
+  it("putRowsIfCurrent recusa sem gravar nada quando outra sessão mudou a linha", async () => {
+    const stale = createSession(testSessionDeps(db));
+    await stale.init();
+    const created = await stale.mutate("categories", (repo) => repo.create(MERCADO));
+
+    // Outra aba apaga a linha depois que `stale` a leu.
+    const other = createSession(testSessionDeps(db));
+    await other.init();
+    const removed = await other.mutate("categories", (repo) => repo.remove(created.id));
+
+    const novo = buildRow<User>(stale.clock(), LUIZ);
+    const edited = { ...created, name: "Feira", updatedAt: stale.clock().stamp().hlc };
+    await expect(
+      stale.putRowsIfCurrent(
+        { categories: [edited], users: [novo] },
+        { categories: { [created.id]: created.updatedAt }, users: { [novo.id]: null } },
+      ),
+    ).rejects.toBeInstanceOf(StaleRowsError);
+
+    expect(await db.categories.get(created.id)).toEqual(removed);
+    expect(await db.users.count()).toBe(0);
+    expect(stale.error.value).toBe(new StaleRowsError().message);
+    // O state se cura com o que o banco tem, como em `insertMissing`.
+    expect(stale.state.value.categories[created.id]).toEqual(removed);
+    expect(stale.state.value.users[novo.id]).toBeUndefined();
+  });
+
+  it("putRowsIfCurrent com expectativa nula recusa se a linha já existe", async () => {
+    const stale = createSession(testSessionDeps(db));
+    await stale.init();
+
+    const other = createSession(testSessionDeps(db));
+    await other.init();
+    const created = await other.mutate("categories", (repo) => repo.create(MERCADO));
+
+    const attempt = buildRow<Category>(stale.clock(), { ...MERCADO, name: "Outra" }, created.id);
+    await expect(
+      stale.putRowsIfCurrent({ categories: [attempt] }, { categories: { [created.id]: null } }),
+    ).rejects.toBeInstanceOf(StaleRowsError);
+
+    expect(await db.categories.get(created.id)).toEqual(created);
+    expect(stale.state.value.categories[created.id]).toEqual(created);
+  });
+
+  it("reload publica o que foi gravado fora da sessão, numa atualização só", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    const row = buildRow<Category>(session.clock(), MERCADO);
+    await db.categories.put(row);
+    let renders = 0;
+    const dispose = effect(() => {
+      void session.state.value;
+      renders += 1;
+    });
+
+    await session.reload();
+    dispose();
+
+    expect(session.state.value.categories[row.id]).toEqual(row);
+    // Uma na assinatura, uma no reload: nenhum render intermediário com estado rasgado.
+    expect(renders).toBe(2);
+  });
+
+  it("reload faz o relógio saltar acima do maior HLC do disco", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    const ahead = "1999999999999-0000-01J9F3K2M7QX8YB4TVWZ0DCEHA";
+    await db.categories.put({ ...buildRow<Category>(session.clock(), MERCADO), updatedAt: ahead });
+
+    await session.reload();
+
+    expect(compareHlc(session.clock().stamp().hlc, ahead)).toBeGreaterThan(0);
+  });
+
+  it("reload que falha preenche error e relança", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    vi.spyOn(db.users, "toArray").mockRejectedValueOnce(new Error("disco sumiu"));
+
+    await expect(session.reload()).rejects.toThrow("disco sumiu");
+
+    expect(session.error.value).toBe("disco sumiu");
+  });
+
+  it("edição que começa durante o reload continua visível depois dele", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    const row = await session.mutate("categories", (repo) => repo.create(MERCADO));
+    const readRecurrences = db.recurrences.toArray.bind(db.recurrences);
+    let editing: Promise<unknown> = Promise.resolve();
+    vi.spyOn(db.recurrences, "toArray").mockImplementationOnce((() => {
+      // A edição começa com a leitura do reload em andamento, por fora dela.
+      editing = Dexie.ignoreTransaction(() =>
+        session.mutate("categories", (repo) => repo.update(row.id, { ...MERCADO, name: "Feira" })),
+      );
+      // Leituras soltas: nada impede a edição de gravar e publicar entre a
+      // leitura de `categories` e a publicação do reload — o teste força esse
+      // caso, que no navegador depende do agendamento. Numa transação "r", a
+      // edição espera a leitura acabar, e esperar por ela aqui travaria.
+      return Dexie.currentTransaction !== null
+        ? readRecurrences()
+        : editing.then(() => readRecurrences());
+    }) as unknown as typeof db.recurrences.toArray);
+
+    await session.reload();
+    await editing;
+
+    expect(session.state.value.categories[row.id]?.name).toBe("Feira");
+  });
+
+  it("reload não apaga um erro que a tela ainda mostra", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    session.error.value = "quota exceeded";
+
+    await session.reload();
+
     expect(session.error.value).toBe("quota exceeded");
   });
 });

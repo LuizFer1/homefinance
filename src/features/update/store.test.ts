@@ -89,6 +89,19 @@ describe("createUpdateStore", () => {
     expect(store.ready.value).toBe(true);
   });
 
+  it("oferece a versão que já estava instalando quando a store se conectou", async () => {
+    // Ao abrir o app o navegador já busca `sw.js`; o `updatefound` pode disparar
+    // antes do `ready` resolver, e ninguém escutava ainda.
+    const sw = fakeContainer();
+    const worker = fakeWorker();
+    sw.registration.installing = worker;
+    const store = createUpdateStore({ serviceWorker: sw.container, reload: vi.fn(), now: () => 0 });
+    await settle();
+    expect(store.ready.value).toBe(false);
+    worker.become("installed");
+    expect(store.ready.value).toBe(true);
+  });
+
   it("a primeira instalação não é atualização", async () => {
     // Sem controller, a página ainda não roda sob nenhum SW: o worker que
     // instala agora é o primeiro, e não há versão velha a trocar.
@@ -145,6 +158,52 @@ describe("createUpdateStore", () => {
     sw.registration.update.mockRejectedValue(new TypeError("Failed to fetch"));
     const store = createUpdateStore({ serviceWorker: sw.container, reload: vi.fn(), now: () => 0 });
     await settle();
-    await expect(store.check(true)).resolves.toBeUndefined();
+    await expect(store.check(true)).resolves.toBe("offline");
+  });
+
+  it("sem service worker, a busca diz que não há como atualizar", async () => {
+    const store = createUpdateStore({ reload: vi.fn(), now: () => 0 });
+    expect(await store.check(true)).toBe("unavailable");
+  });
+
+  it("busca dentro do intervalo diz que foi pulada", async () => {
+    const sw = fakeContainer();
+    const store = createUpdateStore({ serviceWorker: sw.container, reload: vi.fn(), now: () => 0 });
+    await settle();
+    await store.check();
+    expect(await store.check()).toBe("skipped");
+  });
+
+  it("busca sem sw.js novo diz que a versão é a mais recente", async () => {
+    const sw = fakeContainer();
+    const store = createUpdateStore({ serviceWorker: sw.container, reload: vi.fn(), now: () => 0 });
+    await settle();
+    expect(await store.check(true)).toBe("current");
+  });
+
+  it("busca que achou sw.js novo diz que ele está instalando", async () => {
+    const sw = fakeContainer();
+    sw.registration.update.mockImplementation(async () => {
+      sw.startInstall(fakeWorker());
+    });
+    const store = createUpdateStore({ serviceWorker: sw.container, reload: vi.fn(), now: () => 0 });
+    await settle();
+    expect(await store.check(true)).toBe("installing");
+  });
+
+  it("busca com versão nova já esperando diz que está pronta", async () => {
+    const sw = fakeContainer({ waiting: fakeWorker("installed") });
+    const store = createUpdateStore({ serviceWorker: sw.container, reload: vi.fn(), now: () => 0 });
+    await settle();
+    expect(await store.check(true)).toBe("ready");
+  });
+
+  it("expõe a versão que está rodando", () => {
+    const store = createUpdateStore({
+      reload: vi.fn(),
+      now: () => 0,
+      version: "2026-10-01T15:00:00Z",
+    });
+    expect(store.version).toBe("2026-10-01T15:00:00Z");
   });
 });

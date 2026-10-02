@@ -15,6 +15,13 @@ const GROUPS = new Intl.NumberFormat("pt-BR");
 export const MAX_DIGITS = 11;
 
 /**
+ * Maior valor que o campo de dinheiro aceita, em centavos. Fica no domínio
+ * para a tela e a store recusarem o mesmo teto: só o sheet barrando, outro
+ * chamador gravaria no log eterno um valor que nenhum campo consegue exibir.
+ */
+export const MAX_MINOR = 10 ** MAX_DIGITS - 1;
+
+/**
  * Extrai os dígitos de qualquer texto e normaliza.
  *
  * Os zeros à esquerda somem antes do corte: mantidos, consumiriam `MAX_DIGITS`

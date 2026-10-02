@@ -2,6 +2,7 @@ import type { Ulid } from "../ids/ulid";
 import type { Category } from "./category";
 import type { PaymentMethod } from "./payment-method";
 import type { Recurrence } from "./recurrence";
+import type { RecurrenceAdjustment } from "./recurrence-adjustment";
 import type { Transaction } from "./transaction";
 import type { User } from "./user";
 
@@ -12,6 +13,7 @@ export interface RowMap {
   paymentMethods: PaymentMethod;
   transactions: Transaction;
   recurrences: Recurrence;
+  recurrenceAdjustments: RecurrenceAdjustment;
 }
 
 export type TableName = keyof RowMap;
@@ -34,6 +36,7 @@ const TABLES: Record<TableName, true> = {
   paymentMethods: true,
   transactions: true,
   recurrences: true,
+  recurrenceAdjustments: true,
 };
 
 export const TABLE_NAMES: readonly TableName[] = Object.keys(TABLES) as TableName[];
@@ -50,4 +53,5 @@ export const EMPTY_APP_STATE: AppState = Object.freeze({
   paymentMethods: Object.freeze({}),
   transactions: Object.freeze({}),
   recurrences: Object.freeze({}),
+  recurrenceAdjustments: Object.freeze({}),
 }) as AppState;

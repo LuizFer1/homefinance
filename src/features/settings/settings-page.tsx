@@ -4,13 +4,18 @@ import type { User } from "../../domain/model/user";
 import { colorName, cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
+import { ignoreHandled } from "../session/session";
+import { describeHubStatus } from "../sync/status";
+import type { SyncStore } from "../sync/store";
 import { ThemeToggle, type ThemeToggleProps } from "../theme/theme-toggle";
 import { Modal, SheetHeader } from "../ui/modal";
 import { PageHeader } from "../ui/page-header";
 import { IconTile } from "../ui/tile";
+import type { UpdateStore } from "../update/store";
+import { UpdateSection } from "../update/update-section";
 import { ResetSection } from "./reset-section";
 
-export type SettingsSection = "category" | "paymentMethod" | "profile";
+export type SettingsSection = "category" | "paymentMethod" | "profile" | "hub";
 
 export interface SettingsPageProps {
   categoryCount: number;
@@ -18,8 +23,10 @@ export interface SettingsPageProps {
   /** Perfil local, ou null enquanto ele não existe. */
   profile: User | null;
   theme: ThemeToggleProps;
+  update: UpdateStore;
   onOpen: (section: SettingsSection) => void;
   onReset: () => Promise<void>;
+  sync: SyncStore;
 }
 
 const ROW = "relative flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left";
@@ -64,19 +71,30 @@ function Chevron() {
  * Ajustes sem cara de tela de desenvolvedor: cada linha diz o que é e o que
  * faz, com a contagem e o chevron do que abre algo.
  *
- * O hub aparece "Em breve", esmaecido, e não escondido: comunica que sync existe
- * no projeto, é opcional e roda na máquina da pessoa — nunca num servidor de
- * terceiros. Escondido, a conclusão seria "este app não tem".
+ * A linha do hub existe antes de parear, e não escondida: comunica que sync
+ * existe no projeto, é opcional e roda na máquina da pessoa — nunca num
+ * servidor de terceiros. Pareado, ela mostra o estado e sincroniza na hora.
  */
 export function SettingsPage({
   categoryCount,
   paymentMethodCount,
   profile,
   theme,
+  update,
   onOpen,
   onReset,
+  sync,
 }: SettingsPageProps) {
   const [resetting, setResetting] = useState(false);
+  const hubStatus = describeHubStatus({
+    link: sync.link.value,
+    status: sync.status.value,
+    revoked: sync.revoked.value,
+    lastError: sync.lastError.value,
+    lastSyncAt: sync.lastSyncAt.value,
+  });
+  const canSyncNow =
+    sync.link.value !== null && !sync.revoked.value && sync.status.value === "idle";
 
   return (
     <section aria-label="Configurações">
@@ -144,21 +162,38 @@ export function SettingsPage({
             </span>
           </span>
         </div>
-        <div class={`${ROW} opacity-70`} aria-disabled="true">
+        <div class={ROW}>
           <Divider />
-          <IconTile icon="arrows-clockwise" color={null} size={36} iconSize={18} />
-          <span class="min-w-0 flex-1">
-            <span class="flex items-center gap-2 text-[15px]">
-              Hub de sincronização
-              <span class="rounded bg-fg/[0.08] px-1.5 py-0.5 text-[10px] font-medium">
-                Em breve
+          <button
+            type="button"
+            class="hf-press flex min-w-0 flex-1 items-center gap-3 text-left"
+            onClick={() => onOpen("hub")}
+          >
+            <IconTile icon="arrows-clockwise" color={null} size={36} iconSize={18} />
+            <span class="min-w-0 flex-1">
+              <span class="block text-[15px]">Sincronizar com o hub</span>
+              <span role="status" class="mt-0.5 block text-xs leading-snug text-fg/55">
+                {hubStatus}
               </span>
             </span>
-            <span class="mt-0.5 block text-xs leading-snug text-fg/55">
-              Um programa que roda no seu computador — nunca num servidor de terceiros.
-            </span>
-          </span>
+            {!canSyncNow && <Chevron />}
+          </button>
+          {/* Atalho sem abrir a sub-tela: quem já pareou só quer mandar e buscar. */}
+          {canSyncNow && (
+            <button
+              type="button"
+              onClick={() => void sync.sync().catch(ignoreHandled)}
+              class="hf-press shrink-0 rounded-md px-2 py-1 text-sm font-medium text-accent-300
+                hover:bg-accent/15"
+            >
+              Sincronizar
+            </button>
+          )}
         </div>
+      </Group>
+
+      <Group label="Aplicativo">
+        <UpdateSection update={update} />
       </Group>
 
       {/*
