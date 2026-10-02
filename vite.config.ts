@@ -15,6 +15,11 @@ const BASE = "/homefinance/";
 
 export default defineConfig({
   base: BASE,
+  // Sem numero de versao: cada push no main e um build novo, e a data dele e o
+  // que os Ajustes mostram para a pessoa saber qual versao esta aberta.
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   // Quick tunnel (`cloudflared`): Host = *.trycloudflare.com. O Vite bloqueia
   // por padrao. Prefixo `.` cobre qualquer subdominio do trycloudflare.
   // Config so aplica no boot — reinicie o `npm run dev` apos mudar.

@@ -290,6 +290,7 @@ export function App({
               paymentMethodCount={paymentMethods.length}
               profile={profile}
               theme={theme}
+              update={update}
               onOpen={openSection}
               onReset={onReset}
             />
