@@ -484,6 +484,7 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
         scheduleType: "nthBusinessDay",
         scheduleN: 5,
         endOn: null,
+        variable: false,
       },
     );
   });

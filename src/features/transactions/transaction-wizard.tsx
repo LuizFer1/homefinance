@@ -117,6 +117,7 @@ export function TransactionWizard({
   const [frequency, setFrequency] = useState<RecurrenceFrequency>("monthly");
   const [scheduleType, setScheduleType] = useState<ScheduleType>("dayOfMonth");
   const [scheduleN, setScheduleN] = useState(() => Number(occurredOn.slice(8, 10)) || 1);
+  const [variable, setVariable] = useState(false);
   const [hasEnd, setHasEnd] = useState(false);
   const [endOn, setEndOn] = useState(today);
   const [problem, setProblem] = useState<string | null>(null);
@@ -182,7 +183,13 @@ export function TransactionWizard({
   }
 
   function recurrenceInput(): RecurrenceRule {
-    return { frequency, scheduleType, scheduleN: clampedN, endOn: hasEnd ? endOn : null };
+    return {
+      frequency,
+      scheduleType,
+      scheduleN: clampedN,
+      endOn: hasEnd ? endOn : null,
+      variable,
+    };
   }
 
   function handleSubmit(event: Event) {
@@ -489,6 +496,19 @@ export function TransactionWizard({
                       ? "Dia útil = segunda a sexta (sem feriados nesta versão)."
                       : "Se o mês for mais curto, usa o último dia."}
                   </p>
+                </div>
+
+                <div class="rounded-lg bg-bg px-4 py-3">
+                  <Toggle
+                    label="Valor varia todo mês"
+                    hint={
+                      variable
+                        ? "Cada mês nasce com a média dos últimos 6 confirmados. Este valor é o palpite até lá."
+                        : "Luz, água: o valor só existe quando a conta chega."
+                    }
+                    checked={variable}
+                    onChange={setVariable}
+                  />
                 </div>
 
                 <div class="rounded-lg bg-bg px-4 py-3">

@@ -29,6 +29,7 @@ const MENSAL: RecurrenceRule = {
   scheduleType: "dayOfMonth",
   scheduleN: 5,
   endOn: null,
+  variable: false,
 };
 
 let db: HomeFinanceDb;

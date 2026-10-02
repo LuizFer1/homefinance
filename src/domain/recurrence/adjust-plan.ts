@@ -6,7 +6,7 @@ import { isAlive } from "../model/base";
 import type { Recurrence } from "../model/recurrence";
 import type { Transaction } from "../model/transaction";
 import { type AdjustmentLike, adjustmentId, adjustmentsOf, amountFor } from "./adjustments";
-import { FREQUENCY_MONTHS, occurrenceKey } from "./schedule";
+import { FREQUENCY_MONTHS, occurrenceKey, periodOfKey } from "./schedule";
 
 export interface AdjustmentInput {
   recurrenceId: Ulid;
@@ -29,11 +29,6 @@ export interface AdjustmentPlan {
   updates: OccurrenceUpdate[];
   /** Ocorrências que mudariam, mas foram editadas à mão: ficam como estão. */
   kept: Transaction[];
-}
-
-/** 'YYYY-MM' da ocorrência, tirado da chave `${recurrenceId}:${YYYY-MM}`. */
-function periodOf(key: string): string {
-  return key.slice(key.lastIndexOf(":") + 1);
 }
 
 function byDate(a: Transaction, b: Transaction): number {
@@ -77,7 +72,7 @@ export function planAdjustment(state: AppState, input: AdjustmentInput): Adjustm
   for (const transaction of Object.values(state.transactions)) {
     if (!isAlive(transaction) || transaction.recurrenceId !== series.id) continue;
     if (transaction.occurrenceKey === null) continue;
-    const period = periodOf(transaction.occurrenceKey);
+    const period = periodOfKey(transaction.occurrenceKey);
     if (period < input.fromPeriod) continue;
 
     const expected = amountFor(series, current, period);

@@ -452,7 +452,13 @@ describe("modal de lançamento", () => {
           recurrenceId: null,
           occurrenceKey: null,
         },
-        { frequency: "monthly", scheduleType: "dayOfMonth", scheduleN: 5, endOn: null },
+        {
+          frequency: "monthly",
+          scheduleType: "dayOfMonth",
+          scheduleN: 5,
+          endOn: null,
+          variable: false,
+        },
         "2026-08-08",
       ),
     );

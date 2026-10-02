@@ -32,12 +32,23 @@ export interface Recurrence extends BaseRow {
   endOn: string | null;
   /** `false` pausa a geração sem apagar o que já foi materializado. */
   active: boolean;
+  /**
+   * `true`: o valor muda todo mês (luz, água). Cada ocorrência nasce estimada
+   * pela média das confirmadas, e `amountMinor` é só o palpite até haver
+   * histórico. Ausente vale `null` (série fixa).
+   */
+  variable?: boolean | null;
 }
 
 export type RecurrenceDraft = Draft<Recurrence>;
 
 /** O que o formulário de lançamento acrescenta para virar série. */
-export type RecurrenceRule = Pick<Recurrence, "frequency" | "scheduleType" | "scheduleN" | "endOn">;
+export type RecurrenceRule = Pick<
+  Recurrence,
+  "frequency" | "scheduleType" | "scheduleN" | "endOn"
+> & {
+  variable: boolean;
+};
 
 export const FREQUENCY_LABELS: Record<RecurrenceFrequency, string> = {
   monthly: "Mensal",

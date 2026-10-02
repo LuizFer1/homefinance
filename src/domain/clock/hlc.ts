@@ -45,6 +45,28 @@ export function compareHlc(a: string, b: string): number {
   return a > b ? 1 : 0;
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * HLC mais baixo que qualquer escrita humana numa linha datada de `date`
+ * ('YYYY-MM-DD'): meia-noite UTC do dia anterior, contador zero.
+ *
+ * Para linhas que o app gera sozinho e que uma edição do usuário tem que
+ * vencer no LWW por linha, mesmo que a geração aconteça depois noutro aparelho
+ * offline (estimativa de série variável). A linha só é gerada com a data já
+ * vencida, então toda edição nela acontece a partir de `date` no fuso local —
+ * e o dia anterior em UTC fica abaixo disso até UTC+24h.
+ *
+ * Não passa pelo relógio do aparelho: é um carimbo fixo, e o relógio não
+ * regride por causa dele.
+ */
+export function floorHlc(date: string, deviceId: Ulid): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (match === null) throw new Error(`floorHlc exige 'YYYY-MM-DD', recebeu ${date}`);
+  const millis = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) - DAY_MS;
+  return formatHlc({ millis, counter: 0, deviceId });
+}
+
 export interface HlcClock {
   /** Avança o relógio e devolve o HLC de uma nova escrita local. */
   tick: (wall: number) => string;
