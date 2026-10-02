@@ -71,6 +71,7 @@ const REGULAR = [
   "file-pdf",
   "gear-six",
   "image",
+  "info",
   "lock-simple",
   "minus",
   "moon",
@@ -82,6 +83,7 @@ const REGULAR = [
   "trend-down",
   "trend-up",
   "warning",
+  "wave-sine",
   "x",
 ];
 
