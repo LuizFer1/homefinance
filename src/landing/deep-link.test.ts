@@ -14,6 +14,15 @@ describe("hubDeepLinkTarget", () => {
     );
   });
 
+  it("href com index.html vai para app/ ao lado dele", () => {
+    expect(
+      hubDeepLinkTarget("#hub=x", "https://luizfer1.github.io/homefinance/index.html#hub=x"),
+    ).toBe("https://luizfer1.github.io/homefinance/app/#hub=x");
+    expect(hubDeepLinkTarget("#hub=x", "http://localhost:5173/index.html?a=1#hub=x")).toBe(
+      "http://localhost:5173/app/#hub=x",
+    );
+  });
+
   it("qualquer outro hash fica onde está", () => {
     expect(hubDeepLinkTarget("", "https://luizfer1.github.io/homefinance/")).toBeNull();
     expect(

@@ -5,6 +5,7 @@
  */
 export function hubDeepLinkTarget(hash: string, href: string): string | null {
   if (!hash.startsWith("#hub=")) return null;
-  const base = href.replace(/[?#].*$/, "");
+  // `.../index.html` é a mesma landing: o app fica ao lado do arquivo, não dentro dele.
+  const base = href.replace(/[?#].*$/, "").replace(/\/index\.html$/i, "/");
   return `${base.endsWith("/") ? base : `${base}/`}app/${hash}`;
 }
