@@ -241,7 +241,7 @@ describe("runSync — pull", () => {
       body: JSON.stringify({
         epoch: hub.epoch,
         rows: [
-          { table: "recurrenceAdjustments", row: category(1) },
+          { table: "investments", row: category(1) },
           { table: "categories", row: { ...category(2), createdAt: 42 } },
           { table: "categories", row: category(3) },
         ],
@@ -253,7 +253,7 @@ describe("runSync — pull", () => {
     expect(summary).toMatchObject({
       pulled: 1,
       invalid: 1,
-      unknownTables: ["recurrenceAdjustments"],
+      unknownTables: ["investments"],
     });
     expect((await readHubLink(db))?.cursor).toBe(3);
   });
