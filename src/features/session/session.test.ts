@@ -1,4 +1,6 @@
+import "fake-indexeddb/auto";
 import { effect } from "@preact/signals";
+import Dexie from "dexie";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
 import { buildRow } from "../../data/repository";
@@ -279,5 +281,41 @@ describe("createSession", () => {
     await expect(session.reload()).rejects.toThrow("disco sumiu");
 
     expect(session.error.value).toBe("disco sumiu");
+  });
+
+  it("edição que começa durante o reload continua visível depois dele", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    const row = await session.mutate("categories", (repo) => repo.create(MERCADO));
+    const readRecurrences = db.recurrences.toArray.bind(db.recurrences);
+    let editing: Promise<unknown> = Promise.resolve();
+    vi.spyOn(db.recurrences, "toArray").mockImplementationOnce((() => {
+      // A edição começa com a leitura do reload em andamento, por fora dela.
+      editing = Dexie.ignoreTransaction(() =>
+        session.mutate("categories", (repo) => repo.update(row.id, { ...MERCADO, name: "Feira" })),
+      );
+      // Leituras soltas: nada impede a edição de gravar e publicar entre a
+      // leitura de `categories` e a publicação do reload — o teste força esse
+      // caso, que no navegador depende do agendamento. Numa transação "r", a
+      // edição espera a leitura acabar, e esperar por ela aqui travaria.
+      return Dexie.currentTransaction !== null
+        ? readRecurrences()
+        : editing.then(() => readRecurrences());
+    }) as unknown as typeof db.recurrences.toArray);
+
+    await session.reload();
+    await editing;
+
+    expect(session.state.value.categories[row.id]?.name).toBe("Feira");
+  });
+
+  it("reload não apaga um erro que a tela ainda mostra", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    session.error.value = "quota exceeded";
+
+    await session.reload();
+
+    expect(session.error.value).toBe("quota exceeded");
   });
 });

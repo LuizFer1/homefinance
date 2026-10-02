@@ -91,7 +91,7 @@ export interface Session {
    * Relê todas as tabelas do banco e publica o estado numa atualização só.
    * Para quem grava fora de `mutate`/`putRows` — o sync grava páginas inteiras
    * por conta própria —, é o jeito de o estado em memória voltar a ser o
-   * espelho do disco. Falha preenche `error` e relança.
+   * espelho do disco. Falha preenche `error` e relança; sucesso não o limpa.
    */
   reload: () => Promise<void>;
 }
@@ -166,13 +166,21 @@ export function createSession(deps: SessionDeps): Session {
   }
 
   async function loadAll(): Promise<AppState> {
-    const [users, categories, paymentMethods, transactions, recurrences] = await Promise.all([
-      deps.db.users.toArray(),
-      deps.db.categories.toArray(),
-      deps.db.paymentMethods.toArray(),
-      deps.db.transactions.toArray(),
-      deps.db.recurrences.toArray(),
-    ]);
+    // Uma transação "r" sobre todas as tabelas: um snapshot só. Com leituras
+    // soltas, uma edição podia gravar e publicar entre a leitura da tabela
+    // dela e a publicação do reload, que então a cobria com o valor velho. Na
+    // transação, a escrita espera a leitura acabar e publica por cima dela.
+    const tables = TABLE_NAMES.map((table) => deps.db.table(table));
+    const [users, categories, paymentMethods, transactions, recurrences] =
+      await deps.db.transaction("r", tables, () =>
+        Promise.all([
+          deps.db.users.toArray(),
+          deps.db.categories.toArray(),
+          deps.db.paymentMethods.toArray(),
+          deps.db.transactions.toArray(),
+          deps.db.recurrences.toArray(),
+        ]),
+      );
     return {
       users: toRecord(users),
       categories: toRecord(categories),
@@ -194,10 +202,9 @@ export function createSession(deps: SessionDeps): Session {
     // estar à frente dele, e uma escrita local carimbada abaixo perderia o LWW.
     const latest = latestHlc(loaded);
     if (latest !== null) rowClock?.observe(latest);
-    batch(() => {
-      error.value = null;
-      state.value = loaded;
-    });
+    // `error` fica como está: ele é de uma escrita da pessoa, que a tela ainda
+    // mostra, e um reload bem-sucedido não diz nada sobre ela.
+    state.value = loaded;
   }
 
   async function init(): Promise<void> {
