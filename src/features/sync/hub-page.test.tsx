@@ -156,6 +156,25 @@ describe("HubPage — pareado", () => {
     await waitFor(() => expect(store.sync).toHaveBeenCalledTimes(1));
   });
 
+  it("hub fora de alcance no sincronizar agora repete o link do guia", async () => {
+    const store = fakeStore({ link: LINK });
+    store.sync.mockImplementation(async () => {
+      store.lastError.value = { kind: "unreachable", message: "Não foi possível falar com o hub." };
+      throw new Error("x");
+    });
+    montar(store);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sincronizar agora" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain("Não foi possível"),
+    );
+    const guia = screen.getByRole("link", {
+      name: "Abrir o guia do certificado",
+    }) as HTMLAnchorElement;
+    expect(guia.href).toBe("http://192.168.0.5:7778/");
+  });
+
   it("sincronizando desabilita o botão", () => {
     montar(fakeStore({ link: LINK, status: "syncing" }));
     expect(

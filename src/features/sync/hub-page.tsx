@@ -211,6 +211,13 @@ function PairedCard({ sync }: { sync: SyncStore }) {
       {problem !== null && (
         <p role="alert" class={ALERT}>
           {problem}
+          {/* Fora de alcance inclui certificado não confiável: o guia é o próximo passo. */}
+          {sync.lastError.value?.kind === "unreachable" && (
+            <>
+              {" "}
+              <GuideLink address={link.address} />
+            </>
+          )}
         </p>
       )}
 
