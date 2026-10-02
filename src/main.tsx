@@ -13,6 +13,9 @@ import { createRecurrenceStore } from "./features/recurrence/store";
 import { createRegistryStore } from "./features/registry/store";
 import { createSession } from "./features/session/session";
 import { type ResetDeps, resetDevice } from "./features/settings/reset";
+import { consumeHubDeepLink } from "./features/sync/deep-link";
+import { guessDeviceName } from "./features/sync/device-name";
+import { createSyncStore } from "./features/sync/store";
 import type { ThemeStorage } from "./features/theme/theme";
 import { createTransactionsStore } from "./features/transactions/store";
 import { createUpdateStore, type SwContainer } from "./features/update/store";
@@ -95,10 +98,33 @@ const update = createUpdateStore({
   now: () => Date.now(),
 });
 
+const sync = createSyncStore({
+  db,
+  session,
+  // Seta em vez de `fetch` solto: chamado sem o `this` do window, alguns
+  // navegadores lançam "Illegal invocation".
+  fetch: (input, init) => fetch(input, init),
+  now: () => Date.now(),
+  // Só decide a mensagem quando o chunk não baixa; o sync em si não olha
+  // `onLine`, porque a LAN funciona sem internet.
+  isOnline: () => navigator.onLine,
+  onStale: () => void update.check(true),
+  // Série recebida do outro celular pode ter ocorrência vencida que ele ainda
+  // não gerou; o id é determinístico, então o que ele gerar converge na mesma linha.
+  afterPull: () => recurrence.materializeDue(todayISO()),
+});
+
+// Lê e limpa o fragmento antes do primeiro render: o token não fica na barra
+// de endereço nem no histórico. O App abre a sub-tela quando a sessão estiver pronta.
+sync.pendingDeepLink.value = consumeHubDeepLink(window.location, window.history);
+
 // PWA instalado fica dias aberto sem navegar, e é na navegação que o navegador
-// procura `sw.js` novo. Voltar para o app é o momento natural de perguntar.
+// procura `sw.js` novo. Voltar para o app é o momento natural de perguntar — e
+// de buscar o que o outro celular mandou para o hub.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") void update.check();
+  if (document.visibilityState !== "visible") return;
+  void update.check();
+  void sync.sync({ auto: true });
 });
 
 const readPdf = createReadPdf({
@@ -116,6 +142,8 @@ render(
     onboarding={onboarding}
     importer={importer}
     update={update}
+    sync={sync}
+    deviceNameGuess={guessDeviceName(navigator.userAgent)}
     readPdf={readPdf}
     processFile={(file) => processAvatar(file, browserAvatarDeps)}
     onReset={() =>
