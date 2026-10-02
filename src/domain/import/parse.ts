@@ -35,7 +35,15 @@ export interface ParsedEntry {
 const MONTHS = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
 
 const NUMERIC_DATE = /^(\d{1,2})\s*[/.-]\s*(\d{1,2})(?:\s*[/.-]\s*(\d{4}|\d{2}))?(?!\d)/;
-const NAMED_DATE = new RegExp(`^(\\d{1,2})\\s*(?:de\\s+)?(${MONTHS.join("|")})[a-zç]*\\.?`, "i");
+const NAMED_DATE = new RegExp(
+  `^(\\d{1,2})\\s*(?:de\\s+)?(${MONTHS.join("|")})[a-zç]*\\.?(?:\\s+(20\\d{2})(?!\\d))?`,
+  "i",
+);
+/** "08 SET 2026", em qualquer ponto da linha: é assim que a Nubank imprime o vencimento. */
+const NAMED_FULL_DATE = new RegExp(
+  `(?<!\\d)(\\d{1,2})\\s+(?:de\\s+)?(${MONTHS.join("|")})[a-zç]*\\.?\\s+(?:de\\s+)?(\\d{4})(?!\\d)`,
+  "i",
+);
 
 /**
  * Valor em reais: `1.234,56`, com `R$`, sinal antes (`-`, `+`, `−`) ou marca
@@ -50,8 +58,30 @@ const INSTALLMENT = [
   /(?<![\d/])(\d{1,2})\s*\/\s*(\d{1,2})(?![\d/])/,
 ];
 
+/**
+ * Final do cartão impresso mascarado ("•••• 9998", "**** 1234"). Não é nome da
+ * compra e, se ficasse, a mesma loja ganharia um nome por cartão.
+ */
+const MASKED_CARD = /(?:[•*·]\s?){2,}\d{4}(?!\d)/gu;
+
+/**
+ * Id da operação: número solto de 8+ dígitos, coluna própria em extratos como o
+ * do Mercado Pago. Cai no meio da descrição quando ela quebra em várias linhas e
+ * não diz nada a quem revisa. Pontuado ("65.980.595") não casa — é documento de
+ * quem pagou, e fica.
+ */
+const OPERATION_ID = /(?<!\S)\d{8,}(?!\S)/gu;
+
 const CARD_PAYMENT = /\b(PAGAMENTO|PAGTO|PGTO)\b/i;
 const ACCOUNT_CARD_BILL = /\bFATURA\b|\bCART(?:AO|ÃO)\b/i;
+/**
+ * Ida e volta de caixinha/cofrinho da própria conta ("Reserva por gastos Casa",
+ * "Dinheiro reservado/retirado Emergências" no Mercado Pago). Marcadas, cada
+ * ida contaria como despesa e cada volta como receita, inflando os dois lados.
+ * "Reserva" sozinha não casa: "Hotel reserva" é gasto de verdade.
+ */
+const SAVINGS_MOVE =
+  /\bRESERVA POR\b|\bDINHEIRO (?:RESERVADO|RETIRADO|GUARDADO|RESGATADO)\b|\bCAIXINHA\b|\bCOFRINHO\b/i;
 const BALANCE = /\bSALDO\b/i;
 
 /** Maior parcelamento aceito. Acima disso, `k/n` é mais provável ser outra coisa. */
@@ -82,6 +112,11 @@ export function detectReferenceMonth(lines: readonly string[], fallback: string)
     if (!/VENC/i.test(lines[i] ?? "")) continue;
     const match = full.exec(lines[i] ?? "") ?? full.exec(lines[i + 1] ?? "");
     if (match !== null) return `${match[3]}-${match[2]}`;
+    const named = NAMED_FULL_DATE.exec(lines[i] ?? "") ?? NAMED_FULL_DATE.exec(lines[i + 1] ?? "");
+    if (named !== null) {
+      const month = MONTHS.indexOf((named[2] ?? "").toUpperCase()) + 1;
+      return `${named[3]}-${pad(month)}`;
+    }
   }
   return fallback;
 }
@@ -110,6 +145,7 @@ function readDate(line: string, referenceMonth: string): DatePrefix | null {
   } else if (named !== null) {
     day = Number(named[1]);
     month = MONTHS.indexOf((named[2] ?? "").toUpperCase()) + 1;
+    if (named[3] !== undefined) year = Number(named[3]);
     length = named[0].length;
   } else {
     return null;
@@ -133,14 +169,25 @@ function readInstallment(description: string): { installment: Installment; rest:
       description.slice(0, match.index) + description.slice(match.index + match[0].length)
     )
       .replace(/\s+/g, " ")
-      .trim();
+      // "Loja - Parcela 2/3": sem isto o hífen que separava a parcela fica no nome.
+      .replace(/^[\s\-–|]+|[\s\-–|]+$/g, "");
     return { installment: { k, n }, rest };
   }
   return null;
 }
 
+/** A linha começa com uma data? É o que marca a linha-âncora de um lançamento. */
+export function startsWithDate(line: string): boolean {
+  return NUMERIC_DATE.test(line) || NAMED_DATE.test(line);
+}
+
+/** Há um valor em reais no texto? `search` ignora o `lastIndex` do regex global. */
+export function hasAmount(text: string): boolean {
+  return text.search(MONEY) !== -1;
+}
+
 /**
- * Parser genérico: uma linha é lançamento se começa com data e tem valor.
+ * Parser genérico:uma linha é lançamento se começa com data e tem valor.
  *
  * Genérico de propósito — um layout por banco quebraria no primeiro banco que
  * ninguém cadastrou. O preço é errar mais, e é por isso que tudo passa por uma
@@ -171,6 +218,8 @@ export function parseStatement(
     const printed = body
       .slice(0, first.index)
       .replace(/R\$\s*$/, "")
+      .replace(MASKED_CARD, " ")
+      .replace(OPERATION_ID, " ")
       .replace(/\s+/g, " ")
       .replace(/^[\s\-–|]+|[\s\-–|]+$/g, "");
     if (printed === "") continue;
@@ -207,6 +256,10 @@ export function parseStatement(
     if (doc === "account" && kind === "expense" && ACCOUNT_CARD_BILL.test(rawDescription)) {
       selected = false;
       note = "Pagamento de fatura — as compras vêm pela fatura";
+    }
+    if (doc === "account" && SAVINGS_MOVE.test(rawDescription)) {
+      selected = false;
+      note = "Caixinha — dinheiro seu mudando de lugar, não é receita nem despesa";
     }
 
     entries.push({
