@@ -219,10 +219,19 @@ describe("runSync — pull", () => {
   it("o relógio observa cada linha válida antes de gravar", async () => {
     const remote = category(1, { deletedAt: hlc(1_759_344_000_500, OTHER) });
     await otherPushes(otherKey, [remote]);
+    const seenAtObserve: Promise<unknown>[] = [];
+    deps.observe = (value) => {
+      observed.push(value);
+      // A leitura sai na hora do `observe`: o IndexedDB a ordena antes da
+      // transação que grava a página, então ela vê o banco de antes.
+      seenAtObserve.push(db.categories.get(remote.id));
+    };
 
     await runSync(deps);
 
     expect(observed).toEqual([remote.updatedAt, remote.deletedAt]);
+    expect(await Promise.all(seenAtObserve)).toEqual([undefined, undefined]);
+    expect(await db.categories.get(remote.id)).toMatchObject({ name: remote.name });
   });
 
   it("tabela desconhecida é contada e o cursor avança; linha inválida também", async () => {
@@ -344,10 +353,14 @@ describe("runSync — epoch e revogação", () => {
     await db.categories.bulkPut([category(1, { dirty: 0 }), category(2, { dirty: 1 })]);
     await db.meta.put({ key: HUB_KEYS.cursor, value: "7" });
     hub.recreate(true);
+    const before = hub.calls.length;
 
     const summary = await runSync(deps);
 
     expect(summary).toMatchObject({ pushed: 2, epochReset: true });
+    // A repetição puxa do zero no banco novo, não do cursor 7 do antigo.
+    const pulls = hub.calls.slice(before).filter((call) => call.path.startsWith("/v1/pull"));
+    expect(pulls.at(-1)?.path).toBe(`/v1/pull?epoch=${hub.epoch}&cursor=0&limit=500`);
     expect(await readHubLink(db)).toMatchObject({ epoch: hub.epoch, cursor: 2, revoked: false });
     expect((await db.categories.toArray()).every((row) => row.dirty === 0)).toBe(true);
   });
