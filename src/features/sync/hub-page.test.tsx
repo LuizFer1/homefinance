@@ -161,6 +161,11 @@ describe("HubPage — pareado", () => {
     expect(
       (screen.getByRole("button", { name: "Sincronizando…" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+    // Desconectar no meio da rodada deixaria a rodada gravar sobre a ligação apagada.
+    expect(
+      (screen.getByRole("button", { name: "Desconectar deste aparelho" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 
   it("desconectar pede confirmação", () => {

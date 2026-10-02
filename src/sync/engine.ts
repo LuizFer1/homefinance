@@ -48,6 +48,19 @@ export interface SyncSummary {
 /** Guarda contra um hub que nunca diz `hasMore: false`. */
 const MAX_PAGES = 10_000;
 
+/**
+ * Dentro da transação que grava: a ligação ainda é a desta rodada? Outra aba
+ * (ou um pareamento que não esperou) pode ter trocado ou apagado a chave
+ * enquanto a resposta vinha, e gravar agora poria `dirty: 0` e o cursor do hub
+ * antigo por cima da ligação nova — linhas que nunca chegariam ao hub novo.
+ */
+async function assertSameLink(db: HomeFinanceDb, link: HubLink): Promise<void> {
+  const current = await db.meta.get(HUB_KEYS.key);
+  if (current?.value !== link.key) {
+    throw new SyncError("hub", "A ligação com o hub mudou durante a sincronização.");
+  }
+}
+
 function emptySummary(): SyncSummary {
   return {
     pushed: 0,
@@ -123,7 +136,8 @@ async function pushDirty(deps: SyncEngineDeps, link: HubLink, summary: SyncSumma
     // Aceitas e ignoradas limpam igual: "ignored" quer dizer que o hub já tem
     // versão igual ou mais nova, e reenviar seria o mesmo "ignored" de novo.
     const settled = [...response.accepted, ...response.ignored];
-    await deps.db.transaction("rw", tables, async () => {
+    await deps.db.transaction("rw", [...tables, deps.db.meta], async () => {
+      await assertSameLink(deps.db, link);
       for (const { table, id } of settled) {
         const sent = sentAt.get(`${table}/${id}`);
         if (sent === undefined) continue;
@@ -184,6 +198,7 @@ async function pullPages(deps: SyncEngineDeps, link: HubLink, summary: SyncSumma
     // Linhas e cursor na mesma transação: se o app fechar no meio, a página
     // entrou inteira com o cursor dela, ou não entrou — nunca um sem o outro.
     await deps.db.transaction("rw", [...allTables, deps.db.meta], async () => {
+      await assertSameLink(deps.db, link);
       for (const { table, row } of valid) {
         const table$ = deps.db.table<BaseRow, string>(table);
         const current = await table$.get(row.id);

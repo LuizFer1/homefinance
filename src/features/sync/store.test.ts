@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
-import { writeHubLink } from "../../data/hub-link";
+import { HUB_KEYS, writeHubLink } from "../../data/hub-link";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
 import { ALIVE } from "../../domain/model/row.fake";
 import { createFakeHub, type FakeHub } from "../../sync/fake-hub.fake";
@@ -209,6 +209,38 @@ describe("createSyncStore", () => {
 
     expect(afterPull).toHaveBeenCalledTimes(1);
     expect(reload).toHaveBeenCalledTimes(2);
+  });
+
+  it("unpair espera a rodada em voo: ela não regrava o cursor do hub esquecido", async () => {
+    const store = build();
+    await store.init();
+    await store.pair({ address: ADDRESS, token: hub.issueToken(), deviceName: "X" });
+
+    await Promise.all([store.sync(), store.unpair()]);
+
+    expect(store.link.value).toBeNull();
+    expect(await db.meta.get(HUB_KEYS.cursor)).toBeUndefined();
+    expect(await db.meta.get(HUB_KEYS.tables)).toBeUndefined();
+  });
+
+  it("pair espera a rodada em voo antes de gravar a ligação nova", async () => {
+    const store = build();
+    await store.init();
+    await store.pair({ address: ADDRESS, token: hub.issueToken(), deviceName: "Antigo" });
+    // Hub reinstalado: a rodada antiga vai levar 401 e marcar "revogado". Se
+    // ela terminar depois do pareamento novo, a ligação nova nasce revogada.
+    hub.recreate();
+    const running = store.sync().catch(() => null);
+
+    await store.pair({ address: ADDRESS, token: hub.issueToken(), deviceName: "Novo" });
+    await running;
+
+    expect(store.revoked.value).toBe(false);
+    expect(store.link.value).toMatchObject({
+      deviceName: "Novo",
+      epoch: hub.epoch,
+      revoked: false,
+    });
   });
 
   it("unpair apaga a ligação sem precisar do chunk", async () => {

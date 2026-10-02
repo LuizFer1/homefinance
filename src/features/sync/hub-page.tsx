@@ -231,7 +231,12 @@ function PairedCard({ sync }: { sync: SyncStore }) {
           </div>
         </div>
       ) : (
-        <Button variant="secondary" class="mt-3 w-full" onClick={() => setConfirming(true)}>
+        <Button
+          variant="secondary"
+          class="mt-3 w-full"
+          disabled={syncing}
+          onClick={() => setConfirming(true)}
+        >
           Desconectar deste aparelho
         </Button>
       )}

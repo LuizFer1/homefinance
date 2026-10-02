@@ -282,6 +282,45 @@ describe("runSync — pull", () => {
     expect((await readHubLink(db))?.lastSyncAt).toBeNull();
   });
 
+  it("ligação trocada no meio da rodada: a página velha não entra nem grava cursor", async () => {
+    await otherPushes(otherKey, [category(1)]);
+    const original = deps.transport.pull;
+    deps.transport = {
+      ...deps.transport,
+      pull: async (address, key, query) => {
+        const response = await original(address, key, query);
+        // Outra aba pareou com outro hub enquanto a resposta vinha.
+        await db.meta.bulkPut([
+          { key: HUB_KEYS.key, value: "f".repeat(64) },
+          { key: HUB_KEYS.cursor, value: "0" },
+        ]);
+        return response;
+      },
+    };
+
+    await expect(runSync(deps)).rejects.toThrow("mudou");
+
+    expect(await db.categories.count()).toBe(0);
+    expect((await db.meta.get(HUB_KEYS.cursor))?.value).toBe("0");
+  });
+
+  it("ligação trocada durante o push: o dirty fica para o hub novo", async () => {
+    await db.categories.put(category(1));
+    const original = deps.transport.push;
+    deps.transport = {
+      ...deps.transport,
+      push: async (address, key, body) => {
+        const response = await original(address, key, body);
+        await db.meta.put({ key: HUB_KEYS.key, value: "f".repeat(64) });
+        return response;
+      },
+    };
+
+    await expect(runSync(deps)).rejects.toThrow("mudou");
+
+    expect((await db.categories.get(category(1).id))?.dirty).toBe(1);
+  });
+
   it("cursor que não avança com hasMore é erro de protocolo, não laço", async () => {
     deps.transport = {
       ...deps.transport,

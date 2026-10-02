@@ -160,7 +160,17 @@ export function createSyncStore(deps: SyncStoreDeps): SyncStore {
     return inFlight;
   }
 
+  /**
+   * Antes de trocar ou apagar a ligação, a rodada em voo termina: ela ainda
+   * limparia `dirty` e gravaria o `syncCursor` (ou "revogado") do hub antigo
+   * por cima do pareamento novo. A falha dela não importa aqui.
+   */
+  async function settle(): Promise<void> {
+    await inFlight?.catch(() => {});
+  }
+
   async function pair(input: PairInput): Promise<void> {
+    await settle();
     status.value = "pairing";
     try {
       const { mod, transport } = await loadModule();
@@ -190,6 +200,7 @@ export function createSyncStore(deps: SyncStoreDeps): SyncStore {
 
   async function unpair(): Promise<void> {
     // Desconectar não precisa do chunk nem de rede: é só apagar chaves locais.
+    await settle();
     await clearHubLink(deps.db);
     batch(() => {
       link.value = null;
