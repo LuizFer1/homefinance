@@ -87,6 +87,13 @@ export interface Session {
    * ConstraintError.
    */
   insertMissing: <K extends TableName>(table: K, rows: RowOf<K>[]) => Promise<RowOf<K>[]>;
+  /**
+   * Relê todas as tabelas do banco e publica o estado numa atualização só.
+   * Para quem grava fora de `mutate`/`putRows` — o sync grava páginas inteiras
+   * por conta própria —, é o jeito de o estado em memória voltar a ser o
+   * espelho do disco. Falha preenche `error` e relança.
+   */
+  reload: () => Promise<void>;
 }
 
 /** Mensagem legível de uma falha qualquer, para `error` e para as telas. */
@@ -158,6 +165,41 @@ export function createSession(deps: SessionDeps): Session {
     return deps.db.table<RowOf<K>, string>(table);
   }
 
+  async function loadAll(): Promise<AppState> {
+    const [users, categories, paymentMethods, transactions, recurrences] = await Promise.all([
+      deps.db.users.toArray(),
+      deps.db.categories.toArray(),
+      deps.db.paymentMethods.toArray(),
+      deps.db.transactions.toArray(),
+      deps.db.recurrences.toArray(),
+    ]);
+    return {
+      users: toRecord(users),
+      categories: toRecord(categories),
+      paymentMethods: toRecord(paymentMethods),
+      transactions: toRecord(transactions),
+      recurrences: toRecord(recurrences),
+    };
+  }
+
+  async function reload(): Promise<void> {
+    let loaded: AppState;
+    try {
+      loaded = await loadAll();
+    } catch (cause) {
+      error.value = describeError(cause);
+      throw cause;
+    }
+    // O relógio salta para o maior HLC do disco: uma linha recebida do hub pode
+    // estar à frente dele, e uma escrita local carimbada abaixo perderia o LWW.
+    const latest = latestHlc(loaded);
+    if (latest !== null) rowClock?.observe(latest);
+    batch(() => {
+      error.value = null;
+      state.value = loaded;
+    });
+  }
+
   async function init(): Promise<void> {
     try {
       const stored = await deps.db.meta.get(DEVICE_ID_KEY);
@@ -165,20 +207,7 @@ export function createSession(deps: SessionDeps): Session {
       if (stored === undefined) await deps.db.meta.put({ key: DEVICE_ID_KEY, value: deviceId });
 
       const perfil = (await deps.db.meta.get(LOCAL_USER_ID_KEY))?.value ?? null;
-      const [users, categories, paymentMethods, transactions, recurrences] = await Promise.all([
-        deps.db.users.toArray(),
-        deps.db.categories.toArray(),
-        deps.db.paymentMethods.toArray(),
-        deps.db.transactions.toArray(),
-        deps.db.recurrences.toArray(),
-      ]);
-      const loaded: AppState = {
-        users: toRecord(users),
-        categories: toRecord(categories),
-        paymentMethods: toRecord(paymentMethods),
-        transactions: toRecord(transactions),
-        recurrences: toRecord(recurrences),
-      };
+      const loaded = await loadAll();
 
       rowClock = createRowClock({
         deviceId,
@@ -293,5 +322,16 @@ export function createSession(deps: SessionDeps): Session {
     return inserted;
   }
 
-  return { state, status, error, localUserId, init, clock, mutate, putRows, insertMissing };
+  return {
+    state,
+    status,
+    error,
+    localUserId,
+    init,
+    clock,
+    mutate,
+    putRows,
+    insertMissing,
+    reload,
+  };
 }
