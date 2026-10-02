@@ -19,6 +19,10 @@ describe("detectReferenceMonth", () => {
     expect(detectReferenceMonth(["Data de vencimento", "05/11/2026"], "2026-01")).toBe("2026-11");
   });
 
+  it("lê o vencimento com mês por extenso (Nubank)", () => {
+    expect(detectReferenceMonth(["Data de vencimento: 08 SET 2026"], "2026-01")).toBe("2026-09");
+  });
+
   it("sem vencimento, devolve o fallback", () => {
     expect(detectReferenceMonth(["nada aqui"], "2026-01")).toBe("2026-01");
   });
@@ -86,6 +90,32 @@ describe("parseStatement — fatura", () => {
     ).toEqual([]);
   });
 
+  it("tira o final mascarado do cartão e o hífen da parcela (Nubank)", () => {
+    const [a, b] = card([
+      "31 JUL •••• 9998 Mercadolivre*Mercadol - Parcela 2/3 R$ 92,51",
+      "03 AGO •••• 9998 Mp *Mercsaofranci R$ 14,75",
+    ]);
+    expect(a).toMatchObject({
+      date: "2026-07-31",
+      description: "Mercadolivre*Mercadol",
+      installment: { k: 2, n: 3 },
+      amountMinor: 9251,
+    });
+    expect(b?.description).toBe("Mp *Mercsaofranci");
+  });
+
+  it("pagamento com sinal tipográfico vem desmarcado (Nubank)", () => {
+    const [entry] = card(["24 AGO Pagamento em 24 AGO −R$ 146,00"]);
+    expect(entry).toMatchObject({ kind: "income", amountMinor: 14_600, selected: false });
+  });
+
+  it("aceita mês por extenso com ano", () => {
+    expect(card(["03 SET 2025 Uber *Trip 12,34"])[0]).toMatchObject({
+      date: "2025-09-03",
+      description: "Uber *Trip",
+    });
+  });
+
   it("guarda a descrição crua para identidade", () => {
     const [entry] = card(["12/09 IFOOD  *RESTAURANTE 45,90"]);
     expect(entry?.rawDescription).toBe("IFOOD *RESTAURANTE");
@@ -123,6 +153,51 @@ describe("parseStatement — extrato", () => {
 
   it("extrato não tem parcela", () => {
     expect(account(["05/09 LOJA 03/10 -10,00"])[0]?.installment).toBeNull();
+  });
+
+  it("tira o id da operação da descrição (Mercado Pago)", () => {
+    const [a, b] = account([
+      "03-09-2026 Pagamento de assinatura 3545330270 Meli+ R$ -0,56 R$ 0,00",
+      "04-09-2026 Pix recebido 65.980.595 FULANO 176348095709 DE TAL R$ 2.850,00 R$ 3.190,00",
+    ]);
+    expect(a).toMatchObject({
+      date: "2026-09-03",
+      description: "Pagamento de assinatura Meli+",
+      amountMinor: 56,
+      kind: "expense",
+    });
+    expect(b).toMatchObject({
+      description: "Pix recebido 65.980.595 FULANO DE TAL",
+      amountMinor: 285_000,
+      kind: "income",
+    });
+  });
+
+  it("linha só com id e valor não vira lançamento sem nome", () => {
+    expect(account(["03-09-2026 3545330270 R$ -0,56 R$ 0,00"])).toEqual([]);
+  });
+
+  it("pagamento de fatura do Mercado Pago vem desmarcado", () => {
+    const [entry] = account([
+      "04-09-2026 Pagamento de fatura Cartão 177311601808 de crédito R$ -1.612,45 R$ 1.326,55",
+    ]);
+    expect(entry).toMatchObject({
+      description: "Pagamento de fatura Cartão de crédito",
+      kind: "expense",
+      selected: false,
+    });
+  });
+
+  it("movimentação de caixinha vem desmarcada, nos dois sentidos", () => {
+    const entries = account([
+      "04-09-2026 Reserva por gastos Casa R$ -0,80 R$ 1.325,75",
+      "05-09-2026 Dinheiro reservado Emergências R$ -600,00 R$ 724,95",
+      "04-09-2026 Dinheiro retirado Emergências R$ 340,00 R$ 340,00",
+      "10-09-2026 Hotel reserva Natal R$ -300,00 R$ 10,00",
+    ]);
+    expect(entries.map((e) => e.selected)).toEqual([false, false, false, true]);
+    expect(entries[0]?.note).not.toBeNull();
+    expect(entries[2]?.kind).toBe("income");
   });
 
   it("ano de dois dígitos", () => {
