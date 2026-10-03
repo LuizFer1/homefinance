@@ -368,6 +368,12 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
                       </span>
                     </span>
                     <span class={`hf-num text-sm font-medium ${income ? "text-income-fg" : ""}`}>
+                      {item.estimated && (
+                        <>
+                          <span class="sr-only">aproximadamente </span>
+                          <span aria-hidden="true">~</span>
+                        </>
+                      )}
                       {signedBRL(income ? item.amountMinor : -item.amountMinor, "always")}
                     </span>
                   </li>

@@ -87,6 +87,38 @@ describe("planOccurrences", () => {
     expect(plans.map((p) => p.draft.amountMinor)).toEqual([500_000, 550_000, 550_000]);
   });
 
+  it("série variável nasce estimada com a média das confirmadas, ancorada", () => {
+    const luz: Recurrence = { ...SALARIO, kind: "expense", variable: true };
+    const junho = { ...occurrenceOf(luz, "2026-06", "2026-06-05"), amountMinor: 20_000 };
+    const state: AppState = {
+      ...stateWith(luz, [junho]),
+      // Reajuste não vale para série variável.
+      recurrenceAdjustments: {
+        AJ: { ...BASE, id: "AJ", recurrenceId: "SERIE-1", fromPeriod: "2026-06", amountMinor: 1 },
+      },
+    };
+
+    const plans = planOccurrences(state, "2026-08-10");
+
+    expect(plans.map((p) => p.draft.amountMinor)).toEqual([20_000, 20_000]);
+    expect(plans.every((p) => p.anchored && p.draft.estimated === true)).toBe(true);
+  });
+
+  it("sem confirmada, a variável usa o palpite da série — e estimadas não entram na média", () => {
+    const luz: Recurrence = { ...SALARIO, variable: true, amountMinor: 15_000 };
+    const junho = { ...occurrenceOf(luz, "2026-06", "2026-06-05"), amountMinor: 99_000 };
+    const plans = planOccurrences(stateWith(luz, [{ ...junho, estimated: true }]), "2026-08-10");
+
+    expect(plans.map((p) => p.draft.amountMinor)).toEqual([15_000, 15_000]);
+  });
+
+  it("série fixa não é ancorada nem estimada", () => {
+    const plans = planOccurrences(stateWith(SALARIO), "2026-06-10");
+
+    expect(plans[0]?.anchored).toBe(false);
+    expect(plans[0]?.draft).not.toHaveProperty("estimated");
+  });
+
   it("planeja uma ocorrência por competência vencida", () => {
     const plans = planOccurrences(stateWith(SALARIO), "2026-08-10");
     expect(plans.map((p) => p.draft.occurredOn)).toEqual([

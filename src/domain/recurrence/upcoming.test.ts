@@ -105,6 +105,33 @@ describe("upcomingRecurrences", () => {
     expect(upcomingRecurrences(state, "2026-09-24", 30)).toEqual([]);
   });
 
+  it("série variável projeta a média das confirmadas, marcada como estimada", () => {
+    const key = occurrenceKey(SERIES, "2026-08");
+    const agosto: Transaction = {
+      id: stableEntityId(key),
+      ...ALIVE,
+      kind: "expense",
+      description: "Internet",
+      amountMinor: 30_000,
+      currency: "BRL",
+      categoryId: null,
+      paymentMethodId: null,
+      cashbackMinor: null,
+      occurredOn: "2026-08-30",
+      userId: null,
+      recurrenceId: SERIES,
+      occurrenceKey: key,
+    };
+    const state = stateWith([series({ variable: true, startOn: "2026-08-30" })], [agosto]);
+
+    expect(upcomingRecurrences(state, "2026-09-24", 10)).toEqual([
+      expect.objectContaining({ date: "2026-09-30", amountMinor: 30_000, estimated: true }),
+    ]);
+    expect(upcomingRecurrences(stateWith([series({})]), "2026-09-24", 10)[0]?.estimated).toBe(
+      false,
+    );
+  });
+
   it("respeita pausa e data final", () => {
     expect(upcomingRecurrences(stateWith([series({ active: false })]), "2026-09-24", 30)).toEqual(
       [],

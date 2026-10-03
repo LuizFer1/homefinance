@@ -105,6 +105,24 @@ describe("TransactionList", () => {
     expect(linhas[0]?.textContent).toContain(`${MINUS}R$`);
     expect(linhas[1]?.textContent).toContain("+R$");
   });
+
+  it("estimativa leva a tag e o ~ no valor", () => {
+    const estimada = record({ id: "e", description: "Conta de luz", estimated: true });
+    render(
+      <TransactionList
+        items={[estimada, record({ id: "r" })]}
+        state={STATE}
+        today="2026-08-08"
+        onEdit={vi.fn()}
+      />,
+    );
+
+    const linhas = screen.getAllByRole("listitem");
+    expect(linhas[0]?.textContent).toContain("Estimado");
+    expect(linhas[0]?.textContent).toContain(`~${MINUS}R$`);
+    expect(linhas[1]?.textContent).not.toContain("Estimado");
+    expect(linhas[1]?.textContent).not.toContain("~");
+  });
 });
 
 describe("rotulos de categoria, forma de pagamento e cashback", () => {

@@ -132,6 +132,11 @@ function Row({
                 {repeatLabel(state, item)}
               </span>
             )}
+            {item.estimated === true && (
+              <span class="shrink-0 rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] font-medium text-fg/70">
+                Estimado
+              </span>
+            )}
           </span>
           {/*
             Autoria como mini-avatar na meta, nunca fundo: fundo colorido
@@ -149,6 +154,13 @@ function Row({
         <span
           class={`hf-num shrink-0 text-right text-[15px] font-medium ${income ? "text-income-fg" : "text-fg"}`}
         >
+          {/* "~" na estimativa: o número está no saldo, mas ainda é palpite. */}
+          {item.estimated === true && (
+            <>
+              <span class="sr-only">aproximadamente </span>
+              <span aria-hidden="true">~</span>
+            </>
+          )}
           {signedBRL(income ? item.amountMinor : -item.amountMinor, "always")}
         </span>
       </button>

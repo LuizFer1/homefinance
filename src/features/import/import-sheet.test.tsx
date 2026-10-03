@@ -171,6 +171,51 @@ describe("ImportSheet", () => {
     expect(screen.getByText("Já importado")).toBeDefined();
   });
 
+  it("sugere confirmar a estimativa da mesma categoria e mês, e a linha não vira lançamento", async () => {
+    const estimada: Transaction = {
+      ...PAST,
+      id: "T-EST",
+      description: "Delivery do mês",
+      occurredOn: "2026-09-10",
+      recurrenceId: "SERIE",
+      occurrenceKey: "SERIE:2026-09",
+      estimated: true,
+    };
+    const { onImport } = renderSheet(
+      () => Promise.resolve(itemsOf(LINES)),
+      stateWith({ transactions: { [PAST.id]: PAST, [estimada.id]: estimada } }),
+    );
+    pickFile();
+
+    const select = (await screen.findByLabelText(
+      "Estimativa que IFOOD *RESTAURANTE confirma",
+    )) as HTMLSelectElement;
+    expect(select.value).toBe("T-EST");
+    expect(screen.getByText(/confirma Delivery do mês · set\/2026/)).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Importar 2" }));
+
+    await waitFor(() => expect(onImport).toHaveBeenCalled());
+    const plan = onImport.mock.calls[0]?.[0];
+    expect(plan.transactions).toHaveLength(0);
+    expect(plan.confirmations).toEqual([
+      expect.objectContaining({ transactionId: "T-EST", amountMinor: 4590 }),
+    ]);
+  });
+
+  it("linha que já confirmou uma estimativa conta como importada", async () => {
+    const entries = parseStatement(LINES, "card", "2026-10");
+    const [firstId] = identify(entries, { paymentMethodId: CARD.id, referenceMonth: "2026-10" });
+    const state = stateWith({
+      transactions: { [PAST.id]: PAST, CONF: { ...PAST, id: "CONF", importKey: firstId } },
+    });
+    renderSheet(() => Promise.resolve(itemsOf(LINES)), state);
+    pickFile();
+
+    const box = (await screen.findByLabelText("Importar IFOOD *RESTAURANTE")) as HTMLInputElement;
+    expect(box.disabled).toBe(true);
+  });
+
   it("PDF sem texto avisa que parece escaneado", async () => {
     renderSheet(() => Promise.resolve([]));
     pickFile();

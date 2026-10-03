@@ -484,7 +484,24 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
         scheduleType: "nthBusinessDay",
         scheduleN: 5,
         endOn: null,
+        variable: false,
       },
+    );
+  });
+
+  it("valor variável entra na regra da série", () => {
+    const { onSubmit } = montar({ today: "2026-08-11" });
+    preencherDados("Conta de luz", "200,00");
+    continuar();
+    fireEvent.click(screen.getByRole("checkbox", { name: /repetir este lançamento/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /valor varia todo mês/i }));
+    expect(screen.getByText(/média dos últimos 6 confirmados/)).toBeDefined();
+    avancarAteOFim();
+    enviar();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ description: "Conta de luz" }),
+      expect.objectContaining({ variable: true }),
     );
   });
 
@@ -579,6 +596,42 @@ describe("edição", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reajustar série" }));
 
     expect(onAdjustSeries).toHaveBeenCalledTimes(1);
+  });
+
+  it("ocorrência de série fixa oferece tornar o valor variável", () => {
+    const onMakeVariable = vi.fn();
+    montar({
+      editing: { ...RECORD, recurrenceId: "SERIE-1", occurrenceKey: "SERIE-1:2026-08" },
+      onMakeVariable,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Tornar valor variável" }));
+
+    expect(onMakeVariable).toHaveBeenCalledTimes(1);
+  });
+
+  it("salvar uma estimativa a confirma, mesmo sem mudar o valor", () => {
+    const { onSubmit } = montar({
+      editing: {
+        ...RECORD,
+        recurrenceId: "SERIE-1",
+        occurrenceKey: "SERIE-1:2026-08",
+        estimated: true,
+      },
+    });
+    expect(screen.getByText("Valor estimado. Salvar confirma este lançamento.")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ estimated: false }), null);
+  });
+
+  it("salvar um lançamento comum não mexe em `estimated`", () => {
+    const { onSubmit } = montar({ editing: RECORD });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(onSubmit.mock.calls[0]?.[0]).not.toHaveProperty("estimated");
   });
 
   it("lançamento avulso não oferece reajuste", () => {

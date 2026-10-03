@@ -3,12 +3,19 @@ import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import type { TransactionDraft } from "../model/transaction";
 import { amountFor } from "./adjustments";
+import { estimateFor } from "./estimate";
 import { eachPeriod, occurrenceKey, occurrenceOn } from "./schedule";
 
 export interface OccurrencePlan {
   /** Determinístico: dois aparelhos materializam o mesmo mês com o mesmo id. */
   entityId: Ulid;
   draft: TransactionDraft;
+  /**
+   * Estimativa de série variável: a linha nasce com `updatedAt` ancorado no
+   * passado (`floorHlc`), para que a confirmação feita noutro aparelho vença
+   * esta geração no LWW por linha, por mais tarde que ela aconteça.
+   */
+  anchored: boolean;
 }
 
 /**
@@ -23,6 +30,7 @@ export function planOccurrences(state: AppState, today: string): OccurrencePlan[
   const plans: OccurrencePlan[] = [];
 
   const adjustments = Object.values(state.recurrenceAdjustments);
+  const transactions = Object.values(state.transactions);
 
   for (const series of Object.values(state.recurrences)) {
     if (series.deletedAt !== null || !series.active) continue;
@@ -42,14 +50,20 @@ export function planOccurrences(state: AppState, today: string): OccurrencePlan[
       // lançamento que o usuário decidiu que não existe.
       if (state.transactions[entityId] !== undefined) continue;
 
+      const variable = series.variable === true;
       plans.push({
         entityId,
+        anchored: variable,
         draft: {
           kind: series.kind,
           description: series.description,
           // O valor da competência, não o da série: um reajuste a partir de
           // janeiro tem que fazer o salário de janeiro nascer com o valor novo.
-          amountMinor: amountFor(series, adjustments, period),
+          // Na variável, a média das confirmadas — congelada aqui: confirmar
+          // outra ocorrência depois não a recalcula.
+          amountMinor: variable
+            ? estimateFor(series, transactions, period)
+            : amountFor(series, adjustments, period),
           currency: "BRL",
           categoryId: series.categoryId,
           paymentMethodId: series.paymentMethodId,
@@ -57,6 +71,7 @@ export function planOccurrences(state: AppState, today: string): OccurrencePlan[
           occurredOn,
           recurrenceId: series.id,
           occurrenceKey: key,
+          ...(variable ? { estimated: true } : {}),
         },
       });
     }

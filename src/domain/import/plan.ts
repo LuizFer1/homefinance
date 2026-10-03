@@ -10,6 +10,20 @@ import { normalizeDescription } from "./suggest-category";
 /** Linha depois da revisão: o usuário pode ter mudado descrição, categoria e a caixa. */
 export interface ReviewedEntry extends ParsedEntry {
   categoryId: Ulid | null;
+  /**
+   * Estimativa de série variável que esta linha confirma (ver `suggestLinks`).
+   * Vinculada, a linha não vira transação nova: vira o valor real da ocorrência.
+   */
+  linkTo?: Ulid | null;
+}
+
+/** Linha do PDF que confirma uma estimativa em vez de criar lançamento. */
+export interface ImportConfirmation {
+  transactionId: Ulid;
+  amountMinor: number;
+  occurredOn: string;
+  /** Id determinístico da linha: é o que faz reimportar o PDF não duplicar. */
+  importKey: Ulid;
 }
 
 export interface ImportContext {
@@ -22,6 +36,7 @@ export interface ImportContext {
 export interface ImportPlan {
   transactions: { id: Ulid; draft: TransactionDraft }[];
   series: { id: Ulid; draft: RecurrenceDraft }[];
+  confirmations: ImportConfirmation[];
 }
 
 function monthsBetween(from: string, to: string): number {
@@ -79,13 +94,23 @@ export function identify(entries: readonly ParsedEntry[], ctx: ImportContext): U
 /** Só as linhas marcadas viram escrita; a série da parcela entra uma vez só. */
 export function planImport(entries: readonly ReviewedEntry[], ctx: ImportContext): ImportPlan {
   const ids = identify(entries, ctx);
-  const plan: ImportPlan = { transactions: [], series: [] };
+  const plan: ImportPlan = { transactions: [], series: [], confirmations: [] };
   const seriesIds = new Set<Ulid>();
 
   entries.forEach((entry, index) => {
     const id = ids[index];
     if (!entry.selected || id === undefined) return;
     const description = entry.description.trim() || entry.rawDescription;
+
+    if (entry.installment === null && entry.linkTo != null) {
+      plan.confirmations.push({
+        transactionId: entry.linkTo,
+        amountMinor: entry.amountMinor,
+        occurredOn: entry.date,
+        importKey: id,
+      });
+      return;
+    }
 
     if (entry.installment === null) {
       plan.transactions.push({
