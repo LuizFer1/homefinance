@@ -13,6 +13,7 @@ import {
   type ReserveKind,
   type ReserveMovement,
   type ReserveMovementDraft,
+  WITHDRAW_REASONS,
   type WithdrawReason,
 } from "../../domain/model/reserve";
 import type { ColorToken, IconKey } from "../../domain/model/tokens";
@@ -74,6 +75,21 @@ function assertAmount(amountMinor: number): void {
   if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || amountMinor > MAX_MINOR) {
     throw new Error("Valor inválido");
   }
+}
+
+/**
+ * O tipo só garante o motivo para quem compila contra ele; a UI (ou uma
+ * versão futura) pode mandar qualquer string, e o log é eterno.
+ */
+function assertReason(reason: string | null): void {
+  if (reason === null || !(WITHDRAW_REASONS as readonly string[]).includes(reason)) {
+    throw new Error("Escolha o motivo da retirada");
+  }
+}
+
+/** Campos-objeto: `!==` do repositório sempre os veria como mudados. */
+function sameValue(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function dayOf(date: string): number {
@@ -144,7 +160,7 @@ export function createReservesStore(session: Session): ReservesStore {
   function movementDraft(
     reserveId: Ulid,
     signed: number,
-    input: MovementInput,
+    input: Pick<MovementInput, "description" | "occurredOn">,
     reason: WithdrawReason | null,
     recurring = false,
   ): ReserveMovementDraft {
@@ -195,9 +211,10 @@ export function createReservesStore(session: Session): ReservesStore {
           throw new Error("Você já tem uma reserva de emergência");
         }
         const draft = draftOf(input, today, null);
-        const created = await session.mutate("reserves", (repo) => repo.create(draft));
-        await materializeDue(today);
-        return created;
+        // Sem `materializeDue` aqui: a regra do formulário sempre começa no
+        // mês seguinte, então não haveria o que depositar — e uma rejeição
+        // depois da gravação convidaria a pessoa a criar a reserva de novo.
+        return session.mutate("reserves", (repo) => repo.create(draft));
       }),
 
     edit: (id, input, today) =>
@@ -206,14 +223,30 @@ export function createReservesStore(session: Session): ReservesStore {
         // O tipo não muda na edição: caixinha virar emergência pularia a
         // checagem de "só uma", e o contrário perderia os ids essenciais.
         const draft = draftOf({ ...input, kind: current.kind }, today, current);
-        const saved = await session.mutate("reserves", (repo) => repo.update(id, draft));
-        await materializeDue(today);
+        // `recurring` e `essentialCategoryIds` vêm do state e o repositório
+        // compara com `!==` a cópia lida do banco: iguais em valor, sairiam
+        // "mudados" e um salvar sem mudança carimbaria um HLC novo. No LWW
+        // por linha, esse carimbo vazio venceria uma edição real feita no
+        // outro celular. Iguais em valor ficam fora do update.
+        const changes: Partial<ReserveDraft> = { ...draft };
+        if (sameValue(draft.recurring, current.recurring)) delete changes.recurring;
+        if (sameValue(draft.essentialCategoryIds, current.essentialCategoryIds)) {
+          delete changes.essentialCategoryIds;
+        }
+        const saved = await session.mutate("reserves", (repo) => repo.update(id, changes));
+        // A edição já está gravada: falha da materialização não pode
+        // rejeitá-la (a tela trataria como não salva). Ela já se reporta em
+        // `session.error`, e a próxima abertura tenta de novo.
+        await materializeDue(today).catch(() => {});
         return saved;
       }),
 
     remove: (id, today) =>
       guarded(async () => {
         const current = aliveReserve(id);
+        // Saldo lido da memória: um Guardar concorrente noutra aba não entra
+        // nas versões esperadas (a linha dele é nova). Janela aceita — o mesmo
+        // vale para `withdraw`; a próxima abertura mostra o saldo real.
         const balance = reserveBalance(session.state.value, id);
         if (balance === 0) {
           await session.mutate("reserves", (repo) => repo.remove(id));
@@ -225,7 +258,7 @@ export function createReservesStore(session: Session): ReservesStore {
           movementDraft(
             id,
             -balance,
-            { amountMinor: Math.abs(balance), description: "Reserva excluída", occurredOn: today },
+            { description: "Reserva excluída", occurredOn: today },
             // Saldo negativo só vem de dado anômalo (sync); aí a linha final é
             // entrada, e entrada não tem motivo.
             balance > 0 ? "other" : null,
@@ -290,7 +323,9 @@ export function createReservesStore(session: Session): ReservesStore {
     withdraw: (reserveId, input) =>
       guarded(async () => {
         assertAmount(input.amountMinor);
+        assertReason(input.reason);
         aliveReserve(reserveId);
+        // Saldo da memória, sem versão esperada: ver a janela aceita em `remove`.
         // Só o saldo da reserva limita: o dinheiro volta para o mês, e o
         // mês nunca fica menor por causa de uma retirada.
         if (input.amountMinor > reserveBalance(session.state.value, reserveId)) {
@@ -305,13 +340,22 @@ export function createReservesStore(session: Session): ReservesStore {
         assertAmount(input.amountMinor);
         const current = session.state.value.reserveMovements[id];
         if (!isAlive(current)) throw new Error("Movimento não existe");
+        // Movimentos de reserva apagada já foram zerados pela retirada final:
+        // mexer num deles desequilibraria um saldo que ninguém mais vê.
+        aliveReserve(current.reserveId);
         // O sinal é da operação original: editar não transforma retirada em
         // depósito. Autor e `recurring` ficam como estão.
         const out = current.amountMinor < 0;
-        if (out && input.reason === null) throw new Error("Escolha o motivo da retirada");
+        if (out) assertReason(input.reason);
+        const signed = out ? -input.amountMinor : input.amountMinor;
+        const after =
+          reserveBalance(session.state.value, current.reserveId) - current.amountMinor + signed;
+        if (after < 0) {
+          throw new Error(out ? "Maior que o saldo da reserva" : "A reserva ficaria negativa");
+        }
         return session.mutate("reserveMovements", (repo) =>
           repo.update(id, {
-            amountMinor: out ? -input.amountMinor : input.amountMinor,
+            amountMinor: signed,
             description: input.description?.trim() || null,
             occurredOn: input.occurredOn,
             reason: out ? input.reason : null,
@@ -320,7 +364,19 @@ export function createReservesStore(session: Session): ReservesStore {
       }),
 
     removeMovement: (id) =>
-      guarded(() => session.mutate("reserveMovements", (repo) => repo.remove(id))),
+      guarded(async () => {
+        const current = session.state.value.reserveMovements[id];
+        if (current === undefined) throw new Error("Movimento não existe");
+        // Apagar de novo não é erro: o toque duplo na lixeira não vira aviso.
+        if (!isAlive(current)) return current;
+        // Mesmo motivo de `editMovement`: reserva apagada fica congelada.
+        aliveReserve(current.reserveId);
+        // Apagar um depósito já gasto por retiradas deixaria a reserva devendo.
+        if (reserveBalance(session.state.value, current.reserveId) - current.amountMinor < 0) {
+          throw new Error("A reserva ficaria negativa");
+        }
+        return session.mutate("reserveMovements", (repo) => repo.remove(id));
+      }),
 
     materializeDue,
   };

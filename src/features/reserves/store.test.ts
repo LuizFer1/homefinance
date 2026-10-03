@@ -3,10 +3,11 @@ import type { HomeFinanceDb } from "../../data/db";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
 import { isAlive } from "../../domain/model/base";
 import type { Category } from "../../domain/model/category";
-import { ALIVE } from "../../domain/model/row.fake";
+import { ALIVE, DELETED_AT } from "../../domain/model/row.fake";
 import type { Transaction } from "../../domain/model/transaction";
 import { reserveBalance } from "../../domain/reserves/balances";
 import { depositId } from "../../domain/reserves/deposits";
+import { movement } from "../../domain/reserves/fixtures.fake";
 import { createSession, type Session } from "../session/session";
 import { createReservesStore, type ReserveInput, type ReservesStore } from "./store";
 
@@ -237,5 +238,179 @@ describe("remove", () => {
     const r = await store.create(GOAL, "2026-10-10");
     await store.remove(r.id, "2026-10-12");
     expect(Object.keys(session.state.value.reserveMovements)).toHaveLength(0);
+  });
+});
+
+/** Id do único movimento vivo que satisfaz `pick` (deposit não devolve a linha). */
+function movementId(pick: (amountMinor: number) => boolean): string {
+  const found = Object.values(session.state.value.reserveMovements).find(
+    (m) => isAlive(m) && pick(m.amountMinor),
+  );
+  if (found === undefined) throw new Error("movimento não encontrado");
+  return found.id;
+}
+
+const MORADIA: Category = {
+  ...ALIVE,
+  id: "MOR",
+  name: "Moradia",
+  icon: "house",
+  color: "amber",
+  kind: "expense",
+};
+
+describe("edit", () => {
+  it("salvar sem mudança não carimba HLC novo", async () => {
+    await session.putRows({ categories: [MORADIA] });
+    const g = await store.create({ ...GOAL, recurringAmountMinor: 56_000 }, "2026-10-10");
+    const e = await store.create(EMERGENCY, "2026-10-10");
+    await store.edit(g.id, { ...GOAL, recurringAmountMinor: 56_000 }, "2026-10-12");
+    await store.edit(e.id, EMERGENCY, "2026-10-12");
+    expect((await db.reserves.get(g.id))?.updatedAt).toBe(g.updatedAt);
+    expect((await db.reserves.get(e.id))?.updatedAt).toBe(e.updatedAt);
+  });
+
+  it("mesmo valor mensal preserva dia e início; valor novo vale do mês seguinte, no dia de hoje", async () => {
+    const r = await store.create({ ...GOAL, recurringAmountMinor: 56_000 }, "2026-10-10");
+    const same = await store.edit(
+      r.id,
+      { ...GOAL, name: "Praia", recurringAmountMinor: 56_000 },
+      "2026-12-03",
+    );
+    expect(same.recurring).toEqual({ amountMinor: 56_000, day: 10, since: "2026-11" });
+    const changed = await store.edit(r.id, { ...GOAL, recurringAmountMinor: 60_000 }, "2026-12-03");
+    expect(changed.recurring).toEqual({ amountMinor: 60_000, day: 3, since: "2027-01" });
+  });
+
+  it("emergência mantém o tipo e os ids essenciais gravados na criação", async () => {
+    await session.putRows({ categories: [MORADIA] });
+    const e = await store.create(EMERGENCY, "2026-10-10");
+    await session.putRows({ categories: [{ ...MORADIA, id: "ALI", name: "Alimentação" }] });
+    const edited = await store.edit(e.id, { ...GOAL, name: "Outra" }, "2026-10-12");
+    expect(edited).toMatchObject({
+      kind: "emergency",
+      name: "Reserva de emergência",
+      essentialCategoryIds: ["MOR"],
+      targetMinor: null,
+    });
+  });
+});
+
+describe("validações de movimento", () => {
+  it("motivo fora da lista é rejeitado na retirada e na edição", async () => {
+    const r = await store.create(GOAL, "2026-10-10");
+    await store.deposit(r.id, { amountMinor: 50_000, description: null, occurredOn: "2026-10-10" });
+    const bad = "xyz" as unknown as "car";
+    const base = { amountMinor: 1_000, description: null, occurredOn: "2026-10-10" };
+    await expect(store.withdraw(r.id, { ...base, reason: bad })).rejects.toThrow(
+      "Escolha o motivo da retirada",
+    );
+    const w = await store.withdraw(r.id, { ...base, reason: "car" });
+    await expect(store.editMovement(w.id, { ...base, reason: bad })).rejects.toThrow(
+      "Escolha o motivo da retirada",
+    );
+    expect(session.error.value).toBe("Escolha o motivo da retirada");
+  });
+
+  it("editar retirada não passa do saldo + o valor original", async () => {
+    const r = await store.create(GOAL, "2026-10-10");
+    await store.deposit(r.id, { amountMinor: 50_000, description: null, occurredOn: "2026-10-10" });
+    const input = { description: null, occurredOn: "2026-10-10", reason: "car" as const };
+    const w = await store.withdraw(r.id, { ...input, amountMinor: 10_000 });
+    await expect(store.editMovement(w.id, { ...input, amountMinor: 50_001 })).rejects.toThrow(
+      "Maior que o saldo da reserva",
+    );
+    await store.editMovement(w.id, { ...input, amountMinor: 50_000 });
+    expect(reserveBalance(session.state.value, r.id)).toBe(0);
+  });
+
+  it("reduzir ou apagar depósito já retirado não deixa a reserva negativa", async () => {
+    const r = await store.create(GOAL, "2026-10-10");
+    await store.deposit(r.id, { amountMinor: 50_000, description: null, occurredOn: "2026-10-10" });
+    const d = movementId((a) => a > 0);
+    await store.withdraw(r.id, {
+      amountMinor: 30_000,
+      description: null,
+      occurredOn: "2026-10-11",
+      reason: "car",
+    });
+    const input = { description: null, occurredOn: "2026-10-10", reason: null };
+    await expect(store.editMovement(d, { ...input, amountMinor: 20_000 })).rejects.toThrow(
+      "A reserva ficaria negativa",
+    );
+    await expect(store.removeMovement(d)).rejects.toThrow("A reserva ficaria negativa");
+    await store.editMovement(d, { ...input, amountMinor: 30_000 });
+    expect(reserveBalance(session.state.value, r.id)).toBe(0);
+  });
+
+  it("movimento de reserva apagada fica congelado", async () => {
+    const r = await store.create(GOAL, "2026-10-10");
+    await store.deposit(r.id, { amountMinor: 50_000, description: null, occurredOn: "2026-10-10" });
+    const d = movementId((a) => a > 0);
+    await store.remove(r.id, "2026-10-12");
+    await expect(
+      store.editMovement(d, {
+        amountMinor: 1_000,
+        description: null,
+        occurredOn: "2026-10-10",
+        reason: null,
+      }),
+    ).rejects.toThrow("Reserva não existe");
+    await expect(store.removeMovement(d)).rejects.toThrow("Reserva não existe");
+  });
+
+  it("editar o depósito mensal mantém recurring e motivo nulo", async () => {
+    const r = await store.create(GOAL, "2026-09-01");
+    await session.putRows({
+      reserves: [{ ...r, recurring: { amountMinor: 50_000, day: 6, since: "2026-10" } }],
+    });
+    await store.materializeDue("2026-10-06");
+    const edited = await store.editMovement(depositId(r.id, "2026-10"), {
+      amountMinor: 40_000,
+      description: "ajuste",
+      occurredOn: "2026-10-06",
+      reason: null,
+    });
+    expect(edited).toMatchObject({ amountMinor: 40_000, recurring: true, reason: null });
+  });
+});
+
+describe("casos de borda do depósito e da exclusão", () => {
+  it("ligar a recorrência quando o id do mês já existe: id aleatório, e a materialização não repete", async () => {
+    const r = await store.create(GOAL, "2026-10-10");
+    const monthId = depositId(r.id, "2026-10");
+    await session.putRows({
+      reserveMovements: [
+        movement(monthId, r.id, 50_000, "2026-10-05", { recurring: true, deletedAt: DELETED_AT }),
+      ],
+    });
+    await store.deposit(
+      r.id,
+      { amountMinor: 30_000, description: null, occurredOn: "2026-10-10" },
+      true,
+    );
+    const id = movementId((a) => a > 0);
+    expect(id).not.toBe(monthId);
+    expect(session.state.value.reserveMovements[id]).toMatchObject({ recurring: false });
+    expect(session.state.value.reserves[r.id]?.recurring).toEqual({
+      amountMinor: 30_000,
+      day: 10,
+      since: "2026-10",
+    });
+    await store.materializeDue("2026-10-25");
+    expect(reserveBalance(session.state.value, r.id)).toBe(30_000);
+  });
+
+  it("excluir com saldo negativo grava entrada final sem motivo", async () => {
+    const r = await store.create(GOAL, "2026-10-10");
+    await session.putRows({ reserveMovements: [movement("NEG", r.id, -5_000, "2026-10-05")] });
+    await store.remove(r.id, "2026-10-12");
+    const final = Object.values(session.state.value.reserveMovements).find((m) => m.id !== "NEG");
+    expect(final).toMatchObject({
+      amountMinor: 5_000,
+      reason: null,
+      description: "Reserva excluída",
+    });
+    expect(reserveBalance(session.state.value, r.id)).toBe(0);
   });
 });
