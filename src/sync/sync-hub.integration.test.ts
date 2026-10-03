@@ -4,6 +4,7 @@ import type { HomeFinanceDb } from "../data/db";
 import { openTestDb } from "../data/test-db.fake";
 import { compareHlc } from "../domain/clock/hlc";
 import type { RandomChunk } from "../domain/ids/ulid";
+import { movement, reserve } from "../domain/reserves/fixtures.fake";
 import { createRegistryStore, type RegistryStore } from "../features/registry/store";
 import { createSession, type Session } from "../features/session/session";
 import { createSyncStore, type SyncStore } from "../features/sync/store";
@@ -159,6 +160,51 @@ describe("dois aparelhos, um hub", () => {
     ).toEqual(["Mercado", "Transporte"]);
     expect(categories(b)).toEqual(categories(a));
     expect(a.sync.link.value?.epoch).toBe(hub.epoch);
+  });
+
+  it("reservas e movimentos vão de um aparelho ao outro pelo hub", async () => {
+    // As tabelas novas não têm caminho próprio no sync: o engine itera
+    // `TABLE_NAMES`. Este caso prova que nenhuma lista à mão ficou para trás.
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+    const RESERVA = "01J9F3K2M7QX8YB4TVWZ0DCER1";
+    const GUARDADO = "01J9F3K2M7QX8YB4TVWZ0DCEM1";
+
+    await a.session.putRows({
+      reserves: [
+        reserve(RESERVA, {
+          name: "Viagem",
+          targetMinor: 300_000,
+          updatedAt: a.session.clock().stamp().hlc,
+          dirty: 1,
+        }),
+      ],
+      reserveMovements: [
+        movement(GUARDADO, RESERVA, 50_000, "2026-08-08", {
+          updatedAt: a.session.clock().stamp().hlc,
+          dirty: 1,
+        }),
+      ],
+    });
+    await a.sync.sync();
+    await b.sync.sync();
+
+    expect(b.session.state.value.reserves[RESERVA]).toMatchObject({
+      name: "Viagem",
+      targetMinor: 300_000,
+      deletedAt: null,
+      dirty: 0,
+    });
+    expect(b.session.state.value.reserveMovements[GUARDADO]).toMatchObject({
+      reserveId: RESERVA,
+      amountMinor: 50_000,
+      occurredOn: "2026-08-08",
+      dirty: 0,
+    });
+    // O aparelho de origem também fica limpo depois do push.
+    expect(a.session.state.value.reserves[RESERVA]?.dirty).toBe(0);
+    expect(a.session.state.value.reserveMovements[GUARDADO]?.dirty).toBe(0);
   });
 
   it("revogado: fica desconectado e volta a sincronizar ao parear de novo", async () => {
