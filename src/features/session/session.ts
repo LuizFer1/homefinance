@@ -202,17 +202,27 @@ export function createSession(deps: SessionDeps): Session {
     // dela e a publicação do reload, que então a cobria com o valor velho. Na
     // transação, a escrita espera a leitura acabar e publica por cima dela.
     const tables = TABLE_NAMES.map((table) => deps.db.table(table));
-    const [users, categories, paymentMethods, transactions, recurrences, recurrenceAdjustments] =
-      await deps.db.transaction("r", tables, () =>
-        Promise.all([
-          deps.db.users.toArray(),
-          deps.db.categories.toArray(),
-          deps.db.paymentMethods.toArray(),
-          deps.db.transactions.toArray(),
-          deps.db.recurrences.toArray(),
-          deps.db.recurrenceAdjustments.toArray(),
-        ]),
-      );
+    const [
+      users,
+      categories,
+      paymentMethods,
+      transactions,
+      recurrences,
+      recurrenceAdjustments,
+      reserves,
+      reserveMovements,
+    ] = await deps.db.transaction("r", tables, () =>
+      Promise.all([
+        deps.db.users.toArray(),
+        deps.db.categories.toArray(),
+        deps.db.paymentMethods.toArray(),
+        deps.db.transactions.toArray(),
+        deps.db.recurrences.toArray(),
+        deps.db.recurrenceAdjustments.toArray(),
+        deps.db.reserves.toArray(),
+        deps.db.reserveMovements.toArray(),
+      ]),
+    );
     return {
       users: toRecord(users),
       categories: toRecord(categories),
@@ -220,6 +230,8 @@ export function createSession(deps: SessionDeps): Session {
       transactions: toRecord(transactions),
       recurrences: toRecord(recurrences),
       recurrenceAdjustments: toRecord(recurrenceAdjustments),
+      reserves: toRecord(reserves),
+      reserveMovements: toRecord(reserveMovements),
     };
   }
 
