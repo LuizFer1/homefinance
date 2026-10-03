@@ -33,7 +33,7 @@ describe("meterFractions", () => {
 describe("suggestedMonthly", () => {
   it("divide o que falta pelos meses de mês+1 até o prazo, inclusive", () => {
     expect(suggestedMonthly(500_000, 0, "2027-06", "2026-09-20")).toEqual({
-      monthlyMinor: 55_556,
+      monthlyMinor: 55_600,
       deposits: 9,
     });
   });

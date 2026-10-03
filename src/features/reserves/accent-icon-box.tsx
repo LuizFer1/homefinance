@@ -1,7 +1,7 @@
 import { Icon } from "../icons/icon";
 
 export interface AccentIconBoxProps {
-  size: 36 | 40;
+  size: 32 | 36 | 40;
   iconSize?: number;
   icon?: string;
 }
@@ -18,7 +18,7 @@ export function AccentIconBox({ size, iconSize, icon = "lifebuoy" }: AccentIconB
       class="grid shrink-0 place-items-center rounded-lg border border-accent text-accent-300 shadow-[0_0_16px_-4px_color-mix(in_srgb,var(--color-accent)_60%,transparent)]"
       style={{ width: size, height: size }}
     >
-      <Icon name={icon} size={iconSize ?? (size === 36 ? 18 : 20)} />
+      <Icon name={icon} size={iconSize ?? (size === 32 ? 16 : size === 36 ? 18 : 20)} />
     </span>
   );
 }

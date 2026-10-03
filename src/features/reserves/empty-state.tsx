@@ -1,10 +1,8 @@
 import { useState } from "preact/hooks";
-import { EMERGENCY_MULTIPLES, type EmergencyMultiple } from "../../domain/model/reserve";
-import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
+import type { EmergencyMultiple } from "../../domain/model/reserve";
+import { minorOf } from "../../domain/money/mask";
 import { Button } from "../ui/button";
-import { FIELD_SHEET, LABEL } from "../ui/field";
-import { Money, wholeBRL } from "../ui/money";
-import { Segmented } from "../ui/segmented";
+import { EmergencyGoalCard } from "./emergency-goal-card";
 import { MonthsMeter } from "./months-meter";
 
 export interface EmptyStateProps {
@@ -13,8 +11,6 @@ export interface EmptyStateProps {
   onCreateEmergency: (multiple: EmergencyMultiple, essentialOverrideMinor: number | null) => void;
   onCreateGoal: () => void;
 }
-
-const OPTIONS = EMERGENCY_MULTIPLES.map((m) => ({ value: String(m), label: `${m} meses` }));
 
 /** Estado vazio (2f): convida a criar a emergência antes de qualquer caixinha. */
 export function EmptyState({ costMinor, onCreateEmergency, onCreateGoal }: EmptyStateProps) {
@@ -39,48 +35,14 @@ export function EmptyState({ costMinor, onCreateEmergency, onCreateGoal }: Empty
         de 3 a 6 meses do que você gasta com o essencial.
       </p>
 
-      <section class="mt-[18px] rounded-lg bg-surface p-4">
-        {costMinor === null ? (
-          <>
-            <label for="essential-cost" class={LABEL}>
-              Quanto você gasta com o essencial por mês?
-            </label>
-            <input
-              id="essential-cost"
-              inputMode="numeric"
-              autocomplete="off"
-              placeholder="0,00"
-              value={maskDigits(digits)}
-              onInput={(event) => setDigits(onlyDigits(event.currentTarget.value))}
-              class={`${FIELD_SHEET} hf-num mt-2`}
-            />
-          </>
-        ) : (
-          <>
-            <h3 class="hf-label">Pelos seus lançamentos</h3>
-            <p class="mt-2.5 flex items-baseline justify-between text-sm">
-              <span>Custo essencial</span>
-              <span class="hf-num font-medium">{wholeBRL(costMinor)}/mês</span>
-            </p>
-          </>
-        )}
-
-        <Segmented
-          name="emergency-multiple"
-          legend="Meses de cobertura"
-          onSurface
-          variant="pill"
-          class="mt-3"
-          options={OPTIONS}
-          value={String(multiple)}
-          onChange={(value) => setMultiple(Number(value) as EmergencyMultiple)}
-        />
-
-        <div class="mt-3.5 flex items-baseline justify-between">
-          <span class="text-sm text-fg/65">Meta sugerida</span>
-          <Money minor={ready ? cost * multiple : 0} size={24} testId="suggested-target" />
-        </div>
-      </section>
+      <EmergencyGoalCard
+        costMinor={costMinor}
+        digits={digits}
+        onDigits={setDigits}
+        costLabel="Quanto você gasta com o essencial por mês?"
+        multiple={multiple}
+        onMultiple={setMultiple}
+      />
 
       <Button
         icon="lifebuoy"

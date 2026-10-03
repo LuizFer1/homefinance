@@ -42,7 +42,10 @@ export function suggestedMonthly(
   const deposits = Math.max(1, monthIndex(deadline) - monthIndex(monthOf(today)));
   // Prazo malformado vira NaN; sem esta guarda a UI mostraria "NaN" como sugestão.
   if (!Number.isFinite(deposits)) return null;
-  return { monthlyMinor: Math.ceil(missing / deposits), deposits };
+  // Reais inteiros, para cima: a tela mostra o valor sem centavos (wholeBRL
+  // arredonda) e quem guarda exatamente o que lê tem de chegar na meta;
+  // arredondar para baixo deixaria faltar alguns reais.
+  return { monthlyMinor: Math.ceil(missing / deposits / 100) * 100, deposits };
 }
 
 /** Regra 8: mês atual + ceil(falta / depósito mensal). 'YYYY-MM' ou null. */

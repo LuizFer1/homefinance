@@ -1,29 +1,32 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
+import { shiftMonth } from "../../domain/dates/calendar";
 import type { AppState } from "../../domain/model/app-state";
 import {
   EMERGENCY_COLOR,
   EMERGENCY_ICON,
-  EMERGENCY_MULTIPLES,
   type EmergencyMultiple,
   type Reserve,
   type ReserveKind,
 } from "../../domain/model/reserve";
 import type { ColorToken, IconKey } from "../../domain/model/tokens";
-import { MAX_MINOR, maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
+import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
+import { monthOf } from "../../domain/projections/periods";
 import { emergencyOf, reserveBalance } from "../../domain/reserves/balances";
-import { emergencyTarget } from "../../domain/reserves/essential";
+import { essentialCost, findEssentialCategoryIds } from "../../domain/reserves/essential";
 import { suggestedMonthly } from "../../domain/reserves/goals";
 import { Icon } from "../icons/icon";
 import { PICKABLE_ICONS } from "../icons/icon-set";
 import { Button } from "../ui/button";
-import { FIELD_PAGE, LABEL } from "../ui/field";
+import { FIELD_PAGE, HINT, LABEL } from "../ui/field";
 import { HoldToDelete } from "../ui/hold-button";
 import { wholeBRL } from "../ui/money";
-import { Segmented } from "../ui/segmented";
 import { Swatches } from "../ui/swatches";
 import { Toggle } from "../ui/toggle";
-import { deadlineLabel } from "./format";
+import { AccentIconBox } from "./accent-icon-box";
+import { BackLink } from "./back-link";
+import { EmergencyGoalCard } from "./emergency-goal-card";
+import { deadlineLabel, monthName } from "./format";
 import type { ReserveInput } from "./store";
 
 export interface ReserveFormProps {
@@ -47,11 +50,6 @@ const SHORT_ICONS: readonly IconKey[] = [
   "graduation",
 ];
 
-const MULTIPLE_OPTIONS = EMERGENCY_MULTIPLES.map((m) => ({
-  value: String(m),
-  label: `${m} meses`,
-}));
-
 /**
  * Invólucro de um campo com algo antes do `<input>` ("R$", ícone de calendário).
  * A borda de foco fica aqui e não no input: o input é transparente e o prefixo
@@ -60,7 +58,7 @@ const MULTIPLE_OPTIONS = EMERGENCY_MULTIPLES.map((m) => ({
 function FieldShell({ tone, children }: { tone: "surface" | "bg"; children: ComponentChildren }) {
   return (
     <div
-      class={`mt-2 flex h-12 items-center gap-2 rounded-lg border border-divider px-3.5 text-[15px]
+      class={`mt-2 flex h-12 items-center gap-2 rounded-lg border border-divider px-3.5 text-base
         transition-[border-color] duration-150 focus-within:border-accent ${
           tone === "bg" ? "bg-bg" : "bg-surface"
         }`}
@@ -76,12 +74,14 @@ function MoneyField({
   digits,
   onDigits,
   tone = "surface",
+  hint,
 }: {
   id: string;
   label: string;
   digits: string;
   onDigits: (digits: string) => void;
   tone?: "surface" | "bg";
+  hint?: string;
 }) {
   return (
     <div>
@@ -98,9 +98,15 @@ function MoneyField({
           placeholder="0,00"
           value={maskDigits(digits)}
           onInput={(event) => onDigits(onlyDigits(event.currentTarget.value))}
-          class="hf-num min-w-0 flex-1 bg-transparent outline-none placeholder:text-fg/40"
+          aria-describedby={hint === undefined ? undefined : `${id}-hint`}
+          class="hf-num min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-fg/40"
         />
       </FieldShell>
+      {hint !== undefined && (
+        <p id={`${id}-hint`} class={HINT}>
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
@@ -165,13 +171,17 @@ export function ReserveForm({
   const [pickedKind, setPickedKind] = useState<ReserveKind>(initialKind);
   // O tipo não muda depois de criado: trocar caixinha em emergência
   // reescreveria o que a meta significa, e o saldo ficaria sem explicação.
-  const kind = editing?.kind ?? pickedKind;
-  const emergency = kind === "emergency";
   const existing = emergencyOf(state);
   const emergencyTaken = existing !== null && existing.id !== editing?.id;
+  // `initialKind` pode chegar "emergency" com uma já existente: a store recusaria
+  // a segunda, então o formulário cai para caixinha em vez de abrir inválido.
+  const kind =
+    editing?.kind ?? (pickedKind === "emergency" && emergencyTaken ? "goal" : pickedKind);
+  const emergency = kind === "emergency";
 
   const [name, setName] = useState(editing?.name ?? "");
   const [icon, setIcon] = useState<IconKey>(editing?.icon ?? "laptop");
+  // "sky" é só o ponto de partida da caixinha; "violet" é o token da emergência, não um padrão.
   const [color, setColor] = useState<ColorToken>(editing?.color ?? "sky");
   // Ícone fora da versão curta abre a grade completa: senão a seleção atual
   // ficaria escondida atrás de "Mais ícones".
@@ -203,31 +213,36 @@ export function ReserveForm({
       ? suggestedMonthly(target, balance, deadline, today)
       : null;
 
-  // A emergência deriva a meta do histórico; sem histórico utilizável (ou com
-  // um custo digitado antes) o campo precisa existir, senão a meta fica sem conta.
+  // Mesma regra do estado vazio: com custo pelos lançamentos o campo nem existe;
+  // sem ele (ou com um custo digitado antes) o campo é obrigatório, senão a meta
+  // fica sem conta. Na edição, o custo vem das categorias gravadas na reserva.
+  const computed = essentialCost(
+    state,
+    editing === null ? findEssentialCategoryIds(state) : (editing.essentialCategoryIds ?? []),
+    today,
+  );
+  const computedCost = computed !== null && computed > 0 ? computed : null;
   const showCost =
-    emergency &&
-    (editing === null ||
-      editing.essentialOverrideMinor !== null ||
-      emergencyTarget(state, editing, today) === null);
+    emergency && (computedCost === null || (editing?.essentialOverrideMinor ?? null) !== null);
   const overrideMinor = minorOf(overrideDigits);
   const monthlyMinor = minorOf(monthlyDigits);
+
+  const saved = editing?.recurring?.amountMinor ?? null;
+  // Salvar nunca desliga o depósito sozinho: ele pode ter sido ligado no sheet
+  // Guardar (sem meta nem prazo) ou a meta já ter sido atingida. O valor gravado
+  // só dá lugar à sugestão quando o usuário mexe no toggle com uma sugestão à vista.
+  const keepSaved = saved !== null && !(recurringTouched && suggestion !== null);
 
   let recurringAmountMinor: number | null = null;
   if (emergency) {
     recurringAmountMinor = recurringOn && monthlyMinor > 0 ? monthlyMinor : null;
-  } else if (recurringOn && suggestion !== null) {
-    // Regra já gravada e toggle intocado: reenviar a sugestão nova reescreveria
-    // o valor do usuário só porque a meta ou o saldo andaram.
-    recurringAmountMinor =
-      editing?.recurring && !recurringTouched
-        ? editing.recurring.amountMinor
-        : suggestion.monthlyMinor;
+  } else if (recurringOn) {
+    recurringAmountMinor = keepSaved ? saved : (suggestion?.monthlyMinor ?? null);
   }
 
   const valid = emergency
-    ? !(recurringOn && monthlyMinor <= 0)
-    : name.trim() !== "" && target <= MAX_MINOR;
+    ? !(showCost && overrideMinor <= 0) && !(recurringOn && monthlyMinor <= 0)
+    : name.trim() !== "";
 
   function submit() {
     if (!valid) return;
@@ -239,11 +254,7 @@ export function ReserveForm({
         color: EMERGENCY_COLOR,
         targetMinor: null,
         multiple,
-        essentialOverrideMinor: showCost
-          ? overrideMinor > 0
-            ? overrideMinor
-            : null
-          : (editing?.essentialOverrideMinor ?? null),
+        essentialOverrideMinor: showCost ? overrideMinor : null,
         deadline: null,
         recurringAmountMinor,
       });
@@ -262,6 +273,18 @@ export function ReserveForm({
     });
   }
 
+  const nextMonth = monthName(shiftMonth(monthOf(today), 1));
+  const emergencyHint =
+    editing?.recurring && editing.recurring.amountMinor === monthlyMinor
+      ? `Todo dia ${editing.recurring.day}`
+      : `Começa em ${nextMonth}, todo dia ${Number(today.slice(8, 10))}`;
+  const suggestionHint =
+    suggestion === null
+      ? ""
+      : `${
+          suggestion.deposits === 1 ? "1 depósito chega" : `${suggestion.deposits} depósitos chegam`
+        } lá em ${deadlineLabel(deadline, "0000-01-01")}`;
+
   const icons = allIcons ? PICKABLE_ICONS : SHORT_ICONS;
 
   return (
@@ -271,14 +294,7 @@ export function ReserveForm({
         submit();
       }}
     >
-      <button
-        type="button"
-        onClick={onCancel}
-        class="hf-press -ml-1.5 flex h-9 items-center gap-1 pr-2 text-sm text-fg/65"
-      >
-        <Icon name="caret-left" size={18} />
-        Reservas
-      </button>
+      <BackLink onClick={onCancel} />
       <h1 class="mt-2.5 text-[28px] leading-tight font-medium tracking-[-0.02em]">
         {editing === null ? "Nova reserva" : "Editar reserva"}
       </h1>
@@ -314,33 +330,20 @@ export function ReserveForm({
       )}
 
       {emergency ? (
-        <section class="mt-[18px] rounded-lg bg-surface p-4">
-          <Segmented
-            name="emergency-multiple"
-            legend="Meses de cobertura"
-            onSurface
-            variant="pill"
-            options={MULTIPLE_OPTIONS}
-            value={String(multiple)}
-            onChange={(value) => setMultiple(Number(value) as EmergencyMultiple)}
-          />
-          {showCost && (
-            <div class="mt-3.5">
-              <MoneyField
-                id="reserve-cost"
-                label="Custo essencial por mês"
-                digits={overrideDigits}
-                onDigits={setOverrideDigits}
-                tone="bg"
-              />
-            </div>
-          )}
+        <EmergencyGoalCard
+          costMinor={showCost ? null : computedCost}
+          digits={overrideDigits}
+          onDigits={setOverrideDigits}
+          costLabel="Custo essencial por mês"
+          multiple={multiple}
+          onMultiple={setMultiple}
+        >
           <Toggle
             class="mt-2"
             checked={recurringOn}
             onChange={setRecurringOn}
             label="Guardar todo mês"
-            hint="Começa no mês que vem"
+            hint={emergencyHint}
           />
           {recurringOn && (
             <div class="mt-2">
@@ -350,10 +353,11 @@ export function ReserveForm({
                 digits={monthlyDigits}
                 onDigits={setMonthlyDigits}
                 tone="bg"
+                hint={monthlyMinor <= 0 ? "Digite o valor por mês" : undefined}
               />
             </div>
           )}
-        </section>
+        </EmergencyGoalCard>
       ) : (
         <>
           <label for="reserve-name" class={`${LABEL} mt-[18px]`}>
@@ -379,7 +383,9 @@ export function ReserveForm({
                     key={key}
                     class={`hf-press grid h-12 cursor-pointer place-items-center rounded-lg
                       has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent ${
-                        on ? "hf-selected text-accent-200" : "bg-surface text-fg/80"
+                        on
+                          ? "bg-accent-900 text-accent-200 shadow-[inset_0_0_0_1px_var(--color-accent),0_0_16px_-4px_var(--color-accent)]"
+                          : "bg-surface text-fg/80"
                       }`}
                   >
                     <input
@@ -396,15 +402,14 @@ export function ReserveForm({
                 );
               })}
             </div>
-            {!allIcons && (
-              <button
-                type="button"
-                onClick={() => setAllIcons(true)}
-                class="hf-press mt-1 h-9 text-[13px] font-medium text-accent-300"
-              >
-                Mais ícones
-              </button>
-            )}
+            <button
+              type="button"
+              aria-expanded={allIcons}
+              onClick={() => setAllIcons(!allIcons)}
+              class="hf-press mt-1 h-9 text-[13px] font-medium text-accent-300"
+            >
+              {allIcons ? "Menos ícones" : "Mais ícones"}
+            </button>
           </fieldset>
 
           {/* A legenda do grupo de cores é sr-only dentro de Swatches; este rótulo é só visual. */}
@@ -429,6 +434,7 @@ export function ReserveForm({
                 <input
                   id="reserve-deadline"
                   type="month"
+                  min={shiftMonth(monthOf(today), 1)}
                   value={deadline}
                   onInput={(event) => setDeadline(event.currentTarget.value)}
                   class="min-w-0 flex-1 bg-transparent outline-none"
@@ -437,23 +443,30 @@ export function ReserveForm({
             </div>
           </div>
 
-          {suggestion !== null && (
+          {(suggestion !== null || saved !== null) && (
             <div class="mt-3 flex items-center gap-3 rounded-lg bg-surface px-3.5 py-3">
-              <span
-                aria-hidden="true"
-                class="grid size-8 shrink-0 place-items-center rounded-lg border border-accent text-accent-300 shadow-[0_0_16px_-4px_color-mix(in_srgb,var(--color-accent)_60%,transparent)]"
-              >
-                <Icon name="calculator" size={16} />
-              </span>
+              <AccentIconBox size={32} iconSize={16} icon="calculator" />
               <Toggle
-                class="min-w-0 flex-1"
+                class="hf-num min-w-0 flex-1"
                 checked={recurringOn}
                 onChange={(on) => {
                   setRecurringOn(on);
                   setRecurringTouched(true);
                 }}
-                label={`Guardar ${wholeBRL(suggestion.monthlyMinor)} todo mês`}
-                hint={`${suggestion.deposits} depósitos chegam lá em ${deadlineLabel(deadline, "0000-01-01")}`}
+                label={
+                  keepSaved
+                    ? `Guardando ${wholeBRL(saved)} todo mês`
+                    : `Guardar ${wholeBRL(suggestion?.monthlyMinor ?? 0)} todo mês`
+                }
+                hint={
+                  keepSaved
+                    ? `Todo dia ${editing?.recurring?.day}${
+                        suggestion === null
+                          ? ""
+                          : ` · sugerido ${wholeBRL(suggestion.monthlyMinor)}`
+                      }`
+                    : suggestionHint
+                }
               />
             </div>
           )}

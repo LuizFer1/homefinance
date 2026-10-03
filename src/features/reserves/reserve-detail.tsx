@@ -14,6 +14,7 @@ import { PRIMARY, SECONDARY } from "../ui/button";
 import { Money, signedBRL, wholeBRL } from "../ui/money";
 import { IconTile } from "../ui/tile";
 import { AccentIconBox } from "./accent-icon-box";
+import { BackLink } from "./back-link";
 import { deadlineLabel, movementDateLabel } from "./format";
 import { MonthsMeter } from "./months-meter";
 
@@ -226,14 +227,7 @@ export function ReserveDetail({
   return (
     <>
       <div class="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          class="hf-press -ml-1.5 flex h-9 items-center gap-1 pr-2 text-sm text-fg/65"
-        >
-          <Icon name="caret-left" size={18} />
-          Reservas
-        </button>
+        <BackLink onClick={onBack} />
         <button
           type="button"
           onClick={onEdit}
