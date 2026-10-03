@@ -37,11 +37,12 @@ export function planDeposits(state: AppState, today: string): DepositPlan[] {
   const plans: DepositPlan[] = [];
   const reserves = Object.values(state.reserves)
     .filter((r) => isAlive(r) && r.recurring !== null)
-    .sort((a, b) => (a.id < b.id ? -1 : 1));
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   for (const r of reserves) {
     const rule = r.recurring;
-    if (rule === null || month < rule.since) continue;
+    // Linha corrompida ou de versão futura nunca pode planejar depósito zero ou negativo.
+    if (rule === null || rule.amountMinor <= 0 || month < rule.since) continue;
     if (today < dayOfMonthClamped(month, rule.day)) continue;
     const id = depositId(r.id, month);
     if (state.reserveMovements[id] !== undefined) continue;

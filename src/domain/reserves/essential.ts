@@ -5,7 +5,7 @@ import { ESSENTIAL_CATEGORY_NAMES, type Reserve } from "../model/reserve";
 import { lastMonths, monthOf } from "../projections/periods";
 import { listTransactions } from "../projections/selectors";
 
-function fold(text: string): string {
+function normalizeName(text: string): string {
   return text
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
@@ -15,10 +15,14 @@ function fold(text: string): string {
 
 /** Ids das categorias vivas cujo nome bate com uma das cinco essenciais padrão. */
 export function findEssentialCategoryIds(state: AppState): Ulid[] {
-  const wanted = new Set<string>(ESSENTIAL_CATEGORY_NAMES.map(fold));
-  return Object.values(state.categories)
-    .filter((c) => isAlive(c) && wanted.has(fold(c.name)))
-    .map((c) => c.id);
+  const wanted = new Set<string>(ESSENTIAL_CATEGORY_NAMES.map(normalizeName));
+  return (
+    Object.values(state.categories)
+      .filter((c) => isAlive(c) && wanted.has(normalizeName(c.name)))
+      .map((c) => c.id)
+      // Gravado na criação da reserva: a ordem do objeto varia por aparelho, o valor não pode.
+      .sort()
+  );
 }
 
 /**
@@ -62,5 +66,6 @@ export function emergencyTarget(state: AppState, r: Reserve, today: string): Eme
   const cost =
     r.essentialOverrideMinor ?? essentialCost(state, r.essentialCategoryIds ?? [], today);
   if (cost === null || cost <= 0) return null;
+  // 6 é o padrão do handoff; linha sem múltiplo só vem corrompida ou de versão futura.
   return { costMinor: cost, targetMinor: cost * (r.multiple ?? 6) };
 }

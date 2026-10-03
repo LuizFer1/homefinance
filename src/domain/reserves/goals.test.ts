@@ -17,6 +17,10 @@ describe("monthsCovered / formatMonths", () => {
   it("custo zero ou negativo não divide", () => {
     expect(monthsCovered(1000, 0)).toBe(0);
   });
+
+  it("saldo negativo cobre zero meses", () => {
+    expect(monthsCovered(-500, 100)).toBe(0);
+  });
 });
 
 describe("meterFractions", () => {
@@ -40,6 +44,10 @@ describe("suggestedMonthly", () => {
       deposits: 1,
     });
     expect(suggestedMonthly(1000, 400, "2025-01", "2026-09-20")?.deposits).toBe(1);
+  });
+
+  it("prazo malformado é null", () => {
+    expect(suggestedMonthly(1000, 0, "lixo", "2026-09-20")).toBeNull();
   });
 
   it("meta atingida é null", () => {

@@ -27,7 +27,7 @@ describe("findEssentialCategoryIds", () => {
         E: cat("E", "Contas"),
       },
     };
-    expect(findEssentialCategoryIds(state).sort()).toEqual(["A", "B", "E"]);
+    expect(findEssentialCategoryIds(state)).toEqual(["A", "B", "E"]);
   });
 });
 
@@ -57,6 +57,17 @@ describe("essentialCost", () => {
       ],
     });
     expect(essentialCost(state, ["MOR"], today)).toBe(40_000);
+  });
+
+  it("a janela atravessa a virada de ano", () => {
+    const state = stateOf({
+      transactions: [
+        tx("T0", "income", 1, "2026-08-01"),
+        tx("T1", "expense", 60_000, "2026-08-10", "MOR"),
+        tx("T2", "expense", 60_000, "2027-01-10", "MOR"),
+      ],
+    });
+    expect(essentialCost(state, ["MOR"], "2027-02-10")).toBe(20_000); // ago..jan = 6 meses
   });
 
   it("sem nenhum mês completo é null", () => {

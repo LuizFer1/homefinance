@@ -40,6 +40,8 @@ export function suggestedMonthly(
   const missing = targetMinor - balanceMinor;
   if (missing <= 0) return null;
   const deposits = Math.max(1, monthIndex(deadline) - monthIndex(monthOf(today)));
+  // Prazo malformado vira NaN; sem esta guarda a UI mostraria "NaN" como sugestão.
+  if (!Number.isFinite(deposits)) return null;
   return { monthlyMinor: Math.ceil(missing / deposits), deposits };
 }
 

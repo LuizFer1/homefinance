@@ -26,6 +26,25 @@ describe("planDeposits", () => {
     ]);
   });
 
+  it("since igual ao mês atual e hoje no dia exato: planeja", () => {
+    const r = reserve("R1", { recurring: { amountMinor: 50_000, day: 6, since: "2026-10" } });
+    const plans = planDeposits(stateOf({ transactions: [SALARIO], reserves: [r] }), "2026-10-06");
+    expect(plans).toHaveLength(1);
+  });
+
+  it("movimento manual antes já baixou o saldo do mês: pula", () => {
+    const manual = movement("M1", "R1", 260_000, "2026-10-02");
+    const state = stateOf({ transactions: [SALARIO], reserves: [R], movements: [manual] });
+    expect(planDeposits(state, "2026-10-20")).toEqual([]);
+  });
+
+  it("valor zero ou negativo na regra nunca planeja", () => {
+    const zero = reserve("R1", { recurring: { amountMinor: 0, day: 1, since: "2026-01" } });
+    const neg = reserve("R2", { recurring: { amountMinor: -5, day: 1, since: "2026-01" } });
+    const state = stateOf({ transactions: [SALARIO], reserves: [zero, neg] });
+    expect(planDeposits(state, "2026-10-20")).toEqual([]);
+  });
+
   it("antes do dia, nada", () => {
     expect(planDeposits(stateOf({ transactions: [SALARIO], reserves: [R] }), "2026-10-05")).toEqual(
       [],
