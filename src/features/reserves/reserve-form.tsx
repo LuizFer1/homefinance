@@ -374,18 +374,14 @@ export function ReserveForm({
         <SheetHeader
           title={title}
           onClose={onCancel}
-          actions={<HoldToDelete label={`Excluir ${editing.name}`} onConfirm={onDelete} />}
+          // A emergência não tem nome (é ""): o rótulo nomeia o tipo.
+          actions={<HoldToDelete label="Excluir reserva de emergência" onConfirm={onDelete} />}
         />
         <p class="mt-5 flex gap-2 text-sm leading-normal text-fg/75 text-pretty">
           <Icon name="info" size={16} class="mt-0.5 shrink-0 text-tag-amber" />
           Reserva de emergência duplicada (criada em outro aparelho). Exclua uma delas.
         </p>
         <p class={HINT}>Segure a lixeira para excluir. O saldo volta para o mês atual.</p>
-        <div class="mt-6 flex">
-          <Button variant="secondary" class="flex-1" onClick={onCancel}>
-            Fechar
-          </Button>
-        </div>
       </div>
     );
   }
@@ -394,7 +390,8 @@ export function ReserveForm({
     target > 0
       ? `meta ${wholeBRL(target)}${deadline === "" ? "" : ` até ${deadlineText}`}`
       : "caixinha";
-  const emergencyCost = showCost ? overrideMinor : (computedCost ?? 0);
+  // O mesmo custo que o card usa: campo vazio cai no custo pelos lançamentos.
+  const emergencyCost = overrideMinor > 0 && showCost ? overrideMinor : (computedCost ?? 0);
   const summary = emergency ? (
     <SummaryChip
       leading={<IconTile icon={EMERGENCY_ICON} color={EMERGENCY_COLOR} size={26} iconSize={14} />}
@@ -448,7 +445,11 @@ export function ReserveForm({
         e tirar o foco do rádio que acabou de ser marcado.
       */}
       <div key={step} data-dir={dir} class="hf-step mt-5">
-        {step > 0 && <div class="mb-5">{summary}</div>}
+        {/*
+          Em Meses o resumo da emergência repetiria o próprio card logo abaixo
+          (meses e meta sugerida); ele só aparece em Depósito, na criação e na edição.
+        */}
+        {step > 0 && current !== "Meses" && <div class="mb-5">{summary}</div>}
 
         {(current === "Nome" || current === "Tipo") && (
           <>
@@ -626,6 +627,10 @@ export function ReserveForm({
           <EmergencyGoalCard
             flat
             costMinor={showCost ? null : computedCost}
+            fallbackMinor={showCost ? computedCost : null}
+            costHint={
+              showCost && computedCost !== null ? "Vazio usa o custo pelos lançamentos" : undefined
+            }
             digits={overrideDigits}
             onDigits={setOverrideDigits}
             costLabel="Custo essencial por mês"
@@ -636,12 +641,14 @@ export function ReserveForm({
 
         {current === "Depósito" && (
           <>
-            <Toggle
-              checked={recurringOn}
-              onChange={setRecurringOn}
-              label="Guardar todo mês"
-              hint={emergencyHint}
-            />
+            <div class="rounded-lg bg-bg px-3.5 py-3">
+              <Toggle
+                checked={recurringOn}
+                onChange={setRecurringOn}
+                label="Guardar todo mês"
+                hint={emergencyHint}
+              />
+            </div>
             {recurringOn && (
               <div class="mt-3">
                 <MoneyField

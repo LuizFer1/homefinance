@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/pre
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Category } from "../../domain/model/category";
 import { ALIVE } from "../../domain/model/row.fake";
+import { essentialCost } from "../../domain/reserves/essential";
 import { reserve, stateOf, tx } from "../../domain/reserves/fixtures.fake";
 import { ReserveForm, type ReserveFormProps } from "./reserve-form";
 
@@ -9,7 +10,8 @@ afterEach(cleanup);
 
 const EMERGENCY = reserve("01J9F3K2M7QX8YB4TVWZ0DCEH1", {
   kind: "emergency",
-  name: "Reserva de emergência",
+  // Como a store grava: a emergência não tem nome.
+  name: "",
   icon: "lifebuoy",
   color: "violet",
   multiple: 6,
@@ -327,6 +329,8 @@ describe("ReserveForm: emergência", () => {
     continuar();
     expect(screen.queryByLabelText("Custo essencial por mês")).toBeNull();
     expect(screen.getByText("Pelos seus lançamentos")).toBeDefined();
+    // Em Meses o resumo repetiria o card; ele só aparece em Depósito.
+    expect(screen.queryByText(/meses do custo essencial/)).toBeNull();
     continuar();
     expect(screen.getByText(/6 meses do custo essencial/)).toBeDefined();
     expect(screen.getByText(/Começa em outubro, todo dia 20/)).toBeDefined();
@@ -423,7 +427,20 @@ describe("ReserveForm: emergência", () => {
     });
     const state = { ...WITH_HISTORY, reserves: { [withOverride.id]: withOverride } };
     const { onSubmit } = mount({ editing: withOverride, initialKind: "emergency", state });
+    // O texto lido pelo leitor de tela (a primeira parte do Money), só os dígitos: o valor em centavos.
+    const alvo = () =>
+      screen
+        .getByTestId("suggested-target")
+        .querySelector(".sr-only")
+        ?.textContent?.replace(/\D/g, "");
+    expect(alvo()).toBe(String(400_000 * 6));
     fireEvent.input(screen.getByLabelText("Custo essencial por mês"), { target: { value: "" } });
+    // O campo continua (dá para digitar de novo), e a meta volta ao custo pelos lançamentos.
+    expect(screen.getByLabelText("Custo essencial por mês")).toBeDefined();
+    expect(screen.getByText("Vazio usa o custo pelos lançamentos")).toBeDefined();
+    const calculado = essentialCost(state, [MOR], "2026-09-20") ?? 0;
+    expect(calculado).toBeGreaterThan(0);
+    expect(alvo()).toBe(String(calculado * 6));
     continuar();
     enviar("Salvar");
     expect(onSubmit).toHaveBeenCalledWith(
@@ -431,7 +448,7 @@ describe("ReserveForm: emergência", () => {
     );
   });
 
-  it("editar emergência duplicada: só o aviso, a exclusão e Fechar", () => {
+  it("editar emergência duplicada: só o aviso e a exclusão; fecha pelo X", () => {
     const dup = { ...EMERGENCY, id: "01J9F3K2M7QX8YB4TVWZ0DCEH9" };
     const { onCancel } = mount({
       editing: dup,
@@ -446,9 +463,9 @@ describe("ReserveForm: emergência", () => {
     expect(screen.queryByRole("list", { name: "Etapas" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Salvar" })).toBeNull();
     expect(screen.queryByText("Custo essencial por mês")).toBeNull();
-    expect(screen.getByRole("button", { name: /Excluir Reserva de emergência/ })).toBeDefined();
-    // O X do cabeçalho e o botão do rodapé fecham igual.
-    for (const fechar of screen.getAllByRole("button", { name: "Fechar" })) fireEvent.click(fechar);
-    expect(onCancel).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: /Excluir reserva de emergência/ })).toBeDefined();
+    expect(screen.getAllByRole("button", { name: "Fechar" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

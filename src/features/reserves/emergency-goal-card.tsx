@@ -1,6 +1,6 @@
 import { EMERGENCY_MULTIPLES, type EmergencyMultiple } from "../../domain/model/reserve";
 import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
-import { FIELD_SHEET, LABEL } from "../ui/field";
+import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
 import { Money, wholeBRL } from "../ui/money";
 import { Segmented } from "../ui/segmented";
 
@@ -20,6 +20,14 @@ export interface EmergencyGoalCardProps {
    * superfície, e um card `surface` sobre `surface` só deslocaria o conteúdo.
    */
   flat?: boolean;
+  /**
+   * Custo que vale enquanto o campo está vazio (a edição com custo pelos
+   * lançamentos e um override gravado): limpar o campo volta a esse custo, e a
+   * meta tem de mostrá-lo em vez de cair para zero.
+   */
+  fallbackMinor?: number | null;
+  /** Ajuda sob o campo de custo. */
+  costHint?: string;
 }
 
 /**
@@ -37,8 +45,11 @@ export function EmergencyGoalCard({
   multiple,
   onMultiple,
   flat = false,
+  fallbackMinor = null,
+  costHint,
 }: EmergencyGoalCardProps) {
-  const cost = costMinor ?? minorOf(digits);
+  const typed = minorOf(digits);
+  const cost = costMinor ?? (typed > 0 ? typed : (fallbackMinor ?? 0));
   const ready = cost > 0;
 
   return (
@@ -55,8 +66,14 @@ export function EmergencyGoalCard({
             placeholder="0,00"
             value={maskDigits(digits)}
             onInput={(event) => onDigits(onlyDigits(event.currentTarget.value))}
+            aria-describedby={costHint === undefined ? undefined : "essential-cost-hint"}
             class={`${FIELD_SHEET} hf-num mt-2`}
           />
+          {costHint !== undefined && (
+            <p id="essential-cost-hint" class={HINT}>
+              {costHint}
+            </p>
+          )}
         </>
       ) : (
         <>
