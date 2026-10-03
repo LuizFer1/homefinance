@@ -29,6 +29,9 @@ describe("MonthsMeter", () => {
     const segments = container.querySelectorAll<HTMLElement>("[data-segment]");
     expect(segments).toHaveLength(6);
     expect(segments[0]?.style.height).toBe("14px");
+    // 2f: espaço de 6px e raio 3 (o medidor cheio fica em 4px e raio 2).
+    expect(container.firstElementChild?.className).toContain("gap-1.5");
+    expect(segments[0]?.className).toContain("rounded-[3px]");
   });
 
   it("segmentos ficam fora da árvore de acessibilidade", () => {

@@ -13,6 +13,7 @@ import { MiniAvatar } from "../profile/avatar-view";
 import { PRIMARY, SECONDARY } from "../ui/button";
 import { Money, signedBRL, wholeBRL } from "../ui/money";
 import { IconTile } from "../ui/tile";
+import { AccentIconBox } from "./accent-icon-box";
 import { deadlineLabel, movementDateLabel } from "./format";
 import { MonthsMeter } from "./months-meter";
 
@@ -34,11 +35,10 @@ const COLLAPSED_COUNT = 3;
 function movementsOf(state: AppState, reserveId: Ulid): ReserveMovement[] {
   return Object.values(state.reserveMovements)
     .filter((m) => isAlive(m) && m.reserveId === reserveId)
-    .sort((a, b) =>
-      a.occurredOn === b.occurredOn
-        ? b.id.localeCompare(a.id)
-        : b.occurredOn.localeCompare(a.occurredOn),
-    );
+    .sort((a, b) => {
+      if (a.occurredOn !== b.occurredOn) return a.occurredOn < b.occurredOn ? 1 : -1;
+      return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+    });
 }
 
 function movementName(m: ReserveMovement): string {
@@ -47,57 +47,55 @@ function movementName(m: ReserveMovement): string {
   return m.amountMinor > 0 ? "Guardado" : reasonLabel(m.reason);
 }
 
-/** Quadro de acento: identidade da emergência (a caixinha usa a cor própria). */
-function AccentBox() {
-  return (
-    <span
-      aria-hidden="true"
-      class="grid size-10 shrink-0 place-items-center rounded-lg border border-accent text-accent-300 shadow-[0_0_16px_-4px_color-mix(in_oklch,var(--color-accent)_60%,transparent)]"
-    >
-      <Icon name="lifebuoy" size={22} />
-    </span>
-  );
-}
-
 /**
- * A posição atual (ex.: 3,9) toma o lugar do inteiro de baixo, como no handoff;
- * os outros rótulos ficam como régua. Presa em 1..6 para não sair da régua.
+ * A posição atual (ex.: 3,9) fica sob o segmento parcialmente cheio, que é o
+ * (inteiro + 1)-ésimo: em 3,9 o quarto segmento está a 90% e leva o "3,9" no
+ * lugar do "4". Cada rótulo é uma célula da mesma grade do medidor, para ficar
+ * alinhado ao segmento; "meses" fecha a última. Decorativo: o `sr-only` ao lado
+ * diz a cobertura por extenso.
  */
-function MeterLabels({ months }: { months: number }) {
-  const slot = Math.min(6, Math.max(1, Math.floor(months)));
+function MeterLabels({ months, multiple }: { months: number; multiple: number }) {
+  const slot = Math.min(6, Math.floor(months) + 1);
   return (
-    <div class="mt-2 flex items-baseline justify-between text-[11px] text-fg/50">
-      {[1, 2, 3, 4, 5, 6].map((n) =>
-        n === slot ? (
-          <span key={n} class="hf-num font-medium text-accent-300">
-            {formatMonths(months)}
-          </span>
-        ) : (
-          <span key={n} class="hf-num">
-            {n}
-          </span>
-        ),
-      )}
-      <span>meses</span>
-    </div>
+    <>
+      <span class="sr-only">
+        Cobre {formatMonths(months)} meses de {multiple}
+      </span>
+      <div
+        aria-hidden="true"
+        class="mt-1.5 grid grid-cols-6 gap-1 text-[11px] whitespace-nowrap text-fg/50"
+      >
+        {[1, 2, 3, 4, 5, 6].map((n) => {
+          const label = n === slot ? formatMonths(months) : String(n);
+          return (
+            <span key={n} class={`hf-num ${n === slot ? "font-medium text-accent-300" : ""}`}>
+              {n === 6 ? `${label} meses` : label}
+            </span>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
 interface InfoRowProps {
+  /** Só a primeira linha não leva régua em cima. */
+  first: boolean;
   icon: string;
   title: string;
   sub?: string;
   value?: string;
 }
 
-function InfoRow({ icon, title, sub, value }: InfoRowProps) {
+function InfoRow({ first, icon, title, sub, value }: InfoRowProps) {
   return (
-    <li class="flex items-start gap-3 py-3.5">
-      <IconTile icon={icon} color={null} size={32} iconSize={18} />
+    <li class="relative flex items-start gap-3 py-3.5">
+      {!first && <span aria-hidden="true" class="hf-rule absolute top-0 right-0 left-11" />}
+      <IconTile icon={icon} color={null} size={32} iconSize={17} />
       <span class="min-w-0 flex-1">
         <span class="block text-sm">{title}</span>
         {sub !== undefined && (
-          <span class="mt-0.5 block text-xs leading-snug text-fg/55">{sub}</span>
+          <span class="mt-0.5 block text-xs leading-[1.45] text-fg/55 text-pretty">{sub}</span>
         )}
       </span>
       {value !== undefined && <span class="hf-num flex-none text-sm font-medium">{value}</span>}
@@ -108,16 +106,18 @@ function InfoRow({ icon, title, sub, value }: InfoRowProps) {
 interface MovementRowProps {
   state: AppState;
   movement: ReserveMovement;
+  first: boolean;
   onOpen: (movement: ReserveMovement) => void;
 }
 
-function MovementRow({ state, movement, onOpen }: MovementRowProps) {
+function MovementRow({ state, movement, first, onOpen }: MovementRowProps) {
   const out = movement.amountMinor < 0;
   const author = findUser(state, movement.userId);
   const date = movementDateLabel(movement.occurredOn);
 
   return (
-    <li>
+    <li class="relative">
+      {!first && <span aria-hidden="true" class="hf-rule absolute top-0 right-0 left-[50px]" />}
       <button
         type="button"
         data-testid="movement-row"
@@ -133,23 +133,23 @@ function MovementRow({ state, movement, onOpen }: MovementRowProps) {
           <Icon name={out ? "arrow-up" : "arrow-down"} size={20} />
         </span>
         <span class="min-w-0 flex-1">
-          <span class="flex items-center gap-2">
+          <span class="flex items-center gap-1.5">
             <span class="truncate text-[15px] font-medium">{movementName(movement)}</span>
             {movement.recurring && (
-              <span class="inline-flex shrink-0 items-center gap-1 rounded-[4px] bg-accent-900 px-1.5 py-0.5 text-[10px] font-medium text-accent-300">
+              <span class="inline-flex shrink-0 items-center gap-[3px] rounded-[4px] bg-accent-900 px-1.5 py-0.5 text-[10px] font-medium text-accent-300">
                 <Icon name="repeat" size={10} />
                 Mensal
               </span>
             )}
           </span>
-          <span class="mt-0.5 flex items-center gap-1.5 text-xs text-fg/55">
+          <span class="mt-0.5 flex items-center gap-1.5 text-xs text-fg/60">
             {author !== null && (
               <MiniAvatar name={author.name} color={resolveAuthorColor(state, movement.userId)} />
             )}
             <span>{author !== null ? `${author.name} · ${date}` : date}</span>
           </span>
         </span>
-        <span class={`hf-num text-[15px] font-medium ${out ? "text-expense-fg" : ""}`}>
+        <span class={`hf-num shrink-0 text-[15px] font-medium ${out ? "text-expense-fg" : ""}`}>
           {signedBRL(movement.amountMinor, "always")}
         </span>
       </button>
@@ -190,6 +190,36 @@ export function ReserveDetail({
           today,
         );
 
+  // Sem custo calculável (emergência nova, sem histórico) não há medidor nem custo, mas o
+  // depósito mensal já configurado continua sendo informação válida.
+  const infoRows: Omit<InfoRowProps, "first">[] = [];
+  if (goal !== null) {
+    infoRows.push({
+      icon: "scales",
+      title: "Custo essencial",
+      value: `${wholeBRL(goal.costMinor)}/mês`,
+      sub:
+        reserve.essentialOverrideMinor !== null
+          ? "Valor informado por você"
+          : "Média de moradia, mercado, transporte, contas e saúde nos últimos 6 meses",
+    });
+  }
+  if (isEmergency && reserve.recurring !== null) {
+    infoRows.push({
+      icon: "repeat",
+      title: "Guardando todo mês",
+      value: wholeBRL(reserve.recurring.amountMinor),
+      sub: `Todo dia ${reserve.recurring.day}, do saldo do mês`,
+    });
+  }
+  if (completion !== null) {
+    infoRows.push({
+      icon: "flag-checkered",
+      title: "Nesse ritmo, completa em",
+      value: deadlineLabel(completion, "0000-01-01"),
+    });
+  }
+
   const all = movementsOf(state, reserve.id);
   const shown = expanded ? all : all.slice(0, COLLAPSED_COUNT);
 
@@ -199,9 +229,9 @@ export function ReserveDetail({
         <button
           type="button"
           onClick={onBack}
-          class="hf-press -ml-1 flex h-9 items-center gap-0.5 pr-2 text-sm text-fg/65"
+          class="hf-press -ml-1.5 flex h-9 items-center gap-1 pr-2 text-sm text-fg/65"
         >
-          <Icon name="caret-left" size={16} />
+          <Icon name="caret-left" size={18} />
           Reservas
         </button>
         <button
@@ -213,9 +243,9 @@ export function ReserveDetail({
         </button>
       </div>
 
-      <div class="mt-2 flex items-center gap-3">
+      <div class="mt-3 flex items-center gap-3">
         {isEmergency ? (
-          <AccentBox />
+          <AccentIconBox size={40} />
         ) : (
           <IconTile icon={reserve.icon} color={reserve.color} size={40} iconSize={22} />
         )}
@@ -228,7 +258,7 @@ export function ReserveDetail({
         <Money minor={balance} size={44} testId="reserve-balance" />
       </p>
       {targetMinor !== null && percent !== null && (
-        <p class="hf-num mt-1.5 text-[13px] text-fg/65">
+        <p class="hf-num mt-0.5 text-[13px] text-fg/60">
           de {signedBRL(targetMinor)} · {percent}% da meta
         </p>
       )}
@@ -244,41 +274,19 @@ export function ReserveDetail({
       {goal !== null && (
         <div class="mt-4">
           <MonthsMeter months={covered} height={10} />
-          <MeterLabels months={covered} />
+          <MeterLabels months={covered} multiple={reserve.multiple ?? 6} />
         </div>
       )}
 
-      {isEmergency && goal !== null && (
-        <ul class="mt-[18px] divide-y divide-divider rounded-lg bg-surface px-3.5">
-          <InfoRow
-            icon="scales"
-            title="Custo essencial"
-            value={`${wholeBRL(goal.costMinor)}/mês`}
-            sub={
-              reserve.essentialOverrideMinor !== null
-                ? "Valor informado por você"
-                : "Média de moradia, mercado, transporte, contas e saúde nos últimos 6 meses"
-            }
-          />
-          {reserve.recurring !== null && (
-            <InfoRow
-              icon="repeat"
-              title="Guardando todo mês"
-              value={wholeBRL(reserve.recurring.amountMinor)}
-              sub={`Todo dia ${reserve.recurring.day}, do saldo do mês`}
-            />
-          )}
-          {completion !== null && (
-            <InfoRow
-              icon="flag-checkered"
-              title="Nesse ritmo, completa em"
-              value={deadlineLabel(completion, "0000-01-01")}
-            />
-          )}
+      {isEmergency && infoRows.length > 0 && (
+        <ul class="mt-[18px] rounded-lg bg-surface px-3.5">
+          {infoRows.map((row, index) => (
+            <InfoRow key={row.title} first={index === 0} {...row} />
+          ))}
         </ul>
       )}
 
-      <div class="mt-[18px] flex gap-2.5">
+      <div class="mt-4 flex gap-2.5">
         <button type="button" onClick={onDeposit} class={`${PRIMARY} flex-1`}>
           <Icon name="arrow-down" size={18} />
           Guardar
@@ -294,21 +302,29 @@ export function ReserveDetail({
         </button>
       </div>
 
-      <div class="mt-[22px] mb-1 flex items-baseline justify-between">
+      <div class="mx-0.5 mt-[22px] mb-2 flex items-baseline justify-between">
         <h2 class="hf-label">Movimentos</h2>
-        {all.length > COLLAPSED_COUNT && !expanded && (
+        {all.length > COLLAPSED_COUNT && (
+          // O botão fica no lugar e só troca o rótulo: o foco não se perde ao expandir.
           <button
             type="button"
-            onClick={() => setExpanded(true)}
-            class="hf-press text-[13px] font-medium text-accent-300"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+            class="hf-press text-[13px] text-accent-300"
           >
-            Ver todos
+            {expanded ? "Ver menos" : "Ver todos"}
           </button>
         )}
       </div>
-      <ul class="divide-y divide-divider">
-        {shown.map((m) => (
-          <MovementRow key={m.id} state={state} movement={m} onOpen={onOpenMovement} />
+      <ul class="rounded-lg bg-surface px-3.5">
+        {shown.map((m, index) => (
+          <MovementRow
+            key={m.id}
+            state={state}
+            movement={m}
+            first={index === 0}
+            onOpen={onOpenMovement}
+          />
         ))}
       </ul>
     </>

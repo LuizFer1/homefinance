@@ -28,7 +28,7 @@ export function MonthsMeter({
   const total = meterFractions(months + removedMonths);
 
   return (
-    <div class="grid grid-cols-6 gap-1" aria-hidden="true">
+    <div class={`grid grid-cols-6 ${dashed ? "gap-1.5" : "gap-1"}`} aria-hidden="true">
       {kept.map((fraction, i) => {
         const removed = Math.max(0, (total[i] ?? 0) - fraction);
         return (
@@ -37,7 +37,7 @@ export function MonthsMeter({
             data-segment
             class={
               dashed
-                ? "relative overflow-hidden rounded-[2px] border border-dashed border-neutral-700"
+                ? "relative overflow-hidden rounded-[3px] border border-dashed border-neutral-700"
                 : "relative overflow-hidden rounded-[2px] bg-neutral-800"
             }
             style={{ height: `${height}px` }}

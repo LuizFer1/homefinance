@@ -89,8 +89,66 @@ describe("ReserveDetail", () => {
     expect(screen.getByText(/R\$\s?3\.950\/mês/)).toBeDefined();
     expect(screen.getByText("Todo dia 6, do saldo do mês")).toBeDefined();
     expect(screen.getByText("fev 2028")).toBeDefined();
-    // Posição atual no lugar do inteiro de baixo.
-    expect(screen.getByText("3,9")).toBeDefined();
+    expect(screen.getByText("Cobre 3,9 meses de 6")).toBeDefined();
+  });
+
+  it("rótulos do medidor: o valor atual fica sob o segmento parcial", () => {
+    const { container } = render(
+      <ReserveDetail state={STATE} reserveId={EMERGENCY_ID} today="2026-09-20" {...noop} />,
+    );
+    const row = container.querySelector<HTMLElement>('.grid[aria-hidden="true"].mt-1\\.5');
+    const labels = Array.from(row?.children ?? []).map((el) => el.textContent);
+    expect(labels).toEqual(["1", "2", "3", "3,9", "5", "6 meses"]);
+  });
+
+  it("emergência sem custo calculável: sem medidor nem custo, mas mostra o depósito mensal", () => {
+    const state = {
+      ...STATE,
+      transactions: {},
+    };
+    render(<ReserveDetail state={state} reserveId={EMERGENCY_ID} today="2026-09-20" {...noop} />);
+    expect(screen.queryByText("Custo essencial")).toBeNull();
+    expect(screen.queryByText(/meses de/)).toBeNull();
+    expect(screen.getByText("Guardando todo mês")).toBeDefined();
+  });
+
+  it("mesmo dia: o id maior vem primeiro", () => {
+    const state = stateOf({
+      reserves: [reserve(NO_TARGET_ID, { name: "Presentes" })],
+      movements: [
+        movement("a1", NO_TARGET_ID, 1_000, "2026-09-01", { description: "Primeiro" }),
+        movement("b2", NO_TARGET_ID, 2_000, "2026-09-01", { description: "Segundo" }),
+      ],
+    });
+    render(<ReserveDetail state={state} reserveId={NO_TARGET_ID} today="2026-09-20" {...noop} />);
+    const names = screen.getAllByTestId("movement-row").map((r) => r.textContent ?? "");
+    expect(names[0]).toContain("Segundo");
+    expect(names[1]).toContain("Primeiro");
+  });
+
+  it("nome padrão: 'Guardado' e o motivo da retirada", () => {
+    const state = stateOf({
+      reserves: [reserve(NO_TARGET_ID, { name: "Presentes" })],
+      movements: [
+        movement("a1", NO_TARGET_ID, 1_000, "2026-09-01"),
+        movement("a2", NO_TARGET_ID, -500, "2026-09-02", { reason: "car" }),
+        movement("a3", NO_TARGET_ID, -100, "2026-09-03", { reason: "alien" as never }),
+      ],
+    });
+    render(<ReserveDetail state={state} reserveId={NO_TARGET_ID} today="2026-09-20" {...noop} />);
+    const rows = screen.getAllByTestId("movement-row").map((r) => r.textContent ?? "");
+    expect(rows[0]).toContain("Outro");
+    expect(rows[1]).toContain("Carro");
+    expect(rows[2]).toContain("Guardado");
+  });
+
+  it("Ver todos vira Ver menos e recolhe", () => {
+    render(<ReserveDetail state={STATE} reserveId={EMERGENCY_ID} today="2026-09-20" {...noop} />);
+    fireEvent.click(screen.getByRole("button", { name: "Ver todos" }));
+    const less = screen.getByRole("button", { name: "Ver menos" });
+    expect(less.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(less);
+    expect(screen.getAllByTestId("movement-row")).toHaveLength(3);
   });
 
   it("custo informado à mão diz de onde veio", () => {
@@ -106,6 +164,7 @@ describe("ReserveDetail", () => {
     };
     render(<ReserveDetail state={state} reserveId={EMERGENCY_ID} today="2026-09-20" {...noop} />);
     expect(screen.getByText("Valor informado por você")).toBeDefined();
+    expect(screen.getByText(/R\$\s?4\.000\/mês/)).toBeDefined();
   });
 
   it("lista 3 movimentos e 'Ver todos' expande; retirada em cor de despesa", () => {
