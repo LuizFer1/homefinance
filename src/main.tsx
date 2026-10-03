@@ -11,7 +11,8 @@ import { browserAvatarDeps } from "./features/profile/avatar-canvas";
 import { createProfileStore } from "./features/profile/store";
 import { createRecurrenceStore } from "./features/recurrence/store";
 import { createRegistryStore } from "./features/registry/store";
-import { createSession } from "./features/session/session";
+import { createReservesStore } from "./features/reserves/store";
+import { createSession, ignoreHandled } from "./features/session/session";
 import { type ResetDeps, resetDevice } from "./features/settings/reset";
 import { consumeHubDeepLink } from "./features/sync/deep-link";
 import { guessDeviceName } from "./features/sync/device-name";
@@ -78,6 +79,7 @@ const profileStore = createProfileStore(session);
 const recurrence = createRecurrenceStore(session);
 const onboarding = createOnboardingStore(session);
 const importer = createImportStore(session, recurrence);
+const reserves = createReservesStore(session);
 
 // Só referenciar `navigator.serviceWorker` já lança em contexto sandbox.
 function serviceWorkerContainer(): SwContainer | undefined {
@@ -112,7 +114,14 @@ const sync = createSyncStore({
   onStale: () => void update.check(true),
   // Série recebida do outro celular pode ter ocorrência vencida que ele ainda
   // não gerou; o id é determinístico, então o que ele gerar converge na mesma linha.
-  afterPull: () => recurrence.materializeDue(todayISO()),
+  // O mesmo vale para o depósito mensal de uma reserva recebida — e ele vem
+  // depois, porque é o salário recorrente que dá saldo ao mês.
+  afterPull: async () => {
+    const today = todayISO();
+    // A falha da primeira (já em `session.error`) não pode impedir a segunda.
+    await recurrence.materializeDue(today).catch(ignoreHandled);
+    await reserves.materializeDue(today);
+  },
 });
 
 // Lê e limpa o fragmento antes do primeiro render: o token não fica na barra
@@ -140,6 +149,7 @@ render(
     registry={registry}
     profileStore={profileStore}
     recurrence={recurrence}
+    reserves={reserves}
     onboarding={onboarding}
     importer={importer}
     update={update}

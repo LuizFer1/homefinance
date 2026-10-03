@@ -12,6 +12,27 @@ describe("Icon", () => {
     expect(screen.getByTestId("icon-utensils")).toBeDefined();
   });
 
+  it("resolve os glifos de reservas", () => {
+    for (const name of [
+      "vault",
+      "lifebuoy",
+      "scales",
+      "flag-checkered",
+      "target",
+      "calculator",
+      "arrow-down",
+      "arrow-up",
+      "sparkle",
+      "pencil-simple",
+      "laptop",
+      "plane-tilt",
+    ]) {
+      const { container, unmount } = render(<Icon name={name} />);
+      expect(container.querySelector(`[data-testid="icon-${name}"]`)).not.toBeNull();
+      unmount();
+    }
+  });
+
   it("cai no ícone neutro para chave desconhecida", () => {
     // Via sync, um aparelho de versão mais nova pode gravar uma chave que
     // esta versão não conhece. Não renderizar nada deixaria o item sem âncora
@@ -66,7 +87,11 @@ describe("Icon", () => {
     expect(PICKABLE_ICONS.every((key) => ICON_KEYS.includes(key))).toBe(true);
     expect(PICKABLE_ICONS).not.toContain("chevron-down");
     expect(PICKABLE_ICONS).toContain("paw-print");
-    expect(new Set(PICKABLE_ICONS).size).toBe(35);
+    expect(PICKABLE_ICONS).toContain("laptop");
+    expect(PICKABLE_ICONS).toContain("plane-tilt");
+    // lifebuoy é a identidade fixa da emergência: resolve, mas não é escolhível.
+    expect(PICKABLE_ICONS).not.toContain("lifebuoy");
+    expect(new Set(PICKABLE_ICONS).size).toBe(37);
   });
 
   it("peso preenchido troca o desenho quando o glifo tem variante", () => {

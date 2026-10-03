@@ -1,7 +1,9 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { Ulid } from "./domain/ids/ulid";
+import { isAlive } from "./domain/model/base";
 import type { RecurrenceRule } from "./domain/model/recurrence";
+import type { ReserveKind, ReserveMovement } from "./domain/model/reserve";
 import type { Transaction, TransactionDraft, TransactionKind } from "./domain/model/transaction";
 import {
   findUser,
@@ -26,6 +28,12 @@ import { ConfirmSheet } from "./features/recurrence/confirm-sheet";
 import type { RecurrenceStore } from "./features/recurrence/store";
 import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
+import { DepositSheet } from "./features/reserves/deposit-sheet";
+import { ReserveDetail } from "./features/reserves/reserve-detail";
+import { ReserveForm } from "./features/reserves/reserve-form";
+import { ReservesPage } from "./features/reserves/reserves-page";
+import type { ReservesStore } from "./features/reserves/store";
+import { WithdrawSheet } from "./features/reserves/withdraw-sheet";
 import { ignoreHandled, type Session } from "./features/session/session";
 import { SettingsPage, type SettingsSection } from "./features/settings/settings-page";
 import { HubPage } from "./features/sync/hub-page";
@@ -49,6 +57,7 @@ export interface AppProps {
   registry: RegistryStore;
   profileStore: ProfileStore;
   recurrence: RecurrenceStore;
+  reserves: ReservesStore;
   onboarding: OnboardingStore;
   importer: ImportStore;
   /** Versão nova do app esperando a pessoa aceitar. */
@@ -75,24 +84,48 @@ const SHELL = "hf-backdrop min-h-dvh text-fg";
 /**
  * Navegação sem router.
  *
- * Uma dependência de roteamento para três destinos não se paga contra o teto de
- * bundle, e não há URL a preservar: o app é local-first e abre sempre no mesmo
- * lugar.
+ * Uma dependência de roteamento para quatro destinos não se paga contra o teto
+ * de bundle, e não há URL a preservar: o app é local-first e abre sempre no
+ * mesmo lugar.
  *
- * Configurações tem uma sub-tela (a lista de cadastro), guardada num estado
- * próprio em vez de virar um quarto destino: cadastro é manutenção, e uma aba
- * para ele competiria com as três coisas que o usuário realmente faz.
+ * Reservas ganhou aba própria porque guardar e retirar é algo que a pessoa faz
+ * todo mês, como lançar uma despesa. Já o cadastro de Configurações é
+ * manutenção: fica numa sub-tela guardada em estado próprio, e uma aba para ele
+ * competiria com as coisas que o usuário realmente faz. O detalhe e o
+ * formulário de uma reserva seguem a mesma regra — sub-telas, não destinos.
  */
 const SCREENS = [
   { id: "dashboard", label: "Dashboard", icon: "chart-pie-slice" },
   { id: "inicio", label: "Início", icon: "house" },
+  { id: "reservas", label: "Reservas", icon: "vault" },
   { id: "config", label: "Ajustes", icon: "gear-six" },
 ] as const;
 
 type ScreenId = (typeof SCREENS)[number]["id"];
 
-/** Ordem esquerda → direita do arraste (Dashboard · Início · Ajustes). */
+/** Ordem esquerda → direita do arraste (Dashboard · Início · Reservas · Ajustes). */
 const SCREEN_IDS: readonly ScreenId[] = SCREENS.map((s) => s.id);
+
+/** Sub-tela da aba Reservas. */
+type ReserveView = { kind: "list" } | { kind: "detail"; id: Ulid };
+
+/** Formulário de reserva aberto no sheet: `id` nulo é criar. */
+interface ReserveFormTarget {
+  id: Ulid | null;
+  initialKind: ReserveKind;
+}
+
+/** Sheet de movimento aberto: o tipo decide o sheet, `editing` nulo é um movimento novo. */
+type ReserveSheet =
+  | { kind: "deposit"; reserveId: Ulid; editing: ReserveMovement | null }
+  | { kind: "withdraw"; reserveId: Ulid; editing: ReserveMovement | null };
+
+const RESERVE_LIST: ReserveView = { kind: "list" };
+
+function reserveSheetTitle(sheet: ReserveSheet | null): string {
+  if (sheet?.kind === "withdraw") return sheet.editing === null ? "Retirar" : "Editar retirada";
+  return sheet?.editing ? "Editar guardado" : "Guardar";
+}
 
 function Shell({ children }: { children: ComponentChildren }) {
   return (
@@ -108,6 +141,7 @@ export function App({
   registry,
   profileStore,
   recurrence,
+  reserves,
   onboarding,
   importer,
   update,
@@ -134,6 +168,31 @@ export function App({
   // Cor do brilho do topo enquanto o Perfil está aberto: acompanha a cor que a
   // pessoa está escolhendo, antes mesmo de salvar.
   const [glow, setGlow] = useState<string | null>(null);
+  const [reserveView, setReserveView] = useState<ReserveView>(RESERVE_LIST);
+  const [reserveSheet, setReserveSheet] = useState<ReserveSheet | null>(null);
+  // Separado de `reserveView`: o formulário é um sheet por cima da lista ou do
+  // detalhe, e fechar devolve para onde ele foi aberto sem ter que lembrar.
+  const [reserveForm, setReserveForm] = useState<ReserveFormTarget | null>(null);
+
+  // Reserva apagada por baixo (sync, outra aba) enquanto o detalhe, o
+  // formulário ou um sheet dela estava aberto. O render já mostra a lista
+  // nesse caso; o efeito só alinha o estado, para o arraste voltar a
+  // funcionar e o detalhe não ressuscitar se a linha for revivida depois.
+  const reservesById = session.state.value.reserves;
+  const viewedReserveId = reserveView.kind === "list" ? null : reserveView.id;
+  const viewedReserveGone = viewedReserveId !== null && !isAlive(reservesById[viewedReserveId]);
+  const sheetReserveGone = reserveSheet !== null && !isAlive(reservesById[reserveSheet.reserveId]);
+  const formReserveGone =
+    reserveForm !== null && reserveForm.id !== null && !isAlive(reservesById[reserveForm.id]);
+  useEffect(() => {
+    if (viewedReserveGone) setReserveView(RESERVE_LIST);
+  }, [viewedReserveGone]);
+  useEffect(() => {
+    if (sheetReserveGone) setReserveSheet(null);
+  }, [sheetReserveGone]);
+  useEffect(() => {
+    if (formReserveGone) setReserveForm(null);
+  }, [formReserveGone]);
 
   useEffect(() => {
     // Materializa depois do init: o boot e o "virar do mês" são o mesmo caminho.
@@ -144,13 +203,17 @@ export function App({
     // é automática (com throttle e silenciosa); o `afterPull` da store
     // materializa de novo o que uma série recebida trouxer. A falha da
     // materialização (já em `session.error`) não pode deixar o hub sem ler.
+    //
+    // Recorrências antes das reservas: o salário recorrente materializado
+    // primeiro é o que dá saldo ao mês para o depósito mensal sair dele.
     void session
       .init()
       .then(() => recurrence.materializeDue(today).catch(ignoreHandled))
+      .then(() => reserves.materializeDue(today).catch(ignoreHandled))
       .then(() => sync.init())
       .then(() => sync.sync({ auto: true }))
       .catch(ignoreHandled);
-  }, [session, recurrence, sync, today]);
+  }, [session, recurrence, reserves, sync, today]);
 
   // Deep link do QR: espera a sessão e o primeiro uso, porque o pareamento
   // manda o perfil local e o wizard ainda não o criou.
@@ -170,13 +233,15 @@ export function App({
   function goToScreen(id: ScreenId) {
     setScreen(id);
     // Voltar para Ajustes depois sempre cai na raiz, e não na sub-tela de onde
-    // o usuário saiu — que ele já não lembra ter deixado aberta.
+    // o usuário saiu — que ele já não lembra ter deixado aberta. Vale igual
+    // para o detalhe de uma reserva.
     setSection(null);
+    setReserveView(RESERVE_LIST);
   }
 
-  // Hook antes de qualquer return: arraste só nas três abas raiz. Modal ou
-  // sub-tela de Ajustes (perfil/cadastro) desliga o gesto para não trocar de
-  // aba no meio de um formulário.
+  // Hook antes de qualquer return: arraste só nas abas raiz. Modal, sheet ou
+  // sub-tela (perfil/cadastro em Ajustes, detalhe em Reservas)
+  // desliga o gesto para não trocar de aba no meio de um formulário.
   const swipe = useSwipeNav({
     screens: SCREEN_IDS,
     screen,
@@ -185,7 +250,10 @@ export function App({
       !onboarding.needsOnboarding.value &&
       section === null &&
       !modalOpen &&
-      !importing,
+      !importing &&
+      reserveView.kind === "list" &&
+      reserveSheet === null &&
+      reserveForm === null,
     onChange: goToScreen,
   });
 
@@ -260,6 +328,70 @@ export function App({
     if (next !== "profile") setGlow(null);
   }
 
+  function closeReserveSheet() {
+    setReserveSheet(null);
+  }
+
+  // O sinal do movimento decide o sheet: retirada tem motivo, guardado não.
+  function openMovement(movement: ReserveMovement) {
+    setReserveSheet({
+      kind: movement.amountMinor < 0 ? "withdraw" : "deposit",
+      reserveId: movement.reserveId,
+      editing: movement,
+    });
+  }
+
+  const viewedReserve = viewedReserveId === null ? null : (reservesById[viewedReserveId] ?? null);
+  const sheetReserve =
+    reserveSheet === null || sheetReserveGone
+      ? null
+      : (reservesById[reserveSheet.reserveId] ?? null);
+
+  function renderReserves() {
+    if (reserveView.kind === "detail" && !viewedReserveGone) {
+      const id = reserveView.id;
+      return (
+        <ReserveDetail
+          key={id}
+          state={state}
+          reserveId={id}
+          today={today}
+          onBack={() => setReserveView(RESERVE_LIST)}
+          onEdit={() => setReserveForm({ id, initialKind: viewedReserve?.kind ?? "goal" })}
+          onDeposit={() => setReserveSheet({ kind: "deposit", reserveId: id, editing: null })}
+          onWithdraw={() => setReserveSheet({ kind: "withdraw", reserveId: id, editing: null })}
+          onOpenMovement={openMovement}
+        />
+      );
+    }
+    return (
+      <ReservesPage
+        state={state}
+        today={today}
+        onOpen={(id) => setReserveView({ kind: "detail", id })}
+        onNew={(kind) => setReserveForm({ id: null, initialKind: kind })}
+        onCreateEmergency={(multiple, essentialOverrideMinor) => {
+          void reserves
+            .create(
+              {
+                kind: "emergency",
+                name: "",
+                icon: "lifebuoy",
+                color: "violet",
+                targetMinor: null,
+                multiple,
+                essentialOverrideMinor,
+                deadline: null,
+                recurringAmountMinor: null,
+              },
+              today,
+            )
+            .catch(ignoreHandled);
+        }}
+      />
+    );
+  }
+
   const editingAuthor = editing === null ? null : findUser(state, editing.userId);
   const editingSeriesId = editing?.recurrenceId ?? null;
   // Variável não tem reajuste (a estimativa é a média) nem volta a ser fixa:
@@ -314,6 +446,8 @@ export function App({
             onOpenProfile={() => openSection("profile")}
           />
         )}
+
+        {screen === "reservas" && renderReserves()}
 
         {screen === "config" &&
           (section === null ? (
@@ -372,7 +506,7 @@ export function App({
           pb-[max(1.125rem,env(safe-area-inset-bottom))]"
       >
         <div aria-hidden="true" class="hf-rule-both absolute inset-x-0 top-0" />
-        <div class="mx-auto grid h-[var(--hf-nav-h)] w-full max-w-md grid-cols-3 px-3">
+        <div class="mx-auto grid h-[var(--hf-nav-h)] w-full max-w-md grid-cols-4 px-3">
           {SCREENS.map(({ id, label, icon }) => {
             const active = screen === id;
             return (
@@ -498,6 +632,103 @@ export function App({
               void store.confirm(id, actual).catch(ignoreHandled);
             }}
             onClose={() => setConfirming(null)}
+          />
+        )}
+      </Modal>
+
+      {/*
+        Depois dos modais acima pelo mesmo motivo da ordem dos efeitos. Montado
+        só enquanto aberto, com `key` do movimento: trocar de movimento remonta
+        o sheet e os `useState` releem as props.
+      */}
+      <Modal
+        open={reserveSheet !== null}
+        title={reserveSheetTitle(reserveSheet)}
+        onClose={closeReserveSheet}
+      >
+        {reserveSheet?.kind === "deposit" && sheetReserve !== null && (
+          <DepositSheet
+            key={reserveSheet.editing?.id ?? "novo"}
+            state={state}
+            reserve={sheetReserve}
+            today={today}
+            editing={reserveSheet.editing}
+            onSubmit={(input, setRecurring) => {
+              const { reserveId, editing: movement } = reserveSheet;
+              closeReserveSheet();
+              const write =
+                movement === null
+                  ? reserves.deposit(reserveId, input, setRecurring)
+                  : reserves.editMovement(movement.id, { ...input, reason: null });
+              void write.catch(ignoreHandled);
+            }}
+            onDelete={() => {
+              const movement = reserveSheet.editing;
+              closeReserveSheet();
+              if (movement !== null) void reserves.removeMovement(movement.id).catch(ignoreHandled);
+            }}
+            onClose={closeReserveSheet}
+          />
+        )}
+        {reserveSheet?.kind === "withdraw" && sheetReserve !== null && (
+          <WithdrawSheet
+            key={reserveSheet.editing?.id ?? "novo"}
+            state={state}
+            reserve={sheetReserve}
+            today={today}
+            editing={reserveSheet.editing}
+            onSubmit={(input) => {
+              const { reserveId, editing: movement } = reserveSheet;
+              closeReserveSheet();
+              const write =
+                movement === null
+                  ? reserves.withdraw(reserveId, input)
+                  : reserves.editMovement(movement.id, input);
+              void write.catch(ignoreHandled);
+            }}
+            onDelete={() => {
+              const movement = reserveSheet.editing;
+              closeReserveSheet();
+              if (movement !== null) void reserves.removeMovement(movement.id).catch(ignoreHandled);
+            }}
+            onClose={closeReserveSheet}
+          />
+        )}
+      </Modal>
+
+      {/*
+        Por último, pelo mesmo motivo da ordem dos efeitos. Montado só enquanto
+        aberto, com `key` da reserva: abrir outra remonta o formulário e os
+        `useState` releem as props. Criar fecha e fica na lista; editar fecha e
+        fica no detalhe; excluir fecha e volta para a lista, já que o detalhe
+        ficaria vazio.
+      */}
+      <Modal
+        open={reserveForm !== null}
+        title={reserveForm?.id ? "Editar reserva" : "Nova reserva"}
+        onClose={() => setReserveForm(null)}
+      >
+        {reserveForm !== null && !formReserveGone && (
+          <ReserveForm
+            key={reserveForm.id ?? "nova"}
+            state={state}
+            today={today}
+            editing={reserveForm.id === null ? null : (reservesById[reserveForm.id] ?? null)}
+            initialKind={reserveForm.initialKind}
+            onSubmit={(input) => {
+              const id = reserveForm.id;
+              setReserveForm(null);
+              const write =
+                id === null ? reserves.create(input, today) : reserves.edit(id, input, today);
+              void write.catch(ignoreHandled);
+            }}
+            onDelete={() => {
+              const id = reserveForm.id;
+              setReserveForm(null);
+              setReserveView(RESERVE_LIST);
+              if (id !== null) void reserves.remove(id, today).catch(ignoreHandled);
+            }}
+            onCancel={() => setReserveForm(null)}
           />
         )}
       </Modal>
