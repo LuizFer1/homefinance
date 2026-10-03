@@ -1063,4 +1063,78 @@ describe("reservas", () => {
     await act(() => stores.reserves.remove(id, "2026-08-08"));
     await waitFor(() => expect(screen.getByRole("heading", { name: "Reservas" })).toBeDefined());
   });
+
+  async function comCaixinha() {
+    const stores = await pronto();
+    let id = "";
+    await act(async () => {
+      ({ id } = await stores.reserves.create(
+        {
+          kind: "goal",
+          name: "Viagem",
+          icon: "gift",
+          color: "rose",
+          targetMinor: null,
+          multiple: null,
+          essentialOverrideMinor: null,
+          deadline: null,
+          recurringAmountMinor: null,
+        },
+        "2026-08-08",
+      ));
+    });
+    fireEvent.click(naBarra().getByRole("button", { name: "Reservas" }));
+    return { stores, id };
+  }
+
+  it("Nova abre o formulário num sheet; criar fecha e fica na lista", async () => {
+    const { stores } = await comCaixinha();
+    fireEvent.click(await screen.findByRole("button", { name: "Nova" }));
+    const sheet = await screen.findByRole("dialog", { name: "Nova reserva" });
+    fireEvent.input(within(sheet).getByRole("textbox", { name: "Nome" }), {
+      target: { value: "Notebook" },
+    });
+    for (let i = 0; i < 3; i++) {
+      fireEvent.click(within(sheet).getByRole("button", { name: "Continuar" }));
+    }
+    fireEvent.click(within(sheet).getByRole("button", { name: "Criar reserva" }));
+
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Nome" })).toBeNull());
+    expect(await screen.findByRole("button", { name: /Notebook/ })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Reservas" })).toBeDefined();
+    expect(
+      Object.values(stores.session.state.value.reserves).some((r) => r.name === "Notebook"),
+    ).toBe(true);
+  });
+
+  it("Editar no detalhe abre o sheet; salvar fecha e fica no detalhe", async () => {
+    await comCaixinha();
+    fireEvent.click(await screen.findByRole("button", { name: /Viagem/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Editar" }));
+    const sheet = await screen.findByRole("dialog", { name: "Editar reserva" });
+    fireEvent.input(within(sheet).getByRole("textbox", { name: "Nome" }), {
+      target: { value: "Viagem longa" },
+    });
+    for (let i = 0; i < 3; i++) {
+      fireEvent.click(within(sheet).getByRole("button", { name: "Continuar" }));
+    }
+    fireEvent.click(within(sheet).getByRole("button", { name: "Salvar" }));
+
+    expect(await screen.findByRole("heading", { name: "Viagem longa" })).toBeDefined();
+    expect(screen.queryByRole("textbox", { name: "Nome" })).toBeNull();
+  });
+
+  it("excluir pelo sheet de edição volta para a lista", async () => {
+    await comCaixinha();
+    fireEvent.click(await screen.findByRole("button", { name: /Viagem/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Editar" }));
+    const sheet = await screen.findByRole("dialog", { name: "Editar reserva" });
+    vi.useFakeTimers();
+    fireEvent.pointerDown(within(sheet).getByRole("button", { name: /Excluir Viagem/ }));
+    vi.advanceTimersByTime(5000);
+    vi.useRealTimers();
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Reservas" })).toBeDefined());
+    expect(screen.queryByRole("heading", { name: "Viagem" })).toBeNull();
+  });
 });

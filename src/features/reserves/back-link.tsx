@@ -1,6 +1,6 @@
 import { Icon } from "../icons/icon";
 
-/** "‹ Reservas": volta para a aba, igual no detalhe (2b) e no formulário (2e). */
+/** "‹ Reservas": volta do detalhe (2b) para a aba; o formulário (2e) é um sheet e fecha pelo X. */
 export function BackLink({ onClick }: { onClick: () => void }) {
   return (
     <button

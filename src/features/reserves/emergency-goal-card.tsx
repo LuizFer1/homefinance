@@ -1,4 +1,3 @@
-import type { ComponentChildren } from "preact";
 import { EMERGENCY_MULTIPLES, type EmergencyMultiple } from "../../domain/model/reserve";
 import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
 import { FIELD_SHEET, LABEL } from "../ui/field";
@@ -16,8 +15,11 @@ export interface EmergencyGoalCardProps {
   costLabel: string;
   multiple: EmergencyMultiple;
   onMultiple: (multiple: EmergencyMultiple) => void;
-  /** Linhas extras dentro do card (o depósito mensal, no formulário). */
-  children?: ComponentChildren;
+  /**
+   * Sem fundo nem recuo próprios: no sheet do formulário o próprio sheet já é a
+   * superfície, e um card `surface` sobre `surface` só deslocaria o conteúdo.
+   */
+  flat?: boolean;
 }
 
 /**
@@ -34,13 +36,13 @@ export function EmergencyGoalCard({
   costLabel,
   multiple,
   onMultiple,
-  children,
+  flat = false,
 }: EmergencyGoalCardProps) {
   const cost = costMinor ?? minorOf(digits);
   const ready = cost > 0;
 
   return (
-    <section class="mt-[18px] rounded-lg bg-surface p-4">
+    <section class={flat ? undefined : "mt-[18px] rounded-lg bg-surface p-4"}>
       {costMinor === null ? (
         <>
           <label for="essential-cost" class={LABEL}>
@@ -81,7 +83,6 @@ export function EmergencyGoalCard({
         <span class="text-sm text-fg/65">Meta sugerida</span>
         <Money minor={ready ? cost * multiple : 0} size={24} testId="suggested-target" />
       </div>
-      {children}
     </section>
   );
 }

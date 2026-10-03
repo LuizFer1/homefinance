@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Category } from "../../domain/model/category";
 import { ALIVE } from "../../domain/model/row.fake";
@@ -31,6 +31,14 @@ const HISTORY = ["03", "04", "05", "06", "07", "08"].map((m) =>
 const WITH_HISTORY = { ...stateOf({ transactions: HISTORY }), categories: { [MOR]: MORADIA } };
 const WITH_EMERGENCY = stateOf({ reserves: [EMERGENCY] });
 
+const GOAL = reserve("01J9F3K2M7QX8YB4TVWZ0DCEH2", {
+  name: "Viagem",
+  icon: "car",
+  color: "amber",
+  recurring: { amountMinor: 30_000, day: 6, since: "2026-10" },
+});
+const goalState = stateOf({ reserves: [GOAL] });
+
 function mount(props: Partial<ReserveFormProps> = {}) {
   const handlers = { onSubmit: vi.fn(), onDelete: vi.fn(), onCancel: vi.fn() };
   render(
@@ -46,26 +54,107 @@ function mount(props: Partial<ReserveFormProps> = {}) {
   return handlers;
 }
 
-describe("ReserveForm", () => {
-  it("Emergência desativada quando já existe; nome obrigatório", () => {
-    mount();
+// "Nome" e "Meta" também são rótulos dos segmentos da barra: o papel desambigua.
+const nome = () => screen.getByRole("textbox", { name: "Nome" }) as HTMLInputElement;
+const meta = () => screen.getByRole("textbox", { name: "Meta" });
+const prazo = () => screen.getByLabelText("Até quando") as HTMLInputElement;
+
+function digitarNome(valor: string) {
+  fireEvent.input(nome(), { target: { value: valor } });
+}
+
+function continuar(vezes = 1) {
+  for (let i = 0; i < vezes; i++) {
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+  }
+}
+
+function enviar(rotulo: "Criar reserva" | "Salvar") {
+  fireEvent.click(screen.getByRole("button", { name: rotulo }));
+}
+
+function etapas() {
+  return within(screen.getByRole("list", { name: "Etapas" }))
+    .getAllByRole("button")
+    .map((b) => b.getAttribute("aria-label"));
+}
+
+const etapaAtual = () =>
+  screen
+    .getByRole("list", { name: "Etapas" })
+    .querySelector("[aria-current='step']")
+    ?.getAttribute("aria-label");
+
+const segmento = (nome: string) =>
+  within(screen.getByRole("list", { name: "Etapas" })).getByRole("button", {
+    name: nome,
+  }) as HTMLButtonElement;
+
+/** Nome digitado (na criação) e avanço até a etapa da meta. */
+function ateAMeta(valor?: string) {
+  if (valor !== undefined) digitarNome(valor);
+  continuar(3);
+}
+
+describe("ReserveForm: caixinha", () => {
+  it("Emergência desativada quando já existe; sem nome não sai da primeira etapa", () => {
+    const { onSubmit } = mount();
     const emergencia = screen.getByRole("radio", { name: /Emergência/ }) as HTMLInputElement;
     expect(emergencia.disabled).toBe(true);
     expect(screen.getByText("Você já tem uma")).toBeDefined();
-    expect(
-      (screen.getByRole("button", { name: "Criar reserva" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(etapas()).toEqual(["Nome", "Ícone", "Cor", "Meta"]);
+    expect(segmento("Ícone").disabled).toBe(true);
+
+    continuar();
+    expect(screen.getByRole("alert").textContent).toBe("Informe um nome.");
+    expect(etapaAtual()).toBe("Nome");
+
+    digitarNome("Notebook");
+    expect(segmento("Meta").disabled).toBe(false);
+    continuar();
+    expect(etapaAtual()).toBe("Ícone");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("anda Nome → Ícone → Cor → Meta e volta; o resumo mostra o nome", () => {
+    mount();
+    digitarNome("Notebook novo");
+    continuar();
+    expect(screen.getByText("Notebook novo")).toBeDefined();
+    expect(screen.getByText(/caixinha/)).toBeDefined();
+    continuar();
+    expect(etapaAtual()).toBe("Cor");
+    continuar();
+    expect(etapaAtual()).toBe("Meta");
+    expect(screen.queryByRole("button", { name: "Continuar" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+    expect(etapaAtual()).toBe("Cor");
+    fireEvent.click(segmento("Nome"));
+    expect(nome().value).toBe("Notebook novo");
+    expect(screen.queryByRole("button", { name: "Voltar" })).toBeNull();
+  });
+
+  it("Enter numa etapa intermediária avança em vez de criar", () => {
+    const { onSubmit } = mount();
+    digitarNome("X");
+    fireEvent.submit(nome().closest("form") as HTMLFormElement);
+    expect(etapaAtual()).toBe("Ícone");
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("meta + prazo mostram a sugestão; ligar a sugestão manda recurringAmountMinor", () => {
     const { onSubmit } = mount();
-    fireEvent.input(screen.getByLabelText("Nome"), { target: { value: "Notebook novo" } });
+    digitarNome("Notebook novo");
+    continuar();
     fireEvent.click(screen.getByRole("radio", { name: "laptop" }));
-    fireEvent.input(screen.getByLabelText("Meta"), { target: { value: "500000" } });
-    fireEvent.input(screen.getByLabelText("Até quando"), { target: { value: "2027-06" } });
+    continuar(2);
+    fireEvent.input(meta(), { target: { value: "500000" } });
+    fireEvent.input(prazo(), { target: { value: "2027-06" } });
     expect(screen.getByText(/Guardar R\$\s?556 todo mês/)).toBeDefined();
     expect(screen.getByText("9 depósitos chegam lá em jun 2027")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Criar reserva" }));
+    expect(screen.getByText(/meta R\$\s?5\.000 até jun 2027/)).toBeDefined();
+    enviar("Criar reserva");
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: "goal",
@@ -80,38 +169,206 @@ describe("ReserveForm", () => {
 
   it("desligar a sugestão manda recurringAmountMinor null", () => {
     const { onSubmit } = mount();
-    fireEvent.input(screen.getByLabelText("Nome"), { target: { value: "X" } });
-    fireEvent.input(screen.getByLabelText("Meta"), { target: { value: "500000" } });
-    fireEvent.input(screen.getByLabelText("Até quando"), { target: { value: "2027-06" } });
+    ateAMeta("X");
+    fireEvent.input(meta(), { target: { value: "500000" } });
+    fireEvent.input(prazo(), { target: { value: "2027-06" } });
     fireEvent.click(screen.getByRole("checkbox", { name: /todo mês/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Criar reserva" }));
+    enviar("Criar reserva");
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ recurringAmountMinor: null }));
   });
 
   it("sem prazo: sem card de sugestão", () => {
     mount();
-    fireEvent.input(screen.getByLabelText("Meta"), { target: { value: "500000" } });
+    ateAMeta("X");
+    fireEvent.input(meta(), { target: { value: "500000" } });
     expect(screen.queryByText(/todo mês/)).toBeNull();
   });
 
-  it("Mais ícones abre o catálogo completo", () => {
+  it("um depósito chega lá, no singular", () => {
     mount();
-    expect(screen.queryByRole("radio", { name: "baby" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Mais ícones" }));
+    ateAMeta("X");
+    fireEvent.input(meta(), { target: { value: "100000" } });
+    fireEvent.input(prazo(), { target: { value: "2026-10" } });
+    expect(screen.getByText("1 depósito chega lá em out 2026")).toBeDefined();
+  });
+
+  it("a etapa Ícone já mostra o catálogo inteiro, sem 'Mais ícones'", () => {
+    const { onSubmit } = mount();
+    digitarNome("Férias");
+    continuar();
     expect(screen.getByRole("radio", { name: "baby" })).toBeDefined();
+    expect(screen.getByRole("radio", { name: "laptop" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Mais ícones" })).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "plane-tilt" }));
+    continuar(2);
+    enviar("Criar reserva");
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ icon: "plane-tilt" }));
+  });
+
+  it("a prévia da cor mostra a linha como na lista", () => {
+    const { onSubmit } = mount();
+    digitarNome("Férias");
+    continuar(2);
+    expect(screen.getByText("Prévia")).toBeDefined();
+    expect(screen.getByText("Sem meta")).toBeDefined();
+    fireEvent.click(screen.getByRole("radio", { name: "Rosa" }));
+    continuar();
+    enviar("Criar reserva");
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ color: "rose" }));
+  });
+
+  it("criar caixinha: o prazo começa no mês seguinte", () => {
+    mount();
+    ateAMeta("X");
+    expect(prazo().min).toBe("2026-10");
+  });
+
+  it("editar caixinha: só o nome na primeira etapa, campos preenchidos, depósito mantido", () => {
+    const viagem = { ...GOAL, targetMinor: 500_000, deadline: "2027-06" };
+    const { onSubmit } = mount({ editing: viagem, state: stateOf({ reserves: [viagem] }) });
+    expect(screen.queryByRole("radio", { name: /Caixinha/ })).toBeNull();
+    expect(nome().value).toBe("Viagem");
+    continuar(2);
+    expect(screen.getByText(/Faltam R\$\s?5\.000 · até jun 2027/)).toBeDefined();
+    continuar();
+    expect(screen.getByText(/o saldo volta para o mês atual/)).toBeDefined();
+    enviar("Salvar");
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Viagem", icon: "car", recurringAmountMinor: 30_000 }),
+    );
+  });
+
+  it("prazo vencido não trava a edição: sem `min` no mês e o form não valida nativo", () => {
+    // happy-dom não roda a validação nativa; o que se prova é que ela não tem com o que travar.
+    const late = reserve("01J9F3K2M7QX8YB4TVWZ0DCEH2", { name: "Viagem", deadline: "2026-08" });
+    const { onSubmit } = mount({ editing: late, state: stateOf({ reserves: [late] }) });
+    ateAMeta();
+    expect(prazo().hasAttribute("min")).toBe(false);
+    expect(prazo().closest("form")?.noValidate).toBe(true);
+    enviar("Salvar");
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ deadline: "2026-08" }));
+  });
+
+  it("renomear caixinha com depósito e sem meta nem prazo mantém o depósito", () => {
+    const { onSubmit } = mount({ editing: GOAL, state: goalState });
+    digitarNome("Viagem longa");
+    ateAMeta();
+    expect(screen.getByText(/Guardando R\$\s?300 todo mês/)).toBeDefined();
+    enviar("Salvar");
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Viagem longa", recurringAmountMinor: 30_000 }),
+    );
+  });
+
+  it("meta atingida mantém o depósito gravado", () => {
+    const reached = { ...GOAL, targetMinor: 100_000, deadline: "2027-06" };
+    const { onSubmit } = mount({ editing: reached, state: stateOf({ reserves: [reached] }) });
+    ateAMeta();
+    enviar("Salvar");
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ recurringAmountMinor: 30_000 }),
+    );
+  });
+
+  it("limpar o prazo mantém o depósito gravado", () => {
+    const withDeadline = { ...GOAL, targetMinor: 500_000, deadline: "2027-06" };
+    const { onSubmit } = mount({
+      editing: withDeadline,
+      state: stateOf({ reserves: [withDeadline] }),
+    });
+    ateAMeta();
+    fireEvent.input(prazo(), { target: { value: "" } });
+    enviar("Salvar");
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ recurringAmountMinor: 30_000 }),
+    );
+  });
+
+  it("desligar o toggle de um depósito gravado manda null", () => {
+    const { onSubmit } = mount({ editing: GOAL, state: goalState });
+    ateAMeta();
+    fireEvent.click(screen.getByRole("checkbox", { name: /todo mês/ }));
+    enviar("Salvar");
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ recurringAmountMinor: null }));
+  });
+
+  it("o X do cabeçalho chama onCancel; segurar a lixeira chama onDelete", () => {
+    const { onCancel, onDelete } = mount({ editing: GOAL, state: goalState });
+    expect(screen.queryByRole("button", { name: /Reservas/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers();
+    fireEvent.pointerDown(screen.getByRole("button", { name: /Excluir Viagem/ }));
+    vi.advanceTimersByTime(5000);
+    vi.useRealTimers();
+    expect(onDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it("criar não tem lixeira", () => {
+    mount();
+    expect(screen.queryByRole("button", { name: /Excluir/ })).toBeNull();
+  });
+});
+
+describe("ReserveForm: emergência", () => {
+  it("trocar o tipo na primeira etapa troca as etapas", () => {
+    mount({ state: stateOf({}) });
+    expect(etapas()).toEqual(["Nome", "Ícone", "Cor", "Meta"]);
+    fireEvent.click(screen.getByRole("radio", { name: /Emergência/ }));
+    expect(etapas()).toEqual(["Tipo", "Meses", "Depósito"]);
+    expect(screen.queryByRole("textbox", { name: "Nome" })).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: /Caixinha/ }));
+    expect(etapas()).toEqual(["Nome", "Ícone", "Cor", "Meta"]);
+  });
+
+  it("criar emergência com histórico: sem campo de custo, mostra o custo e a meta", () => {
+    const { onSubmit } = mount({ state: WITH_HISTORY, initialKind: "emergency" });
+    expect(etapas()).toEqual(["Tipo", "Meses", "Depósito"]);
+    continuar();
+    expect(screen.queryByLabelText("Custo essencial por mês")).toBeNull();
+    expect(screen.getByText("Pelos seus lançamentos")).toBeDefined();
+    continuar();
+    expect(screen.getByText(/6 meses do custo essencial/)).toBeDefined();
+    expect(screen.getByText(/Começa em outubro, todo dia 20/)).toBeDefined();
+    enviar("Criar reserva");
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "emergency", multiple: 6, essentialOverrideMinor: null }),
+    );
+  });
+
+  it("criar emergência sem histórico: custo obrigatório para sair de Meses", () => {
+    const { onSubmit } = mount({ state: stateOf({}), initialKind: "emergency" });
+    continuar();
+    expect(segmento("Depósito").disabled).toBe(true);
+    continuar();
+    expect(screen.getByRole("alert").textContent).toBe("Informe o custo essencial por mês.");
+    expect(etapaAtual()).toBe("Meses");
+    fireEvent.input(screen.getByLabelText("Custo essencial por mês"), {
+      target: { value: "400000" },
+    });
+    expect(segmento("Depósito").disabled).toBe(false);
+    continuar();
+    enviar("Criar reserva");
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ essentialOverrideMinor: 400_000 }),
+    );
   });
 
   it("editar emergência: só múltiplo e depósito mensal, e excluir com aviso", () => {
     const { onSubmit } = mount({ editing: EMERGENCY, initialKind: "emergency" });
+    expect(etapas()).toEqual(["Meses", "Depósito"]);
     expect(screen.queryByLabelText("Nome")).toBeNull();
     expect(screen.queryByRole("radio", { name: /Caixinha/ })).toBeNull();
     // O Segmented é um fieldset (role "group"), não um radiogroup.
     expect(screen.getByRole("group", { name: /meses/i })).toBeDefined();
-    expect(screen.getByLabelText("Valor por mês")).toBeDefined();
     expect(screen.getByLabelText("Custo essencial por mês")).toBeDefined();
-    expect(screen.getByText("O saldo volta para o mês atual")).toBeDefined();
+    expect(screen.getByRole("button", { name: /Excluir reserva de emergência/ })).toBeDefined();
     fireEvent.click(screen.getByRole("radio", { name: "12 meses" }));
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    continuar();
+    expect(screen.getByLabelText("Valor por mês")).toBeDefined();
+    expect(screen.getByText(/12 meses do custo essencial/)).toBeDefined();
+    expect(screen.getByText(/o saldo volta para o mês atual/)).toBeDefined();
+    enviar("Salvar");
     expect(onSubmit).toHaveBeenCalledWith({
       kind: "emergency",
       name: "",
@@ -132,179 +389,29 @@ describe("ReserveForm", () => {
     expect(screen.getByLabelText("Custo essencial por mês")).toBeDefined();
   });
 
-  it("editar caixinha: preenche os campos e mantém o valor mensal gravado", () => {
-    const goal = reserve("01J9F3K2M7QX8YB4TVWZ0DCEH2", {
-      name: "Viagem",
-      icon: "car",
-      color: "amber",
-      targetMinor: 500_000,
-      deadline: "2027-06",
-      recurring: { amountMinor: 30_000, day: 6, since: "2026-10" },
-    });
-    const { onSubmit } = mount({
-      editing: goal,
-      initialKind: "goal",
-      state: stateOf({ reserves: [goal] }),
-    });
-    expect((screen.getByLabelText("Nome") as HTMLInputElement).value).toBe("Viagem");
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Viagem", icon: "car", recurringAmountMinor: 30_000 }),
-    );
-  });
-
-  it("prazo vencido não trava a edição: sem `min` no mês e o form não valida nativo", () => {
-    // happy-dom não roda a validação nativa; o que se prova é que ela não tem com o que travar.
-    const late = reserve("01J9F3K2M7QX8YB4TVWZ0DCEH2", { name: "Viagem", deadline: "2026-08" });
-    const { onSubmit } = mount({ editing: late, state: stateOf({ reserves: [late] }) });
-    const input = screen.getByLabelText("Até quando") as HTMLInputElement;
-    expect(input.hasAttribute("min")).toBe(false);
-    expect(input.closest("form")?.noValidate).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ deadline: "2026-08" }));
-  });
-
-  it("criar caixinha: o prazo começa no mês seguinte", () => {
-    mount();
-    expect((screen.getByLabelText("Até quando") as HTMLInputElement).min).toBe("2026-10");
-  });
-
-  it("editar emergência duplicada: só o aviso e a exclusão", () => {
-    const dup = { ...EMERGENCY, id: "01J9F3K2M7QX8YB4TVWZ0DCEH9" };
-    const { onCancel } = mount({
-      editing: dup,
-      initialKind: "emergency",
-      state: stateOf({ reserves: [EMERGENCY, dup] }),
-    });
-    expect(
-      screen.getByText(
-        "Reserva de emergência duplicada (criada em outro aparelho). Exclua uma delas.",
-      ),
-    ).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Salvar" })).toBeNull();
-    expect(screen.queryByText("Custo essencial por mês")).toBeNull();
-    expect(screen.getByRole("button", { name: /Excluir Reserva de emergência/ })).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
-    expect(onCancel).toHaveBeenCalled();
-  });
-
-  const GOAL = reserve("01J9F3K2M7QX8YB4TVWZ0DCEH2", {
-    name: "Viagem",
-    icon: "car",
-    color: "amber",
-    recurring: { amountMinor: 30_000, day: 6, since: "2026-10" },
-  });
-  const goalState = stateOf({ reserves: [GOAL] });
-
-  it("renomear caixinha com depósito e sem meta nem prazo mantém o depósito", () => {
-    const { onSubmit } = mount({ editing: GOAL, state: goalState });
-    expect(screen.getByText(/Guardando R\$\s?300 todo mês/)).toBeDefined();
-    fireEvent.input(screen.getByLabelText("Nome"), { target: { value: "Viagem longa" } });
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Viagem longa", recurringAmountMinor: 30_000 }),
-    );
-  });
-
-  it("meta atingida mantém o depósito gravado", () => {
-    const reached = { ...GOAL, targetMinor: 100_000, deadline: "2027-06" };
-    const { onSubmit } = mount({ editing: reached, state: stateOf({ reserves: [reached] }) });
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ recurringAmountMinor: 30_000 }),
-    );
-  });
-
-  it("limpar o prazo mantém o depósito gravado", () => {
-    const withDeadline = { ...GOAL, targetMinor: 500_000, deadline: "2027-06" };
-    const { onSubmit } = mount({
-      editing: withDeadline,
-      state: stateOf({ reserves: [withDeadline] }),
-    });
-    fireEvent.input(screen.getByLabelText("Até quando"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ recurringAmountMinor: 30_000 }),
-    );
-  });
-
-  it("desligar o toggle de um depósito gravado manda null", () => {
-    const { onSubmit } = mount({ editing: GOAL, state: goalState });
-    fireEvent.click(screen.getByRole("checkbox", { name: /todo mês/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ recurringAmountMinor: null }));
-  });
-
-  it("um depósito chega lá, no singular", () => {
-    mount();
-    fireEvent.input(screen.getByLabelText("Meta"), { target: { value: "100000" } });
-    fireEvent.input(screen.getByLabelText("Até quando"), { target: { value: "2026-10" } });
-    expect(screen.getByText("1 depósito chega lá em out 2026")).toBeDefined();
-  });
-
-  it("criar emergência com histórico: sem campo de custo, mostra o custo e a meta", () => {
-    const { onSubmit } = mount({ state: WITH_HISTORY, initialKind: "emergency" });
-    expect(screen.queryByLabelText("Custo essencial por mês")).toBeNull();
-    expect(screen.getByText("Pelos seus lançamentos")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Criar reserva" }));
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "emergency", multiple: 6, essentialOverrideMinor: null }),
-    );
-  });
-
-  it("criar emergência sem histórico: custo obrigatório", () => {
-    const { onSubmit } = mount({ state: stateOf({}), initialKind: "emergency" });
-    const create = screen.getByRole("button", { name: "Criar reserva" }) as HTMLButtonElement;
-    expect(create.disabled).toBe(true);
-    fireEvent.input(screen.getByLabelText("Custo essencial por mês"), {
-      target: { value: "400000" },
-    });
-    expect(create.disabled).toBe(false);
-    fireEvent.click(create);
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ essentialOverrideMinor: 400_000 }),
-    );
-  });
-
   it("editar emergência: o custo digitado não pode ficar vazio sem histórico", () => {
-    mount({ editing: EMERGENCY, initialKind: "emergency" });
+    const { onSubmit } = mount({ editing: EMERGENCY, initialKind: "emergency" });
     fireEvent.input(screen.getByLabelText("Custo essencial por mês"), { target: { value: "" } });
-    expect((screen.getByRole("button", { name: "Salvar" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect(segmento("Depósito").disabled).toBe(true);
+    continuar();
+    expect(screen.getByRole("alert").textContent).toBe("Informe o custo essencial por mês.");
+    expect(screen.queryByRole("button", { name: "Salvar" })).toBeNull();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("depósito mensal ligado sem valor desativa Salvar e orienta", () => {
-    const { recurring: _, ...rest } = EMERGENCY;
-    const bare = { ...rest, recurring: null };
-    mount({ editing: bare, initialKind: "emergency", state: stateOf({ reserves: [bare] }) });
+  it("depósito mensal ligado sem valor orienta e não salva", () => {
+    const bare = { ...EMERGENCY, recurring: null };
+    const { onSubmit } = mount({
+      editing: bare,
+      initialKind: "emergency",
+      state: stateOf({ reserves: [bare] }),
+    });
+    continuar();
     fireEvent.click(screen.getByRole("checkbox", { name: /Guardar todo mês/ }));
     expect(screen.getByText("Digite o valor por mês")).toBeDefined();
-    expect((screen.getByRole("button", { name: "Salvar" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-  });
-
-  it("voltar e Cancelar chamam onCancel; a lixeira chama onDelete", () => {
-    const { onCancel, onDelete } = mount({ editing: GOAL, state: goalState });
-    fireEvent.click(screen.getByRole("button", { name: /Reservas/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
-    expect(onCancel).toHaveBeenCalledTimes(2);
-    vi.useFakeTimers();
-    fireEvent.pointerDown(screen.getByRole("button", { name: /Excluir Viagem/ }));
-    vi.advanceTimersByTime(5000);
-    vi.useRealTimers();
-    expect(onDelete).toHaveBeenCalledTimes(1);
-  });
-
-  it("Mais ícones alterna com aria-expanded", () => {
-    mount();
-    const toggle = screen.getByRole("button", { name: "Mais ícones" });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    fireEvent.click(toggle);
-    expect(screen.getByRole("button", { name: "Menos ícones" }).getAttribute("aria-expanded")).toBe(
-      "true",
-    );
+    enviar("Salvar");
+    expect(screen.getByRole("alert").textContent).toBe("Informe o valor por mês.");
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("com histórico calculável, limpar o custo manual manda override null", () => {
@@ -317,9 +424,31 @@ describe("ReserveForm", () => {
     const state = { ...WITH_HISTORY, reserves: { [withOverride.id]: withOverride } };
     const { onSubmit } = mount({ editing: withOverride, initialKind: "emergency", state });
     fireEvent.input(screen.getByLabelText("Custo essencial por mês"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    continuar();
+    enviar("Salvar");
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "emergency", essentialOverrideMinor: null }),
     );
+  });
+
+  it("editar emergência duplicada: só o aviso, a exclusão e Fechar", () => {
+    const dup = { ...EMERGENCY, id: "01J9F3K2M7QX8YB4TVWZ0DCEH9" };
+    const { onCancel } = mount({
+      editing: dup,
+      initialKind: "emergency",
+      state: stateOf({ reserves: [EMERGENCY, dup] }),
+    });
+    expect(
+      screen.getByText(
+        "Reserva de emergência duplicada (criada em outro aparelho). Exclua uma delas.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByRole("list", { name: "Etapas" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Salvar" })).toBeNull();
+    expect(screen.queryByText("Custo essencial por mês")).toBeNull();
+    expect(screen.getByRole("button", { name: /Excluir Reserva de emergência/ })).toBeDefined();
+    // O X do cabeçalho e o botão do rodapé fecham igual.
+    for (const fechar of screen.getAllByRole("button", { name: "Fechar" })) fireEvent.click(fechar);
+    expect(onCancel).toHaveBeenCalledTimes(2);
   });
 });

@@ -107,10 +107,13 @@ type ScreenId = (typeof SCREENS)[number]["id"];
 const SCREEN_IDS: readonly ScreenId[] = SCREENS.map((s) => s.id);
 
 /** Sub-tela da aba Reservas. */
-type ReserveView =
-  | { kind: "list" }
-  | { kind: "detail"; id: Ulid }
-  | { kind: "form"; id: Ulid | null; initialKind: ReserveKind };
+type ReserveView = { kind: "list" } | { kind: "detail"; id: Ulid };
+
+/** Formulário de reserva aberto no sheet: `id` nulo é criar. */
+interface ReserveFormTarget {
+  id: Ulid | null;
+  initialKind: ReserveKind;
+}
 
 /** Sheet de movimento aberto: o tipo decide o sheet, `editing` nulo é um movimento novo. */
 type ReserveSheet =
@@ -167,6 +170,9 @@ export function App({
   const [glow, setGlow] = useState<string | null>(null);
   const [reserveView, setReserveView] = useState<ReserveView>(RESERVE_LIST);
   const [reserveSheet, setReserveSheet] = useState<ReserveSheet | null>(null);
+  // Separado de `reserveView`: o formulário é um sheet por cima da lista ou do
+  // detalhe, e fechar devolve para onde ele foi aberto sem ter que lembrar.
+  const [reserveForm, setReserveForm] = useState<ReserveFormTarget | null>(null);
 
   // Reserva apagada por baixo (sync, outra aba) enquanto o detalhe, o
   // formulário ou um sheet dela estava aberto. O render já mostra a lista
@@ -176,12 +182,17 @@ export function App({
   const viewedReserveId = reserveView.kind === "list" ? null : reserveView.id;
   const viewedReserveGone = viewedReserveId !== null && !isAlive(reservesById[viewedReserveId]);
   const sheetReserveGone = reserveSheet !== null && !isAlive(reservesById[reserveSheet.reserveId]);
+  const formReserveGone =
+    reserveForm !== null && reserveForm.id !== null && !isAlive(reservesById[reserveForm.id]);
   useEffect(() => {
     if (viewedReserveGone) setReserveView(RESERVE_LIST);
   }, [viewedReserveGone]);
   useEffect(() => {
     if (sheetReserveGone) setReserveSheet(null);
   }, [sheetReserveGone]);
+  useEffect(() => {
+    if (formReserveGone) setReserveForm(null);
+  }, [formReserveGone]);
 
   useEffect(() => {
     // Materializa depois do init: o boot e o "virar do mês" são o mesmo caminho.
@@ -223,13 +234,13 @@ export function App({
     setScreen(id);
     // Voltar para Ajustes depois sempre cai na raiz, e não na sub-tela de onde
     // o usuário saiu — que ele já não lembra ter deixado aberta. Vale igual
-    // para o detalhe ou o formulário de uma reserva.
+    // para o detalhe de uma reserva.
     setSection(null);
     setReserveView(RESERVE_LIST);
   }
 
   // Hook antes de qualquer return: arraste só nas abas raiz. Modal, sheet ou
-  // sub-tela (perfil/cadastro em Ajustes, detalhe/formulário em Reservas)
+  // sub-tela (perfil/cadastro em Ajustes, detalhe em Reservas)
   // desliga o gesto para não trocar de aba no meio de um formulário.
   const swipe = useSwipeNav({
     screens: SCREEN_IDS,
@@ -241,7 +252,8 @@ export function App({
       !modalOpen &&
       !importing &&
       reserveView.kind === "list" &&
-      reserveSheet === null,
+      reserveSheet === null &&
+      reserveForm === null,
     onChange: goToScreen,
   });
 
@@ -345,38 +357,10 @@ export function App({
           reserveId={id}
           today={today}
           onBack={() => setReserveView(RESERVE_LIST)}
-          onEdit={() =>
-            setReserveView({ kind: "form", id, initialKind: viewedReserve?.kind ?? "goal" })
-          }
+          onEdit={() => setReserveForm({ id, initialKind: viewedReserve?.kind ?? "goal" })}
           onDeposit={() => setReserveSheet({ kind: "deposit", reserveId: id, editing: null })}
           onWithdraw={() => setReserveSheet({ kind: "withdraw", reserveId: id, editing: null })}
           onOpenMovement={openMovement}
-        />
-      );
-    }
-    if (reserveView.kind === "form" && !viewedReserveGone) {
-      const id = reserveView.id;
-      return (
-        <ReserveForm
-          key={id ?? "nova"}
-          state={state}
-          today={today}
-          editing={id === null ? null : viewedReserve}
-          initialKind={reserveView.initialKind}
-          onSubmit={(input) => {
-            if (id === null) {
-              setReserveView(RESERVE_LIST);
-              void reserves.create(input, today).catch(ignoreHandled);
-            } else {
-              setReserveView({ kind: "detail", id });
-              void reserves.edit(id, input, today).catch(ignoreHandled);
-            }
-          }}
-          onDelete={() => {
-            setReserveView(RESERVE_LIST);
-            if (id !== null) void reserves.remove(id, today).catch(ignoreHandled);
-          }}
-          onCancel={() => setReserveView(id === null ? RESERVE_LIST : { kind: "detail", id })}
         />
       );
     }
@@ -385,7 +369,7 @@ export function App({
         state={state}
         today={today}
         onOpen={(id) => setReserveView({ kind: "detail", id })}
-        onNew={(kind) => setReserveView({ kind: "form", id: null, initialKind: kind })}
+        onNew={(kind) => setReserveForm({ id: null, initialKind: kind })}
         onCreateEmergency={(multiple, essentialOverrideMinor) => {
           void reserves
             .create(
@@ -708,6 +692,43 @@ export function App({
               if (movement !== null) void reserves.removeMovement(movement.id).catch(ignoreHandled);
             }}
             onClose={closeReserveSheet}
+          />
+        )}
+      </Modal>
+
+      {/*
+        Por último, pelo mesmo motivo da ordem dos efeitos. Montado só enquanto
+        aberto, com `key` da reserva: abrir outra remonta o formulário e os
+        `useState` releem as props. Criar fecha e fica na lista; editar fecha e
+        fica no detalhe; excluir fecha e volta para a lista, já que o detalhe
+        ficaria vazio.
+      */}
+      <Modal
+        open={reserveForm !== null}
+        title={reserveForm?.id ? "Editar reserva" : "Nova reserva"}
+        onClose={() => setReserveForm(null)}
+      >
+        {reserveForm !== null && !formReserveGone && (
+          <ReserveForm
+            key={reserveForm.id ?? "nova"}
+            state={state}
+            today={today}
+            editing={reserveForm.id === null ? null : (reservesById[reserveForm.id] ?? null)}
+            initialKind={reserveForm.initialKind}
+            onSubmit={(input) => {
+              const id = reserveForm.id;
+              setReserveForm(null);
+              const write =
+                id === null ? reserves.create(input, today) : reserves.edit(id, input, today);
+              void write.catch(ignoreHandled);
+            }}
+            onDelete={() => {
+              const id = reserveForm.id;
+              setReserveForm(null);
+              setReserveView(RESERVE_LIST);
+              if (id !== null) void reserves.remove(id, today).catch(ignoreHandled);
+            }}
+            onCancel={() => setReserveForm(null)}
           />
         )}
       </Modal>
