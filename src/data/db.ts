@@ -3,6 +3,7 @@ import type { Category } from "../domain/model/category";
 import type { PaymentMethod } from "../domain/model/payment-method";
 import type { Recurrence } from "../domain/model/recurrence";
 import type { RecurrenceAdjustment } from "../domain/model/recurrence-adjustment";
+import type { Reserve, ReserveMovement } from "../domain/model/reserve";
 import type { Transaction } from "../domain/model/transaction";
 import type { User } from "../domain/model/user";
 
@@ -28,6 +29,8 @@ export class HomeFinanceDb extends Dexie {
   readonly transactions: Table<Transaction, string>;
   readonly recurrences: Table<Recurrence, string>;
   readonly recurrenceAdjustments: Table<RecurrenceAdjustment, string>;
+  readonly reserves: Table<Reserve, string>;
+  readonly reserveMovements: Table<ReserveMovement, string>;
   readonly meta: Table<MetaRow, string>;
 
   constructor(name = "homefinance") {
@@ -47,12 +50,16 @@ export class HomeFinanceDb extends Dexie {
     // Só acrescenta a tabela de reajustes: o Dexie herda as outras da v2, e
     // nenhuma linha existente muda de forma.
     this.version(3).stores({ recurrenceAdjustments: "id, recurrenceId, dirty" });
+    // Reservas: duas tabelas novas, nenhuma linha existente muda de forma.
+    this.version(4).stores({ reserves: "id, dirty", reserveMovements: "id, reserveId, dirty" });
     this.users = this.table("users");
     this.categories = this.table("categories");
     this.paymentMethods = this.table("paymentMethods");
     this.transactions = this.table("transactions");
     this.recurrences = this.table("recurrences");
     this.recurrenceAdjustments = this.table("recurrenceAdjustments");
+    this.reserves = this.table("reserves");
+    this.reserveMovements = this.table("reserveMovements");
     this.meta = this.table("meta");
   }
 }

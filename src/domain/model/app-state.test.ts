@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EMPTY_APP_STATE, TABLE_NAMES } from "./app-state";
 
 describe("TABLE_NAMES", () => {
-  it("lista as seis tabelas de RowMap", () => {
+  it("lista as oito tabelas de RowMap", () => {
     expect(TABLE_NAMES).toEqual([
       "users",
       "categories",
@@ -10,6 +10,8 @@ describe("TABLE_NAMES", () => {
       "transactions",
       "recurrences",
       "recurrenceAdjustments",
+      "reserves",
+      "reserveMovements",
     ]);
   });
 });

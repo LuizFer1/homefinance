@@ -85,10 +85,23 @@ const REGULAR = [
   "warning",
   "wave-sine",
   "x",
+  // Reservas.
+  "vault",
+  "lifebuoy",
+  "scales",
+  "flag-checkered",
+  "target",
+  "calculator",
+  "airplane-tilt",
+  "laptop",
+  "arrow-down",
+  "arrow-up",
+  "sparkle",
+  "pencil-simple",
 ];
 
 /** Peso preenchido: aba ativa e "Escuro" selecionado. */
-const FILL = ["chart-pie-slice", "house", "gear-six", "moon"];
+const FILL = ["chart-pie-slice", "house", "gear-six", "moon", "vault"];
 
 function pathsOf(file) {
   const svg = readFileSync(file, "utf8");

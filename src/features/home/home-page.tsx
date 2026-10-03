@@ -6,12 +6,13 @@ import { filterByMonth } from "../../domain/projections/breakdown";
 import { estimatedTotals, pendingEstimates } from "../../domain/projections/estimates";
 import { monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { totals } from "../../domain/projections/selectors";
+import { availableBalance, savedInMonth } from "../../domain/reserves/balances";
 import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
 import { periodLabel } from "../recurrence/adjust-sheet";
 import { TransactionList } from "../transactions/transaction-list";
 import { greetingFor } from "../ui/greeting";
-import { MINUS, Money, moneyParts } from "../ui/money";
+import { compactBRL, MINUS, Money, moneyParts } from "../ui/money";
 import { QuickActions } from "../ui/quick-actions";
 
 export interface HomePageProps {
@@ -41,13 +42,22 @@ function monthName(month: string): string {
  * o seu: dois valores chamados "saldo" na mesma tela seriam um bug de leitura
  * no primeiro mês em que deixassem de coincidir.
  */
-function MonthCard({ items, today }: { items: Transaction[]; today: string }) {
+function MonthCard({
+  items,
+  state,
+  today,
+}: {
+  items: Transaction[];
+  state: AppState;
+  today: string;
+}) {
   const month = monthOf(today);
   const monthItems = filterByMonth(items, month);
   const summary = totals(monthItems);
   const moved = summary.incomeMinor + summary.expenseMinor;
   const estimated = estimatedTotals(monthItems);
   const estimatedMinor = estimated.incomeMinor + estimated.expenseMinor;
+  const saved = savedInMonth(state, month);
 
   return (
     <section aria-label={`Resumo de ${monthName(month)}`} class="mt-6 rounded-lg bg-surface p-4">
@@ -87,6 +97,12 @@ function MonthCard({ items, today }: { items: Transaction[]; today: string }) {
       {estimatedMinor > 0 && (
         <p data-testid="month-estimated" class="mt-2.5 text-xs text-fg/55">
           Inclui <span class="hf-num">~{formatBRL(estimatedMinor)}</span> estimado
+        </p>
+      )}
+      {saved !== 0 && (
+        <p data-testid="month-saved" class="mt-2.5 text-xs text-fg/55">
+          {saved > 0 ? "Separado: " : "Voltou das reservas: "}
+          <span class="hf-num">{compactBRL(Math.abs(saved))}</span>
         </p>
       )}
     </section>
@@ -156,7 +172,11 @@ export function HomePage({
   onConfirm,
   onOpenProfile,
 }: HomePageProps) {
-  const summary = totals(items);
+  // O que está nas reservas não é para gastar: contá-lo aqui de novo mostraria
+  // o mesmo dinheiro em dois lugares (saldo e reserva) e o saldo pareceria maior
+  // do que realmente se pode usar.
+  const available = availableBalance(state);
+  const savedThisMonth = savedInMonth(state, monthOf(today)) !== 0;
 
   return (
     <>
@@ -176,10 +196,12 @@ export function HomePage({
 
       <p class="hf-label mt-5">Saldo total</p>
       <p class="mt-1.5">
-        <Money minor={summary.balanceMinor} size={44} testId="total-balance" />
+        <Money minor={available} size={44} testId="total-balance" />
       </p>
 
-      {items.length > 0 && <MonthCard items={items} today={today} />}
+      {(items.length > 0 || savedThisMonth) && (
+        <MonthCard items={items} state={state} today={today} />
+      )}
 
       <PendingEstimates state={state} onConfirm={onConfirm} />
 
