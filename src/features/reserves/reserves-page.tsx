@@ -2,7 +2,7 @@ import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import type { EmergencyMultiple, Reserve, ReserveKind } from "../../domain/model/reserve";
 import { formatBRL } from "../../domain/money/money";
-import { monthLabelLong, monthOf } from "../../domain/projections/periods";
+import { monthOf } from "../../domain/projections/periods";
 import {
   emergencyOf,
   isDuplicateEmergency,
@@ -23,7 +23,7 @@ import { PageHeader } from "../ui/page-header";
 import { IconTile } from "../ui/tile";
 import { AccentIconBox } from "./accent-icon-box";
 import { EmptyState } from "./empty-state";
-import { deadlineLabel } from "./format";
+import { deadlineLabel, monthName } from "./format";
 import { MonthsMeter } from "./months-meter";
 
 export interface ReservesPageProps {
@@ -165,7 +165,6 @@ export function ReservesPage({
   // Custo 0 (histórico só fora das categorias essenciais) não serve de meta: cai no campo manual.
   const cost = essentialCost(state, findEssentialCategoryIds(state), today);
   const usableCost = cost !== null && cost > 0 ? cost : null;
-  const monthName = monthLabelLong(month).split(" ")[0]?.toLocaleLowerCase("pt-BR") ?? "";
 
   return (
     <>
@@ -202,7 +201,8 @@ export function ReservesPage({
             <p class="mt-1 flex items-center gap-1.5 text-[13px] text-fg/65">
               <Icon name={saved > 0 ? "arrow-down" : "arrow-up"} size={14} />
               <span class="hf-num">
-                {formatBRL(Math.abs(saved))} {saved > 0 ? "guardados" : "retirados"} em {monthName}
+                {formatBRL(Math.abs(saved))} {saved > 0 ? "guardados" : "retirados"} em{" "}
+                {monthName(month)}
               </span>
             </p>
           )}

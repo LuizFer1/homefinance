@@ -1,4 +1,4 @@
-import { monthLabelShort } from "../../domain/projections/periods";
+import { monthLabelLong, monthLabelShort } from "../../domain/projections/periods";
 
 /** "jul 2027"; no ano de `today`, só "dez" (como no handoff). */
 export function deadlineLabel(deadline: string, today: string): string {
@@ -9,4 +9,9 @@ export function deadlineLabel(deadline: string, today: string): string {
 /** "6 set" — linha de autor do movimento. */
 export function movementDateLabel(date: string): string {
   return `${Number(date.slice(8, 10))} ${monthLabelShort(date)}`;
+}
+
+/** Nome do mês sozinho, minúsculo ("setembro"): é como o handoff o escreve nas linhas. */
+export function monthName(month: string): string {
+  return monthLabelLong(month).split(" ")[0]?.toLocaleLowerCase("pt-BR") ?? "";
 }

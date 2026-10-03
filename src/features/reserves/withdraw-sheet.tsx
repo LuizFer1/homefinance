@@ -13,8 +13,9 @@ import { LABEL } from "../ui/field";
 import { HoldToDelete } from "../ui/hold-button";
 import { SheetHeader } from "../ui/modal";
 import { wholeBRL } from "../ui/money";
-import { AmountField, monthName, SheetSubtitle } from "./deposit-sheet";
+import { monthName } from "./format";
 import { MonthsMeter } from "./months-meter";
+import { AmountField, SheetSubtitle } from "./sheet-parts";
 import type { MovementInput } from "./store";
 
 export interface WithdrawSheetProps {
@@ -58,7 +59,9 @@ export function WithdrawSheet({
   const available = reserveBalance(state, reserve.id) + Math.abs(editing?.amountMinor ?? 0);
   const over = amount > available;
   const valid = amount > 0 && amount <= MAX_MINOR && !over && reason !== null;
-  const after = available - amount;
+  // Acima do saldo o erro já avisa; a prévia não mostra saldo ou meses negativos.
+  const after = Math.max(0, available - amount);
+  const returned = Math.min(amount, available);
   const goal = reserve.kind === "emergency" ? emergencyTarget(state, reserve, today) : null;
 
   return (
@@ -68,14 +71,23 @@ export function WithdrawSheet({
         onClose={onClose}
         actions={
           editing === null ? undefined : (
-            <HoldToDelete label="Segure para excluir" onConfirm={onDelete} />
+            <HoldToDelete label="Excluir retirada" onConfirm={onDelete} />
           )
         }
       />
       <SheetSubtitle reserve={reserve} prefix="Da" />
 
-      <AmountField id="withdraw-amount" digits={digits} onDigits={setDigits} />
-      {over && <p class="mt-2 text-[13px] text-expense-fg">Maior que o saldo da reserva</p>}
+      <AmountField
+        id="withdraw-amount"
+        digits={digits}
+        onDigits={setDigits}
+        describedBy={over ? "withdraw-error" : undefined}
+      />
+      {over && (
+        <p id="withdraw-error" class="mt-2 text-[13px] text-expense-fg">
+          Maior que o saldo da reserva
+        </p>
+      )}
 
       <fieldset class="mt-[18px] border-0 p-0">
         <legend class={`${LABEL} p-0`}>Para quê?</legend>
@@ -128,7 +140,7 @@ export function WithdrawSheet({
           <div class="mt-2.5">
             <MonthsMeter
               months={monthsCovered(after, goal.costMinor)}
-              removedMonths={monthsCovered(Math.min(amount, available), goal.costMinor)}
+              removedMonths={monthsCovered(returned, goal.costMinor)}
               height={8}
             />
           </div>
@@ -140,31 +152,34 @@ export function WithdrawSheet({
             </span>
           )}
           <span class="ml-auto text-right text-fg/55">
-            volta {wholeBRL(amount)} ao saldo de {monthName(monthOf(occurredOn))}
+            volta {returned % 100 === 0 ? wholeBRL(returned) : formatBRL(returned)} ao saldo de{" "}
+            {monthName(monthOf(occurredOn))}
           </span>
         </div>
       </div>
 
-      <button
-        type="button"
-        disabled={!valid}
-        onClick={() => {
-          if (reason === null) return;
-          const text = description.trim();
-          onSubmit({
-            amountMinor: amount,
-            description: text === "" ? null : text,
-            occurredOn,
-            reason,
-          });
-        }}
-        class="hf-press mt-5 inline-flex h-[52px] w-full min-w-0 items-center justify-center gap-2
-          rounded-lg border border-expense/55 bg-expense/9 px-5 text-[15px] font-medium
-          text-expense-fg disabled:pointer-events-none disabled:opacity-45"
-      >
-        <Icon name="arrow-up" size={18} />
-        <span class="truncate">Retirar {formatBRL(amount)}</span>
-      </button>
+      <div class="sticky bottom-0 -mx-5 mt-5 bg-surface px-5 pt-2">
+        <button
+          type="button"
+          disabled={!valid}
+          onClick={() => {
+            if (reason === null) return;
+            const text = description.trim();
+            onSubmit({
+              amountMinor: amount,
+              description: text === "" ? null : text,
+              occurredOn,
+              reason,
+            });
+          }}
+          class="hf-press inline-flex h-[52px] w-full min-w-0 items-center justify-center gap-2
+          rounded-lg border border-expense/55 bg-expense/[0.09] px-5 text-[15px] font-medium
+          text-expense-fg hover:bg-expense/[0.16] disabled:pointer-events-none disabled:opacity-45"
+        >
+          <Icon name="arrow-up" size={18} />
+          <span class="truncate">Retirar {formatBRL(amount)}</span>
+        </button>
+      </div>
     </div>
   );
 }

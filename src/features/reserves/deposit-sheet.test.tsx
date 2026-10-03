@@ -112,7 +112,35 @@ describe("DepositSheet", () => {
 
   it("dica: sem regra, o dia é o de hoje", () => {
     setup({ reserve: { ...EMERGENCY, recurring: null } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Guardar todo mês/ }));
     expect(screen.getByText("Dia 20 · próximo em 20 out")).toBeDefined();
+  });
+
+  it("dica: regra com since futuro mostra o mês do since", () => {
+    setup({
+      reserve: { ...EMERGENCY, recurring: { amountMinor: 50_000, day: 6, since: "2026-11" } },
+    });
+    expect(screen.getByText("Dia 6 · próximo em 6 nov")).toBeDefined();
+  });
+
+  it("dica: some com o toggle desligado", () => {
+    setup();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Guardar todo mês/ }));
+    expect(screen.queryByText(/próximo em/)).toBeNull();
+  });
+
+  it("editar para valor que deixa a reserva negativa: erro e botão desativado", () => {
+    // Saldo 15.420 + guardado 200: editar de 200 para 0,01 não cabe se já tirou o resto.
+    const drained = stateOf({
+      transactions: [tx("salario", "income", 301_760, "2026-09-05")],
+      reserves: [EMERGENCY],
+      movements: [SAVED, movement("w", EMERGENCY_ID, -20_000, "2026-09-12")],
+    });
+    setup({ state: drained, editing: SAVED });
+    fireEvent.input(amount(), { target: { value: "10000" } });
+    expect(screen.getByText("A reserva ficaria negativa")).toBeDefined();
+    expect(save().disabled).toBe(true);
+    expect(amount().getAttribute("aria-describedby")).toBe("deposit-error");
   });
 
   it("em edição: preenchido, sem toggle, mantém a data e tem Segure para excluir", () => {
@@ -129,7 +157,7 @@ describe("DepositSheet", () => {
     );
 
     vi.useFakeTimers();
-    fireEvent.pointerDown(screen.getByRole("button", { name: /segure para excluir/i }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: /excluir guardado/i }));
     act(() => {
       vi.advanceTimersByTime(HOLD_MS);
     });

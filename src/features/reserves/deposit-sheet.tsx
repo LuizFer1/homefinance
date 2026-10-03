@@ -3,9 +3,9 @@ import { dayOfMonthClamped } from "../../domain/dates/business-day";
 import { shiftMonth } from "../../domain/dates/calendar";
 import type { AppState } from "../../domain/model/app-state";
 import type { Reserve, ReserveMovement } from "../../domain/model/reserve";
-import { MAX_MINOR, maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
+import { MAX_MINOR, minorOf, onlyDigits } from "../../domain/money/mask";
 import { formatBRL } from "../../domain/money/money";
-import { monthLabelLong, monthOf } from "../../domain/projections/periods";
+import { monthOf } from "../../domain/projections/periods";
 import { monthBalance, reserveBalance } from "../../domain/reserves/balances";
 import { depositId } from "../../domain/reserves/deposits";
 import { emergencyTarget } from "../../domain/reserves/essential";
@@ -17,7 +17,8 @@ import { HoldToDelete } from "../ui/hold-button";
 import { SheetHeader } from "../ui/modal";
 import { IconTile } from "../ui/tile";
 import { Toggle } from "../ui/toggle";
-import { movementDateLabel } from "./format";
+import { monthName, movementDateLabel } from "./format";
+import { AmountField, SheetSubtitle } from "./sheet-parts";
 import type { MovementInput } from "./store";
 
 export interface DepositSheetProps {
@@ -31,61 +32,6 @@ export interface DepositSheetProps {
   onClose: () => void;
 }
 
-/** Nome do mês sozinho, minúsculo ("setembro"): é o que o handoff escreve nas linhas. */
-export function monthName(month: string): string {
-  return monthLabelLong(month).split(" ")[0] ?? "";
-}
-
-/**
- * Valor do sheet: dígitos grandes (40px) com "R$" e sublinhado de acento.
- *
- * É um `<input>` de verdade e não texto desenhado com cursor falso: o teclado
- * numérico, a seleção e o leitor de tela dependem do campo real. O caret nativo
- * ganha a cor de acento para ficar com a cara do handoff.
- */
-export function AmountField({
-  id,
-  digits,
-  onDigits,
-}: {
-  id: string;
-  digits: string;
-  onDigits: (digits: string) => void;
-}) {
-  return (
-    <>
-      <label for={id} class={`${LABEL} mt-[18px]`}>
-        Valor
-      </label>
-      <div class="hf-num mt-1 flex items-baseline gap-1.5 border-b border-accent pb-2.5">
-        <span class="text-xl text-fg/55">R$</span>
-        <input
-          id={id}
-          type="text"
-          inputMode="numeric"
-          autocomplete="off"
-          placeholder="0,00"
-          value={maskDigits(digits)}
-          onInput={(event) => onDigits(onlyDigits(event.currentTarget.value))}
-          class="min-w-0 flex-1 bg-transparent text-[40px] leading-[48px] font-medium
-            tracking-[-0.02em] caret-accent outline-none placeholder:text-fg/30"
-        />
-      </div>
-    </>
-  );
-}
-
-/** "Na Reserva de emergência" / "Da …": o ícone é o da identidade da reserva. */
-export function SheetSubtitle({ reserve, prefix }: { reserve: Reserve; prefix: "Na" | "Da" }) {
-  const icon = reserve.kind === "emergency" ? "lifebuoy" : reserve.icon;
-  return (
-    <p class="mt-0.5 flex items-center gap-1.5 text-[13px] text-fg/60">
-      <Icon name={icon} size={14} class="text-accent-300" />
-      {prefix} {reserve.name}
-    </p>
-  );
-}
-
 /**
  * Quando o depósito mensal cai de novo. Com a regra já ativa, o mês ainda sem
  * movimento e o dia por vir, é neste mês; em qualquer outro caso (acabou de
@@ -95,6 +41,10 @@ export function SheetSubtitle({ reserve, prefix }: { reserve: Reserve; prefix: "
 function nextDepositLabel(state: AppState, reserve: Reserve, today: string): string {
   const month = monthOf(today);
   const day = reserve.recurring?.day ?? Number(today.slice(8, 10));
+  // Regra que só vale a partir de um mês futuro: o próximo depósito é o do `since`.
+  if (reserve.recurring !== null && reserve.recurring.since > month) {
+    return movementDateLabel(dayOfMonthClamped(reserve.recurring.since, day));
+  }
   const thisMonth = dayOfMonthClamped(month, day);
   const pending =
     reserve.recurring !== null &&
@@ -122,12 +72,14 @@ export function DepositSheet({
   const [recurring, setRecurring] = useState(initialRecurring);
 
   const amount = minorOf(digits);
-  const valid = amount > 0 && amount <= MAX_MINOR;
   // Editar não pode contar o próprio guardado duas vezes: o saldo do mês já o descontou.
   const monthAvailable = monthBalance(state, month) + original;
   const over = amount > monthAvailable;
   const goal = reserve.kind === "emergency" ? emergencyTarget(state, reserve, today) : null;
   const after = reserveBalance(state, reserve.id) - original + amount;
+  // A store recusa editar para um valor que deixe a reserva abaixo de zero.
+  const negative = editing !== null && after < 0;
+  const valid = amount > 0 && amount <= MAX_MINOR && !negative;
   const dayOfRule = reserve.recurring?.day ?? Number(today.slice(8, 10));
 
   function add(minor: number) {
@@ -141,13 +93,23 @@ export function DepositSheet({
         onClose={onClose}
         actions={
           editing === null ? undefined : (
-            <HoldToDelete label="Segure para excluir" onConfirm={onDelete} />
+            <HoldToDelete label="Excluir guardado" onConfirm={onDelete} />
           )
         }
       />
       <SheetSubtitle reserve={reserve} prefix="Na" />
 
-      <AmountField id="deposit-amount" digits={digits} onDigits={setDigits} />
+      <AmountField
+        id="deposit-amount"
+        digits={digits}
+        onDigits={setDigits}
+        describedBy={negative ? "deposit-error" : over ? "deposit-warning" : undefined}
+      />
+      {negative && (
+        <p id="deposit-error" class="mt-2 text-[13px] text-expense-fg">
+          A reserva ficaria negativa
+        </p>
+      )}
 
       <div class="mt-3 flex flex-wrap gap-2">
         {[5_000, 10_000, 50_000].map((minor) => (
@@ -181,20 +143,26 @@ export function DepositSheet({
             {formatBRL(monthAvailable)} → fica {formatBRL(monthAvailable - amount)}
           </div>
           {over && (
-            <div class="mt-0.5 text-xs text-tag-amber">Maior que o saldo de {monthName(month)}</div>
+            <div id="deposit-warning" class="mt-0.5 text-xs text-tag-amber">
+              Maior que o saldo de {monthName(month)}
+            </div>
           )}
         </div>
       </div>
 
       {editing === null && (
-        <div class="mt-2 flex items-center gap-3 rounded-lg bg-bg px-3.5 py-0.5">
+        <div class="mt-2 flex items-center gap-3 rounded-lg bg-bg px-3.5 py-3">
           <IconTile icon="repeat" color={null} size={32} iconSize={17} />
           <Toggle
             class="min-w-0 flex-1"
             checked={recurring}
             onChange={setRecurring}
             label="Guardar todo mês"
-            hint={`Dia ${dayOfRule} · próximo em ${nextDepositLabel(state, reserve, today)}`}
+            hint={
+              recurring
+                ? `Dia ${dayOfRule} · próximo em ${nextDepositLabel(state, reserve, today)}`
+                : undefined
+            }
           />
         </div>
       )}
@@ -204,33 +172,35 @@ export function DepositSheet({
         Não conta como despesa: o dinheiro só muda de lugar. Fica fora do gráfico de gastos.
       </p>
 
-      <p class="hf-num mt-5 mb-2.5 text-center text-[13px] text-fg/65">
-        Depois: {formatBRL(after)}
-        {goal !== null && (
-          <>
-            {" · cobre "}
-            <span class="font-medium text-accent-300">
-              {formatMonths(monthsCovered(after, goal.costMinor))} meses
-            </span>
-          </>
-        )}
-      </p>
-      <Button
-        class="w-full"
-        icon="check"
-        iconSide="left"
-        disabled={!valid}
-        onClick={() =>
-          onSubmit(
-            { amountMinor: amount, description: editing?.description ?? null, occurredOn },
-            // Só avisa a store quando o usuário mexeu: reenviar o estado inicial
-            // reescreveria a regra (e o `since`) sem ninguém ter pedido.
-            editing === null && recurring !== initialRecurring ? recurring : undefined,
-          )
-        }
-      >
-        Guardar {formatBRL(amount)}
-      </Button>
+      <div class="sticky bottom-0 -mx-5 mt-5 bg-surface px-5 pt-2">
+        <p class="hf-num mb-2.5 text-center text-[13px] text-fg/65">
+          Depois: {formatBRL(after)}
+          {goal !== null && (
+            <>
+              {" · cobre "}
+              <span class="font-medium text-accent-300">
+                {formatMonths(monthsCovered(after, goal.costMinor))} meses
+              </span>
+            </>
+          )}
+        </p>
+        <Button
+          class="w-full"
+          icon="check"
+          iconSide="left"
+          disabled={!valid}
+          onClick={() =>
+            onSubmit(
+              { amountMinor: amount, description: editing?.description ?? null, occurredOn },
+              // Só avisa a store quando o usuário mexeu: reenviar o estado inicial
+              // reescreveria a regra (e o `since`) sem ninguém ter pedido.
+              editing === null && recurring !== initialRecurring ? recurring : undefined,
+            )
+          }
+        >
+          Guardar {formatBRL(amount)}
+        </Button>
+      </div>
     </div>
   );
 }

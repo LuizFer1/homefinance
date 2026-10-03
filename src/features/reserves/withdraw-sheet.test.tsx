@@ -107,7 +107,7 @@ describe("WithdrawSheet", () => {
     });
 
     vi.useFakeTimers();
-    fireEvent.pointerDown(screen.getByRole("button", { name: /segure para excluir/i }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: /excluir retirada/i }));
     act(() => {
       vi.advanceTimersByTime(HOLD_MS);
     });
