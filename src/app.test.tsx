@@ -6,12 +6,15 @@ import type { HomeFinanceDb } from "./data/db";
 import { buildRow } from "./data/repository";
 import { openTestDb, TEST_DEVICE_ID, testSessionDeps } from "./data/test-db.fake";
 import { createRowClock } from "./domain/clock/row-clock";
+import type { Reserve } from "./domain/model/reserve";
+import type { Transaction } from "./domain/model/transaction";
 import type { User } from "./domain/model/user";
 import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
 import { createProfileStore } from "./features/profile/store";
 import { createRecurrenceStore } from "./features/recurrence/store";
 import { createRegistryStore } from "./features/registry/store";
+import { createReservesStore } from "./features/reserves/store";
 import { createSession, LOCAL_USER_ID_KEY } from "./features/session/session";
 import { createSyncStore } from "./features/sync/store";
 import { createTransactionsStore } from "./features/transactions/store";
@@ -74,6 +77,7 @@ function buildStores(db: HomeFinanceDb) {
     recurrence,
     onboarding: createOnboardingStore(session),
     importer: createImportStore(session, recurrence),
+    reserves: createReservesStore(session),
     // Sem service worker: nenhum aviso de versão nova, como no primeiro acesso.
     update: createUpdateStore({ reload: () => {}, now: () => 0 }),
     // Nunca chega à rede nos testes do App: o `fetch` rejeita como um hub fora
@@ -329,7 +333,7 @@ function arrastarHorizontal(main: Element, fromX: number, toX: number) {
 }
 
 describe("navegacao", () => {
-  it("arrastar para a esquerda vai de Inicio para Ajustes", async () => {
+  it("arrastar para a esquerda vai de Inicio para Reservas", async () => {
     render(
       <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
@@ -341,10 +345,8 @@ describe("navegacao", () => {
     expect(main).not.toBeNull();
     arrastarHorizontal(main as Element, 200, 100);
 
-    await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Configurações" })).toBeDefined(),
-    );
-    expect(naBarra().getByRole("button", { name: "Ajustes" }).getAttribute("aria-current")).toBe(
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Reservas" })).toBeDefined());
+    expect(naBarra().getByRole("button", { name: "Reservas" }).getAttribute("aria-current")).toBe(
       "page",
     );
   });
@@ -956,5 +958,109 @@ describe("perfil e reset nas configuracoes", () => {
     );
     expect(screen.getByRole("button", { name: /Ana/ })).toBeDefined();
     expect(await db.users.get(PERFIL_LOCAL)).toMatchObject({ name: "Ana", color: "rose" });
+  });
+});
+
+describe("reservas", () => {
+  async function pronto(db?: HomeFinanceDb) {
+    const stores = buildStores(db ?? (await cadastrado()));
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
+    return stores;
+  }
+
+  it("barra tem quatro abas na ordem Dashboard · Início · Reservas · Ajustes", async () => {
+    await pronto();
+    const nomes = naBarra()
+      .getAllByRole("button")
+      .map((b) => b.textContent?.trim());
+    expect(nomes).toEqual(["Dashboard", "Início", "Reservas", "Ajustes"]);
+  });
+
+  it("Reservas vazia cria a emergência e abre o detalhe ao tocar", async () => {
+    await pronto();
+    fireEvent.click(naBarra().getByRole("button", { name: "Reservas" }));
+    fireEvent.input(await screen.findByLabelText("Quanto você gasta com o essencial por mês?"), {
+      target: { value: "300000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Criar reserva de emergência" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Reserva de emergência/ }));
+    expect(await screen.findByRole("button", { name: "Guardar" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Reserva de emergência" })).toBeDefined();
+  });
+
+  it("guardar pelo sheet reduz o saldo total do Início", async () => {
+    // Salário de R$ 3.000 no mês e uma caixinha vazia, semeados antes do boot.
+    const db = await cadastrado();
+    await db.transactions.put(
+      buildRow<Transaction>(seedClock(), {
+        kind: "income",
+        description: "Salário",
+        amountMinor: 300_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn: "2026-08-05",
+        userId: PERFIL_LOCAL,
+        recurrenceId: null,
+        occurrenceKey: null,
+      }),
+    );
+    await db.reserves.put(
+      buildRow<Reserve>(seedClock(), {
+        kind: "goal",
+        name: "Viagem",
+        icon: "gift",
+        color: "rose",
+        targetMinor: null,
+        multiple: null,
+        essentialCategoryIds: null,
+        essentialOverrideMinor: null,
+        deadline: null,
+        recurring: null,
+      }),
+    );
+    await pronto(db);
+    expect(screen.getByTestId("total-balance").textContent).toContain("3.000");
+
+    fireEvent.click(naBarra().getByRole("button", { name: "Reservas" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Viagem/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Guardar" }));
+    fireEvent.input(await screen.findByLabelText("Valor"), { target: { value: "50000" } });
+    fireEvent.click(screen.getByRole("button", { name: /Guardar R\$\s?500,00/ }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Valor")).toBeNull());
+    fireEvent.click(naBarra().getByRole("button", { name: "Início" }));
+    await waitFor(() => expect(screen.getByTestId("total-balance").textContent).toContain("2.500"));
+  });
+
+  it("reserva apagada por fora volta para a lista em vez de um detalhe vazio", async () => {
+    const stores = await pronto();
+    let id = "";
+    await act(async () => {
+      ({ id } = await stores.reserves.create(
+        {
+          kind: "goal",
+          name: "Viagem",
+          icon: "gift",
+          color: "rose",
+          targetMinor: null,
+          multiple: null,
+          essentialOverrideMinor: null,
+          deadline: null,
+          recurringAmountMinor: null,
+        },
+        "2026-08-08",
+      ));
+    });
+    fireEvent.click(naBarra().getByRole("button", { name: "Reservas" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Viagem/ }));
+    expect(await screen.findByRole("heading", { name: "Viagem" })).toBeDefined();
+
+    await act(() => stores.reserves.remove(id, "2026-08-08"));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Reservas" })).toBeDefined());
   });
 });
