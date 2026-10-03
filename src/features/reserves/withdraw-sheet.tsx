@@ -5,7 +5,7 @@ import { WITHDRAW_REASON_LABELS, WITHDRAW_REASONS } from "../../domain/model/res
 import { MAX_MINOR, minorOf } from "../../domain/money/mask";
 import { formatBRL } from "../../domain/money/money";
 import { monthOf } from "../../domain/projections/periods";
-import { reserveBalance } from "../../domain/reserves/balances";
+import { actsAsEmergency, reserveBalance } from "../../domain/reserves/balances";
 import { emergencyTarget } from "../../domain/reserves/essential";
 import { formatMonths, monthsCovered } from "../../domain/reserves/goals";
 import { Icon } from "../icons/icon";
@@ -62,7 +62,8 @@ export function WithdrawSheet({
   // Acima do saldo o erro já avisa; a prévia não mostra saldo ou meses negativos.
   const after = Math.max(0, available - amount);
   const returned = Math.min(amount, available);
-  const goal = reserve.kind === "emergency" ? emergencyTarget(state, reserve, today) : null;
+  const emergency = actsAsEmergency(state, reserve);
+  const goal = emergency ? emergencyTarget(state, reserve, today) : null;
 
   return (
     <div class="flex flex-col">
@@ -75,7 +76,7 @@ export function WithdrawSheet({
           )
         }
       />
-      <SheetSubtitle reserve={reserve} prefix="Da" />
+      <SheetSubtitle reserve={reserve} isEmergency={emergency} prefix="Da" />
 
       <AmountField
         id="withdraw-amount"

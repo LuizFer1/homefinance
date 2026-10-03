@@ -12,7 +12,7 @@ import {
 import type { ColorToken, IconKey } from "../../domain/model/tokens";
 import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
 import { monthOf } from "../../domain/projections/periods";
-import { emergencyOf, reserveBalance } from "../../domain/reserves/balances";
+import { emergencyOf, isDuplicateEmergency, reserveBalance } from "../../domain/reserves/balances";
 import { essentialCost, findEssentialCategoryIds } from "../../domain/reserves/essential";
 import { suggestedMonthly } from "../../domain/reserves/goals";
 import { Icon } from "../icons/icon";
@@ -288,8 +288,38 @@ export function ReserveForm({
 
   const icons = allIcons ? PICKABLE_ICONS : SHORT_ICONS;
 
+  // Emergência duplicada (dois aparelhos offline criaram uma cada): o form de
+  // emergência editaria uma segunda meta da casa, e o de caixinha mudaria o que
+  // a linha é. O único conserto coerente é excluir uma delas.
+  if (editing !== null && isDuplicateEmergency(state, editing)) {
+    return (
+      <div>
+        <BackLink onClick={onCancel} />
+        <h1 class="mt-2.5 text-[28px] leading-tight font-medium tracking-[-0.02em]">
+          Editar reserva
+        </h1>
+        <p class="mt-[18px] flex gap-2 text-sm leading-normal text-fg/75 text-pretty">
+          <Icon name="info" size={16} class="mt-0.5 shrink-0 text-tag-amber" />
+          Reserva de emergência duplicada (criada em outro aparelho). Exclua uma delas.
+        </p>
+        <div class="mt-[22px] flex gap-2.5">
+          <Button variant="secondary" onClick={onCancel}>
+            Cancelar
+          </Button>
+        </div>
+        <div class="mt-5 flex items-center gap-3">
+          <HoldToDelete label={`Excluir ${editing.name}`} onConfirm={onDelete} />
+          <span class="text-[13px] text-fg/55">O saldo volta para o mês atual</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form
+      // O próprio `valid` decide o envio; a validação nativa (ex.: `min` do mês)
+      // bloquearia o Salvar em silêncio, sem mensagem nenhuma na tela.
+      noValidate
       onSubmit={(event) => {
         event.preventDefault();
         submit();
@@ -435,7 +465,9 @@ export function ReserveForm({
                 <input
                   id="reserve-deadline"
                   type="month"
-                  min={shiftMonth(monthOf(today), 1)}
+                  // Só ao criar: um prazo que já chegou é estado válido, e na edição o
+                  // `min` travaria o Salvar de quem só quer renomear a caixinha.
+                  min={editing === null ? shiftMonth(monthOf(today), 1) : undefined}
                   value={deadline}
                   onInput={(event) => setDeadline(event.currentTarget.value)}
                   class="min-w-0 flex-1 bg-transparent outline-none"

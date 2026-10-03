@@ -60,6 +60,15 @@ export function isDuplicateEmergency(state: AppState, r: Reserve): boolean {
   return r.kind === "emergency" && emergencyOf(state)?.id !== r.id;
 }
 
+/**
+ * Se a tela trata a reserva como emergência (medidor, custo essencial, meses).
+ * A duplicada tem `kind: "emergency"` no log, mas desenhá-la como emergência
+ * mostraria duas metas da casa; ela age como caixinha em todo lugar.
+ */
+export function actsAsEmergency(state: AppState, r: Reserve): boolean {
+  return r.kind === "emergency" && !isDuplicateEmergency(state, r);
+}
+
 /** Emergência primeiro; o resto por id (ULID = ordem de criação). */
 export function listReserves(state: AppState): Reserve[] {
   const emergency = emergencyOf(state);

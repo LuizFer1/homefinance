@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DELETED_AT } from "../model/row.fake";
 import {
+  actsAsEmergency,
   availableBalance,
   emergencyOf,
   isDuplicateEmergency,
@@ -67,6 +68,13 @@ describe("emergência", () => {
     expect(emergencyOf(two)?.id).toBe("A");
     expect(b && isDuplicateEmergency(two, b)).toBe(true);
     expect(a && isDuplicateEmergency(two, a)).toBe(false);
+  });
+
+  it("actsAsEmergency: só a emergência vencedora; a duplicada e a caixinha não", () => {
+    const [a, b, c] = [two.reserves.A, two.reserves.B, two.reserves.C];
+    expect(a && actsAsEmergency(two, a)).toBe(true);
+    expect(b && actsAsEmergency(two, b)).toBe(false);
+    expect(c && actsAsEmergency(two, c)).toBe(false);
   });
 
   it("listReserves põe a emergência primeiro e as caixinhas por criação", () => {

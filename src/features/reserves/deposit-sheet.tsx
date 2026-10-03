@@ -6,7 +6,7 @@ import type { Reserve, ReserveMovement } from "../../domain/model/reserve";
 import { MAX_MINOR, minorOf, onlyDigits } from "../../domain/money/mask";
 import { formatBRL } from "../../domain/money/money";
 import { monthOf } from "../../domain/projections/periods";
-import { monthBalance, reserveBalance } from "../../domain/reserves/balances";
+import { actsAsEmergency, monthBalance, reserveBalance } from "../../domain/reserves/balances";
 import { depositId } from "../../domain/reserves/deposits";
 import { emergencyTarget } from "../../domain/reserves/essential";
 import { formatMonths, monthsCovered } from "../../domain/reserves/goals";
@@ -75,7 +75,8 @@ export function DepositSheet({
   // Editar não pode contar o próprio guardado duas vezes: o saldo do mês já o descontou.
   const monthAvailable = monthBalance(state, month) + original;
   const over = amount > monthAvailable;
-  const goal = reserve.kind === "emergency" ? emergencyTarget(state, reserve, today) : null;
+  const emergency = actsAsEmergency(state, reserve);
+  const goal = emergency ? emergencyTarget(state, reserve, today) : null;
   const after = reserveBalance(state, reserve.id) - original + amount;
   // A store recusa editar para um valor que deixe a reserva abaixo de zero.
   const negative = editing !== null && after < 0;
@@ -97,7 +98,7 @@ export function DepositSheet({
           )
         }
       />
-      <SheetSubtitle reserve={reserve} prefix="Na" />
+      <SheetSubtitle reserve={reserve} isEmergency={emergency} prefix="Na" />
 
       <AmountField
         id="deposit-amount"

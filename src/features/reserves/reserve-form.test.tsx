@@ -153,6 +153,41 @@ describe("ReserveForm", () => {
     );
   });
 
+  it("prazo vencido não trava a edição: sem `min` no mês e o form não valida nativo", () => {
+    // happy-dom não roda a validação nativa; o que se prova é que ela não tem com o que travar.
+    const late = reserve("01J9F3K2M7QX8YB4TVWZ0DCEH2", { name: "Viagem", deadline: "2026-08" });
+    const { onSubmit } = mount({ editing: late, state: stateOf({ reserves: [late] }) });
+    const input = screen.getByLabelText("Até quando") as HTMLInputElement;
+    expect(input.hasAttribute("min")).toBe(false);
+    expect(input.closest("form")?.noValidate).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ deadline: "2026-08" }));
+  });
+
+  it("criar caixinha: o prazo começa no mês seguinte", () => {
+    mount();
+    expect((screen.getByLabelText("Até quando") as HTMLInputElement).min).toBe("2026-10");
+  });
+
+  it("editar emergência duplicada: só o aviso e a exclusão", () => {
+    const dup = { ...EMERGENCY, id: "01J9F3K2M7QX8YB4TVWZ0DCEH9" };
+    const { onCancel } = mount({
+      editing: dup,
+      initialKind: "emergency",
+      state: stateOf({ reserves: [EMERGENCY, dup] }),
+    });
+    expect(
+      screen.getByText(
+        "Reserva de emergência duplicada (criada em outro aparelho). Exclua uma delas.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Salvar" })).toBeNull();
+    expect(screen.queryByText("Custo essencial por mês")).toBeNull();
+    expect(screen.getByRole("button", { name: /Excluir Reserva de emergência/ })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(onCancel).toHaveBeenCalled();
+  });
+
   const GOAL = reserve("01J9F3K2M7QX8YB4TVWZ0DCEH2", {
     name: "Viagem",
     icon: "car",

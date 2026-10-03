@@ -5,7 +5,11 @@ import { isAlive } from "../../domain/model/base";
 import type { Reserve, ReserveMovement } from "../../domain/model/reserve";
 import { reasonLabel } from "../../domain/model/reserve";
 import { findUser, resolveAuthorColor } from "../../domain/projections/selectors";
-import { reserveBalance } from "../../domain/reserves/balances";
+import {
+  actsAsEmergency,
+  isDuplicateEmergency,
+  reserveBalance,
+} from "../../domain/reserves/balances";
 import { emergencyTarget } from "../../domain/reserves/essential";
 import { formatMonths, monthsCovered, projectedCompletion } from "../../domain/reserves/goals";
 import { Icon } from "../icons/icon";
@@ -174,7 +178,10 @@ export function ReserveDetail({
   // Reserva apagada em outro aparelho: quem navega é o App, aqui só não desenhamos.
   if (!isAlive(reserve)) return null;
 
-  const isEmergency = reserve.kind === "emergency";
+  // A duplicada (criada offline noutro aparelho) é desenhada como caixinha: duas
+  // metas da casa confundiriam, e é só uma questão de excluir uma delas.
+  const isEmergency = actsAsEmergency(state, reserve);
+  const duplicate = isDuplicateEmergency(state, reserve);
   const balance = reserveBalance(state, reserve.id);
   const goal = isEmergency ? emergencyTarget(state, reserve, today) : null;
   const targetMinor = isEmergency ? (goal?.targetMinor ?? null) : reserve.targetMinor;
@@ -254,6 +261,11 @@ export function ReserveDetail({
       {targetMinor !== null && percent !== null && (
         <p class="hf-num mt-0.5 text-[13px] text-fg/60">
           de {signedBRL(targetMinor)} · {percent}% da meta
+        </p>
+      )}
+      {duplicate && (
+        <p class="mt-1.5 text-[13px] text-tag-amber">
+          Reserva de emergência duplicada (criada em outro aparelho)
         </p>
       )}
       {!isEmergency && reserve.recurring !== null && (

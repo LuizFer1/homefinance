@@ -112,6 +112,40 @@ describe("ReserveDetail", () => {
     expect(screen.getByText("Guardando todo mês")).toBeDefined();
   });
 
+  it("emergência duplicada: desenhada como caixinha, com aviso e sem medidor", () => {
+    const DUP = "01J9F3K2M7QX8YB4TVWZ0DCEH9";
+    const state = {
+      ...STATE,
+      reserves: {
+        ...STATE.reserves,
+        [DUP]: reserve(DUP, {
+          kind: "emergency",
+          name: "Reserva de emergência",
+          icon: "lifebuoy",
+          color: "violet",
+          multiple: 6,
+          essentialCategoryIds: [MOR],
+          recurring: { amountMinor: 50_000, day: 6, since: "2026-05" },
+        }),
+      },
+    };
+    render(<ReserveDetail state={state} reserveId={DUP} today="2026-09-20" {...noop} />);
+    expect(
+      screen.getByText("Reserva de emergência duplicada (criada em outro aparelho)"),
+    ).toBeDefined();
+    expect(screen.queryByText("Custo essencial")).toBeNull();
+    expect(screen.queryByText(/meses de/)).toBeNull();
+    expect(screen.queryByText(/da meta/)).toBeNull();
+    // Linha simples de caixinha, não a lista de informações da emergência.
+    expect(screen.getByText("Guardando todo mês")).toBeDefined();
+    expect(screen.queryByText("Todo dia 6, do saldo do mês")).toBeNull();
+  });
+
+  it("emergência vencedora não mostra o aviso de duplicada", () => {
+    render(<ReserveDetail state={STATE} reserveId={EMERGENCY_ID} today="2026-09-20" {...noop} />);
+    expect(screen.queryByText(/duplicada/)).toBeNull();
+  });
+
   it("mesmo dia: o id maior vem primeiro", () => {
     const state = stateOf({
       reserves: [reserve(NO_TARGET_ID, { name: "Presentes" })],

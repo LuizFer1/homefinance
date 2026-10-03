@@ -46,9 +46,21 @@ export function AmountField({
   );
 }
 
-/** "Na Reserva de emergência" / "Da …": o ícone é o da identidade da reserva. */
-export function SheetSubtitle({ reserve, prefix }: { reserve: Reserve; prefix: "Na" | "Da" }) {
-  const icon = reserve.kind === "emergency" ? "lifebuoy" : reserve.icon;
+/**
+ * "Na Reserva de emergência" / "Da …": o ícone é o da identidade da reserva.
+ * `isEmergency` vem de quem tem o state (`actsAsEmergency`): o `kind` sozinho
+ * trataria a emergência duplicada como a da casa.
+ */
+export function SheetSubtitle({
+  reserve,
+  isEmergency,
+  prefix,
+}: {
+  reserve: Reserve;
+  isEmergency: boolean;
+  prefix: "Na" | "Da";
+}) {
+  const icon = isEmergency ? "lifebuoy" : reserve.icon;
   return (
     <p class="mt-0.5 flex items-center gap-1.5 text-[13px] text-fg/60">
       <Icon name={icon} size={14} class="text-accent-300" />

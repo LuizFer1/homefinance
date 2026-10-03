@@ -65,6 +65,14 @@ describe("DepositSheet", () => {
     expect(save().disabled).toBe(false);
   });
 
+  it("emergência duplicada: sem prévia de meses, como caixinha", () => {
+    const dup: Reserve = { ...EMERGENCY, id: "01J9F3K2M7QX8YB4TVWZ0DCEH9" };
+    const state = { ...STATE, reserves: { ...STATE.reserves, [dup.id]: dup } };
+    setup({ state, reserve: dup });
+    fireEvent.input(amount(), { target: { value: "50000" } });
+    expect(screen.getByText(/Depois:/).textContent).not.toContain("cobre");
+  });
+
   it("valor zero deixa o botão desativado", () => {
     setup();
     expect(save().disabled).toBe(true);

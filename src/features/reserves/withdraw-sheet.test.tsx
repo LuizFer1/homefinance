@@ -64,6 +64,13 @@ describe("WithdrawSheet", () => {
     });
   });
 
+  it("emergência duplicada: sem medidor nem meses, como caixinha", () => {
+    const dup: Reserve = { ...EMERGENCY, id: "01J9F3K2M7QX8YB4TVWZ0DCEH9" };
+    const state = { ...STATE, reserves: { ...STATE.reserves, [dup.id]: dup } };
+    setup({ state, reserve: dup });
+    expect(screen.queryByText(/Cobre/)).toBeNull();
+  });
+
   it("descrição vazia vai como null", () => {
     const { onSubmit } = setup();
     fireEvent.input(amount(), { target: { value: "1000" } });
