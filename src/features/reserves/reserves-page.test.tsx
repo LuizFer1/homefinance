@@ -118,7 +118,7 @@ describe("ReservesPage", () => {
     );
     expect(screen.getByText("Comece pela reserva de emergência")).toBeDefined();
     expect(screen.getByTestId("suggested-target").textContent).toContain("23.700");
-    fireEvent.click(screen.getByRole("radio", { name: "12" }));
+    fireEvent.click(screen.getByRole("radio", { name: "12 meses" }));
     expect(screen.getByTestId("suggested-target").textContent).toContain("47.400");
     fireEvent.click(screen.getByRole("button", { name: "Criar reserva de emergência" }));
     expect(onCreateEmergency).toHaveBeenCalledWith(12, null);
@@ -148,5 +148,64 @@ describe("ReservesPage", () => {
     });
     fireEvent.click(create);
     expect(onCreateEmergency).toHaveBeenCalledWith(6, 300_000);
+  });
+});
+
+describe("ReservesPage — bordas", () => {
+  afterEach(cleanup);
+
+  it("histórico sem gasto essencial cai no campo manual", () => {
+    const onCreateEmergency = vi.fn();
+    const state = stateOf({
+      transactions: [tx("x1", "expense", 50_000, "2026-05-05", "OUTRA")],
+    });
+    render(
+      <ReservesPage
+        state={state}
+        today="2026-09-20"
+        {...noop}
+        onCreateEmergency={onCreateEmergency}
+      />,
+    );
+    fireEvent.input(screen.getByLabelText("Quanto você gasta com o essencial por mês?"), {
+      target: { value: "200000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Criar reserva de emergência" }));
+    expect(onCreateEmergency).toHaveBeenCalledWith(6, 200_000);
+  });
+
+  it("retirada líquida no mês mostra 'retirados'", () => {
+    const state = stateOf({
+      reserves: [reserve(GOAL_ID, { name: "Caixa" })],
+      movements: [
+        movement("a", GOAL_ID, 100_000, "2026-08-01"),
+        movement("b", GOAL_ID, -30_000, "2026-09-02"),
+      ],
+    });
+    render(<ReservesPage state={state} today="2026-09-20" {...noop} />);
+    expect(screen.getByText(/R\$\s?300,00 retirados em setembro/)).toBeDefined();
+    expect(screen.getByText("Sem meta")).toBeDefined();
+  });
+
+  it("emergência no custo máximo mostra 'Meta atingida'", () => {
+    const state = {
+      ...STATE,
+      reserveMovements: {
+        ...STATE.reserveMovements,
+        big: movement("big", EMERGENCY_ID, 2_000_000, "2026-08-20"),
+      },
+    };
+    render(<ReservesPage state={state} today="2026-09-20" {...noop} />);
+    expect(screen.getByText("Meta atingida")).toBeDefined();
+  });
+
+  it("emergência sem custo calculável pede para definir o custo essencial", () => {
+    const state = stateOf({
+      reserves: [
+        reserve(EMERGENCY_ID, { kind: "emergency", multiple: 6, essentialCategoryIds: [] }),
+      ],
+    });
+    render(<ReservesPage state={state} today="2026-09-20" {...noop} />);
+    expect(screen.getByText("Defina o custo essencial")).toBeDefined();
   });
 });

@@ -30,6 +30,11 @@ export interface SegmentedProps<T extends string> {
   variant?: "pill" | "bordered";
   /** Texto de 13px para caber cinco opções na largura do celular (Frequência). */
   dense?: boolean;
+  /**
+   * Segmentado dentro de um card `surface` (Reservas 2f): trilho `bg`, opção ativa
+   * em acento como no `bordered`. Só vale com `variant="pill"`; os outros usos não mudam.
+   */
+  onSurface?: boolean;
   class?: string;
 }
 
@@ -54,6 +59,7 @@ export function Segmented<T extends string>({
   onChange,
   variant = "bordered",
   dense = false,
+  onSurface = false,
   class: className = "",
 }: SegmentedProps<T>) {
   const pill = variant === "pill";
@@ -69,7 +75,7 @@ export function Segmented<T extends string>({
       <div
         class={
           pill
-            ? `flex gap-1 rounded-lg p-[3px] ${toned ? "bg-bg" : "bg-surface"}`
+            ? `flex gap-1 rounded-lg p-[3px] ${toned || onSurface ? "bg-bg" : "bg-surface"}`
             : "flex overflow-hidden rounded-lg border border-divider"
         }
       >
@@ -77,7 +83,7 @@ export function Segmented<T extends string>({
           const on = option.value === value;
           const toneOn =
             option.tone === undefined
-              ? pill
+              ? pill && !onSurface
                 ? "bg-bg font-medium text-fg shadow-[inset_0_0_0_1px_var(--color-neutral-700)]"
                 : "bg-accent-900 font-medium text-accent-200 shadow-[inset_0_0_0_1px_var(--color-accent)]"
               : TONE_ON[option.tone];
@@ -87,7 +93,7 @@ export function Segmented<T extends string>({
               key={option.value}
               class={`hf-press flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5
                 ${dense ? "px-0.5 text-[13px]" : "text-sm"} has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent
-                ${pill ? "h-10 rounded-md" : "h-11"}
+                ${pill ? `${onSurface ? "h-9" : "h-10"} rounded-md` : "h-11"}
                 ${!pill && index > 0 ? "border-l border-divider" : ""}
                 ${on ? toneOn : "text-fg/60 hover:text-fg"}`}
             >
