@@ -53,6 +53,15 @@ describe("HomePage com reservas", () => {
     expect(text("month-saved")).toContain("Voltou das reservas: R$ 380");
   });
 
+  it("separado com centavos mostra os centavos", () => {
+    renderHome({
+      transactions: [salary],
+      reserves: [goal],
+      movements: [movement("m1", "viagem", 33_333, "2026-09-10")],
+    });
+    expect(text("month-saved")).toContain("Separado: R$ 333,33");
+  });
+
   it("nao mostra a linha quando nada foi separado no mes", () => {
     renderHome({ transactions: [salary] });
     expect(screen.queryByTestId("month-saved")).toBeNull();

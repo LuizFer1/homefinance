@@ -6,9 +6,14 @@ export function deadlineLabel(deadline: string, today: string): string {
   return deadline.slice(0, 4) === today.slice(0, 4) ? name : `${name} ${deadline.slice(0, 4)}`;
 }
 
+/** Dia do mês de uma data 'YYYY-MM-DD' (o `day` da regra mensal nasce daqui). */
+export function dayOfDate(date: string): number {
+  return Number(date.slice(8, 10));
+}
+
 /** "6 set" — linha de autor do movimento. */
 export function movementDateLabel(date: string): string {
-  return `${Number(date.slice(8, 10))} ${monthLabelShort(date)}`;
+  return `${dayOfDate(date)} ${monthLabelShort(date)}`;
 }
 
 /** Nome do mês sozinho, minúsculo ("setembro"): é como o handoff o escreve nas linhas. */

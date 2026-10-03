@@ -151,6 +151,17 @@ describe("DepositSheet", () => {
     expect(amount().getAttribute("aria-describedby")).toBe("deposit-error");
   });
 
+  it("guardado já gasto por retirada: sem lixeira, com a dica do que fazer", () => {
+    const drained = stateOf({
+      transactions: [tx("salario", "income", 301_760, "2026-09-05")],
+      reserves: [EMERGENCY],
+      movements: [SAVED, movement("w", EMERGENCY_ID, -15_000, "2026-09-12")],
+    });
+    setup({ state: drained, editing: SAVED });
+    expect(screen.queryByRole("button", { name: /excluir guardado/i })).toBeNull();
+    expect(screen.getByText("Já foi retirado: exclua a retirada antes")).toBeDefined();
+  });
+
   it("em edição: preenchido, sem toggle, mantém a data e tem Segure para excluir", () => {
     const { onSubmit, onDelete } = setup({ editing: SAVED });
     expect(screen.getByRole("heading", { name: "Editar guardado" })).toBeDefined();

@@ -15,7 +15,7 @@ import { formatMonths, monthsCovered, projectedCompletion } from "../../domain/r
 import { Icon } from "../icons/icon";
 import { MiniAvatar } from "../profile/avatar-view";
 import { PRIMARY, SECONDARY } from "../ui/button";
-import { Money, signedBRL, wholeBRL } from "../ui/money";
+import { compactBRL, Money, signedBRL, wholeBRL } from "../ui/money";
 import { IconTile } from "../ui/tile";
 import { AccentIconBox } from "./accent-icon-box";
 import { BackLink } from "./back-link";
@@ -216,7 +216,7 @@ export function ReserveDetail({
     infoRows.push({
       icon: "repeat",
       title: "Guardando todo mês",
-      value: wholeBRL(reserve.recurring.amountMinor),
+      value: compactBRL(reserve.recurring.amountMinor),
       sub: `Todo dia ${reserve.recurring.day}, do saldo do mês`,
     });
   }

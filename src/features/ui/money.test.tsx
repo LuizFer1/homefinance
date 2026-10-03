@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it } from "vitest";
-import { MINUS, Money, moneyParts, signedBRL } from "./money";
+import { compactBRL, MINUS, Money, moneyParts, signedBRL } from "./money";
 
 afterEach(cleanup);
 
@@ -25,6 +25,16 @@ describe("signedBRL", () => {
   it("monta o texto corrido com sinal", () => {
     expect(signedBRL(-25430)).toBe(`${MINUS}R$ 254,30`);
     expect(signedBRL(650000, "always")).toBe("+R$ 6.500,00");
+  });
+});
+
+describe("compactBRL", () => {
+  const plain = (text: string) => text.replace(/ /g, " ");
+
+  it("valor redondo sai sem centavos; quebrado, com eles", () => {
+    expect(plain(compactBRL(50_000))).toBe("R$ 500");
+    expect(plain(compactBRL(33_333))).toBe("R$ 333,33");
+    expect(plain(compactBRL(123_456_700))).toBe("R$ 1.234.567");
   });
 });
 

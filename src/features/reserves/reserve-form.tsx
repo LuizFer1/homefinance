@@ -20,13 +20,13 @@ import { PICKABLE_ICONS } from "../icons/icon-set";
 import { Button } from "../ui/button";
 import { FIELD_PAGE, HINT, LABEL } from "../ui/field";
 import { HoldToDelete } from "../ui/hold-button";
-import { wholeBRL } from "../ui/money";
+import { compactBRL, wholeBRL } from "../ui/money";
 import { Swatches } from "../ui/swatches";
 import { Toggle } from "../ui/toggle";
 import { AccentIconBox } from "./accent-icon-box";
 import { BackLink } from "./back-link";
 import { EmergencyGoalCard } from "./emergency-goal-card";
-import { deadlineLabel, monthName } from "./format";
+import { dayOfDate, deadlineLabel, monthName } from "./format";
 import type { ReserveInput } from "./store";
 
 export interface ReserveFormProps {
@@ -278,7 +278,7 @@ export function ReserveForm({
   const emergencyHint =
     editing?.recurring && editing.recurring.amountMinor === monthlyMinor
       ? `Todo dia ${editing.recurring.day}`
-      : `Começa em ${nextMonth}, todo dia ${Number(today.slice(8, 10))}`;
+      : `Começa em ${nextMonth}, todo dia ${dayOfDate(today)}`;
   const suggestionHint =
     suggestion === null
       ? ""
@@ -488,7 +488,7 @@ export function ReserveForm({
                 }}
                 label={
                   keepSaved
-                    ? `Guardando ${wholeBRL(saved)} todo mês`
+                    ? `Guardando ${compactBRL(saved)} todo mês`
                     : `Guardar ${wholeBRL(suggestion?.monthlyMinor ?? 0)} todo mês`
                 }
                 hint={

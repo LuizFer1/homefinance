@@ -7,13 +7,13 @@ import {
   EMERGENCY_ICON,
   EMERGENCY_NAME,
   type EmergencyMultiple,
+  isWithdrawReason,
   type RecurringDeposit,
   type Reserve,
   type ReserveDraft,
   type ReserveKind,
   type ReserveMovement,
   type ReserveMovementDraft,
-  WITHDRAW_REASONS,
   type WithdrawReason,
 } from "../../domain/model/reserve";
 import type { ColorToken, IconKey } from "../../domain/model/tokens";
@@ -22,7 +22,8 @@ import { monthOf } from "../../domain/projections/periods";
 import { emergencyOf, reserveBalance } from "../../domain/reserves/balances";
 import { depositId, planDeposits } from "../../domain/reserves/deposits";
 import { findEssentialCategoryIds } from "../../domain/reserves/essential";
-import { describeError, type Session } from "../session/session";
+import { describeError, ignoreHandled, type Session } from "../session/session";
+import { dayOfDate } from "./format";
 
 export interface ReserveInput {
   kind: ReserveKind;
@@ -82,7 +83,7 @@ function assertAmount(amountMinor: number): void {
  * versão futura) pode mandar qualquer string, e o log é eterno.
  */
 function assertReason(reason: string | null): void {
-  if (reason === null || !(WITHDRAW_REASONS as readonly string[]).includes(reason)) {
+  if (!isWithdrawReason(reason)) {
     throw new Error("Escolha o motivo da retirada");
   }
 }
@@ -90,10 +91,6 @@ function assertReason(reason: string | null): void {
 /** Campos-objeto: `!==` do repositório sempre os veria como mudados. */
 function sameValue(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
-}
-
-function dayOf(date: string): number {
-  return Number(date.slice(8, 10));
 }
 
 export function createReservesStore(session: Session): ReservesStore {
@@ -134,7 +131,7 @@ export function createReservesStore(session: Session): ReservesStore {
           ? current.recurring
           : {
               amountMinor: input.recurringAmountMinor,
-              day: dayOf(today),
+              day: dayOfDate(today),
               since: shiftMonth(monthOf(today), 1),
             };
     }
@@ -237,7 +234,7 @@ export function createReservesStore(session: Session): ReservesStore {
         // A edição já está gravada: falha da materialização não pode
         // rejeitá-la (a tela trataria como não salva). Ela já se reporta em
         // `session.error`, e a próxima abertura tenta de novo.
-        await materializeDue(today).catch(() => {});
+        await materializeDue(today).catch(ignoreHandled);
         return saved;
       }),
 
@@ -294,7 +291,7 @@ export function createReservesStore(session: Session): ReservesStore {
         if (turningOn) {
           recurring = {
             amountMinor: input.amountMinor,
-            day: dayOf(input.occurredOn),
+            day: dayOfDate(input.occurredOn),
             since: month,
           };
         }

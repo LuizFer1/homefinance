@@ -48,6 +48,15 @@ export function wholeBRL(minor: number): string {
   return WHOLE.format(Math.round(minor / 100));
 }
 
+/**
+ * Sem ",00" quando o valor é redondo, com centavos quando não é: "R$ 500",
+ * "R$ 333,33". Para valores exatos (guardado, depósito mensal), onde arredondar
+ * mostraria um número que não foi movido; `wholeBRL` é para estimativas.
+ */
+export function compactBRL(minor: number): string {
+  return minor % 100 === 0 ? wholeBRL(minor) : formatBRL(minor);
+}
+
 export interface MoneyProps {
   minor: number;
   signed?: "auto" | "always";

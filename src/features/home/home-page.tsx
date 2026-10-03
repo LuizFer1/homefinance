@@ -12,7 +12,7 @@ import { Avatar } from "../profile/avatar-view";
 import { periodLabel } from "../recurrence/adjust-sheet";
 import { TransactionList } from "../transactions/transaction-list";
 import { greetingFor } from "../ui/greeting";
-import { MINUS, Money, moneyParts, wholeBRL } from "../ui/money";
+import { compactBRL, MINUS, Money, moneyParts } from "../ui/money";
 import { QuickActions } from "../ui/quick-actions";
 
 export interface HomePageProps {
@@ -102,7 +102,7 @@ function MonthCard({
       {saved !== 0 && (
         <p data-testid="month-saved" class="mt-2.5 text-xs text-fg/55">
           {saved > 0 ? "Separado: " : "Voltou das reservas: "}
-          <span class="hf-num">{wholeBRL(Math.abs(saved))}</span>
+          <span class="hf-num">{compactBRL(Math.abs(saved))}</span>
         </p>
       )}
     </section>

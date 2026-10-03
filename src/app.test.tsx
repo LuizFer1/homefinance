@@ -652,7 +652,7 @@ describe("fila de ações rápidas", () => {
   });
 });
 
-describe("as tres telas", () => {
+describe("as quatro telas", () => {
   async function pronto() {
     render(
       <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
@@ -778,7 +778,7 @@ describe("as tres telas", () => {
 
   it("não existe mais botão flutuante em tela nenhuma", async () => {
     await pronto();
-    for (const aba of ["Dashboard", "Início", "Ajustes"]) {
+    for (const aba of ["Dashboard", "Início", "Reservas", "Ajustes"]) {
       fireEvent.click(naBarra().getByRole("button", { name: aba }));
       expect(screen.queryByRole("button", { name: "Novo lançamento" })).toBeNull();
     }

@@ -93,6 +93,26 @@ describe("planDeposits", () => {
     expect(planDeposits(state, "2026-10-20")).toEqual([]);
   });
 
+  it("dois estados com o mesmo depósito convergem para uma linha", () => {
+    // Dois celulares offline materializam o mesmo mês, cada um no seu state.
+    const phoneA = stateOf({ transactions: [SALARIO], reserves: [R] });
+    const phoneB = stateOf({ transactions: [SALARIO], reserves: [R] });
+    const [planA] = planDeposits(phoneA, "2026-10-06");
+    const [planB] = planDeposits(phoneB, "2026-10-20");
+    expect(planA?.id).toBe(depositId("R1", "2026-10"));
+    expect(planB?.id).toBe(planA?.id);
+
+    // O sync junta as linhas por id: as duas viram uma só.
+    const rowA = movement(planA?.id ?? "", "R1", 50_000, "2026-10-06", { recurring: true });
+    const rowB = movement(planB?.id ?? "", "R1", 50_000, "2026-10-20", { recurring: true });
+    const merged = stateOf({ transactions: [SALARIO], reserves: [R], movements: [rowA, rowB] });
+    expect(Object.keys(merged.reserveMovements)).toHaveLength(1);
+
+    // E quem recebe a linha do outro não planeja de novo.
+    const afterSync = stateOf({ transactions: [SALARIO], reserves: [R], movements: [rowA] });
+    expect(planDeposits(afterSync, "2026-10-20")).toEqual([]);
+  });
+
   it("reserva apagada ou sem recorrência: nada", () => {
     const dead = { ...R, deletedAt: DELETED_AT };
     const none = reserve("R2");

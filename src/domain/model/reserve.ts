@@ -19,11 +19,18 @@ export const WITHDRAW_REASON_LABELS: Record<WithdrawReason, string> = {
   other: "Outro",
 };
 
+/**
+ * O tipo só vale para quem compila contra ele: o log é eterno e um motivo pode
+ * chegar de uma versão futura via sync. `Object.hasOwn` e não `in`, para
+ * "toString" e companhia não passarem por motivo.
+ */
+export function isWithdrawReason(value: string | null): value is WithdrawReason {
+  return value !== null && Object.hasOwn(WITHDRAW_REASON_LABELS, value);
+}
+
 /** Motivo desconhecido (versão futura via sync) aparece como "Outro" em vez de sumir. */
 export function reasonLabel(reason: string | null): string {
-  return reason !== null && Object.hasOwn(WITHDRAW_REASON_LABELS, reason)
-    ? WITHDRAW_REASON_LABELS[reason as WithdrawReason]
-    : WITHDRAW_REASON_LABELS.other;
+  return isWithdrawReason(reason) ? WITHDRAW_REASON_LABELS[reason] : WITHDRAW_REASON_LABELS.other;
 }
 
 /**

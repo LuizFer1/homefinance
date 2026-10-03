@@ -1,7 +1,11 @@
 import { useState } from "preact/hooks";
 import type { AppState } from "../../domain/model/app-state";
 import type { Reserve, ReserveMovement, WithdrawReason } from "../../domain/model/reserve";
-import { WITHDRAW_REASON_LABELS, WITHDRAW_REASONS } from "../../domain/model/reserve";
+import {
+  isWithdrawReason,
+  WITHDRAW_REASON_LABELS,
+  WITHDRAW_REASONS,
+} from "../../domain/model/reserve";
 import { MAX_MINOR, minorOf } from "../../domain/money/mask";
 import { formatBRL } from "../../domain/money/money";
 import { monthOf } from "../../domain/projections/periods";
@@ -12,7 +16,7 @@ import { Icon } from "../icons/icon";
 import { LABEL } from "../ui/field";
 import { HoldToDelete } from "../ui/hold-button";
 import { SheetHeader } from "../ui/modal";
-import { wholeBRL } from "../ui/money";
+import { compactBRL } from "../ui/money";
 import { monthName } from "./format";
 import { MonthsMeter } from "./months-meter";
 import { AmountField, SheetSubtitle } from "./sheet-parts";
@@ -31,9 +35,7 @@ export interface WithdrawSheetProps {
 /** Motivo gravado desconhecido (versão futura) vira "Outro": melhor que obrigar a escolher de novo. */
 function initialReason(editing: ReserveMovement | null): WithdrawReason | null {
   if (editing === null || editing.reason === null) return null;
-  return (WITHDRAW_REASONS as readonly string[]).includes(editing.reason)
-    ? editing.reason
-    : "other";
+  return isWithdrawReason(editing.reason) ? editing.reason : "other";
 }
 
 /** 2d: retirar de uma reserva, sempre com motivo (ou editar uma retirada). */
@@ -153,8 +155,7 @@ export function WithdrawSheet({
             </span>
           )}
           <span class="ml-auto text-right text-fg/55">
-            volta {returned % 100 === 0 ? wholeBRL(returned) : formatBRL(returned)} ao saldo de{" "}
-            {monthName(monthOf(occurredOn))}
+            volta {compactBRL(returned)} ao saldo de {monthName(monthOf(occurredOn))}
           </span>
         </div>
       </div>

@@ -17,7 +17,7 @@ import { HoldToDelete } from "../ui/hold-button";
 import { SheetHeader } from "../ui/modal";
 import { IconTile } from "../ui/tile";
 import { Toggle } from "../ui/toggle";
-import { monthName, movementDateLabel } from "./format";
+import { dayOfDate, monthName, movementDateLabel } from "./format";
 import { AmountField, SheetSubtitle } from "./sheet-parts";
 import type { MovementInput } from "./store";
 
@@ -40,7 +40,7 @@ export interface DepositSheetProps {
  */
 function nextDepositLabel(state: AppState, reserve: Reserve, today: string): string {
   const month = monthOf(today);
-  const day = reserve.recurring?.day ?? Number(today.slice(8, 10));
+  const day = reserve.recurring?.day ?? dayOfDate(today);
   // Regra que só vale a partir de um mês futuro: o próximo depósito é o do `since`.
   if (reserve.recurring !== null && reserve.recurring.since > month) {
     return movementDateLabel(dayOfMonthClamped(reserve.recurring.since, day));
@@ -77,11 +77,15 @@ export function DepositSheet({
   const over = amount > monthAvailable;
   const emergency = actsAsEmergency(state, reserve);
   const goal = emergency ? emergencyTarget(state, reserve, today) : null;
-  const after = reserveBalance(state, reserve.id) - original + amount;
+  const balance = reserveBalance(state, reserve.id);
+  const after = balance - original + amount;
+  // Excluir tira o guardado inteiro: se retiradas já gastaram parte dele, a
+  // reserva ficaria negativa e a store recusaria. Melhor nem oferecer a lixeira.
+  const deletable = editing !== null && balance - original >= 0;
   // A store recusa editar para um valor que deixe a reserva abaixo de zero.
   const negative = editing !== null && after < 0;
   const valid = amount > 0 && amount <= MAX_MINOR && !negative;
-  const dayOfRule = reserve.recurring?.day ?? Number(today.slice(8, 10));
+  const dayOfRule = reserve.recurring?.day ?? dayOfDate(today);
 
   function add(minor: number) {
     setDigits(onlyDigits(String(Math.min(amount + minor, MAX_MINOR))));
@@ -93,12 +97,13 @@ export function DepositSheet({
         title={editing === null ? "Guardar" : "Editar guardado"}
         onClose={onClose}
         actions={
-          editing === null ? undefined : (
-            <HoldToDelete label="Excluir guardado" onConfirm={onDelete} />
-          )
+          deletable ? <HoldToDelete label="Excluir guardado" onConfirm={onDelete} /> : undefined
         }
       />
       <SheetSubtitle reserve={reserve} isEmergency={emergency} prefix="Na" />
+      {editing !== null && !deletable && (
+        <p class="mt-1.5 text-xs text-fg/55">Já foi retirado: exclua a retirada antes</p>
+      )}
 
       <AmountField
         id="deposit-amount"
