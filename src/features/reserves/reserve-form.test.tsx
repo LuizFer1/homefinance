@@ -271,4 +271,20 @@ describe("ReserveForm", () => {
       "true",
     );
   });
+
+  it("com histórico calculável, limpar o custo manual manda override null", () => {
+    const withOverride = reserve("01J9F3K2M7QX8YB4TVWZ0DCEH4", {
+      kind: "emergency",
+      multiple: 6,
+      essentialCategoryIds: [MOR],
+      essentialOverrideMinor: 400_000,
+    });
+    const state = { ...WITH_HISTORY, reserves: { [withOverride.id]: withOverride } };
+    const { onSubmit } = mount({ editing: withOverride, initialKind: "emergency", state });
+    fireEvent.input(screen.getByLabelText("Custo essencial por mês"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "emergency", essentialOverrideMinor: null }),
+    );
+  });
 });

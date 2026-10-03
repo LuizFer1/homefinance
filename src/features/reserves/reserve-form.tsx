@@ -241,7 +241,8 @@ export function ReserveForm({
   }
 
   const valid = emergency
-    ? !(showCost && overrideMinor <= 0) && !(recurringOn && monthlyMinor <= 0)
+    ? !(showCost && computedCost === null && overrideMinor <= 0) &&
+      !(recurringOn && monthlyMinor <= 0)
     : name.trim() !== "";
 
   function submit() {
@@ -254,7 +255,7 @@ export function ReserveForm({
         color: EMERGENCY_COLOR,
         targetMinor: null,
         multiple,
-        essentialOverrideMinor: showCost ? overrideMinor : null,
+        essentialOverrideMinor: showCost && overrideMinor > 0 ? overrideMinor : null,
         deadline: null,
         recurringAmountMinor,
       });
