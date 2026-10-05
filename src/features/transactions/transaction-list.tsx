@@ -1,7 +1,9 @@
+import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import { FREQUENCY_LABELS, type RecurrenceFrequency } from "../../domain/model/recurrence";
 import { NEUTRAL_TOKEN } from "../../domain/model/tokens";
 import type { Transaction } from "../../domain/model/transaction";
+import type { User } from "../../domain/model/user";
 import { formatBRL } from "../../domain/money/money";
 import { dayHeading } from "../../domain/projections/periods";
 import {
@@ -12,10 +14,10 @@ import {
   resolveCategoryName,
   resolvePaymentMethodName,
 } from "../../domain/projections/selectors";
+import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
-import { MiniAvatar } from "../profile/avatar-view";
+import { AuthorAvatar } from "../profile/avatar-view";
 import { signedBRL } from "../ui/money";
-import { IconTile } from "../ui/tile";
 
 export interface TransactionListProps {
   /** Já filtrados e ordenados por `listTransactions`. */
@@ -24,6 +26,8 @@ export interface TransactionListProps {
   state: AppState;
   /** Data de hoje em 'YYYY-MM-DD', para os rótulos "Hoje" e "Ontem". */
   today: string;
+  /** Perfil deste aparelho: o autor dele aparece como "Você". */
+  currentUserId: Ulid | null;
   onEdit: (record: Transaction) => void;
 }
 
@@ -45,6 +49,17 @@ function metadata(state: AppState, item: Transaction): string {
   ]
     .filter((part) => part !== null)
     .join(" · ");
+}
+
+/**
+ * "Você" para o próprio perfil, primeiro nome para os demais.
+ *
+ * "Você" vale também na casa de uma pessoa só: a linha não muda de forma quando
+ * alguém entra depois.
+ */
+export function authorLabel(author: User, currentUserId: Ulid | null): string {
+  if (author.id === currentUserId) return "Você";
+  return author.name.trim().split(/\s+/)[0] || "?";
 }
 
 /** Rótulo da tag de recorrente: a frequência da série ("Mensal"). */
@@ -83,11 +98,13 @@ function Row({
   item,
   state,
   first,
+  currentUserId,
   onEdit,
 }: {
   item: Transaction;
   state: AppState;
   first: boolean;
+  currentUserId: Ulid | null;
   onEdit: (record: Transaction) => void;
 }) {
   const category = findCategory(state, item.categoryId);
@@ -101,7 +118,7 @@ function Row({
       cada vez, logo depois de o sheet fechar.
     */
     <li class="relative transition-[opacity,translate] duration-200 ease-out-soft starting:-translate-y-1 starting:opacity-0">
-      {/* Régua recuada até o texto (tile 38 + gap 12 + padding), esmaecendo à direita. */}
+      {/* Régua recuada até o texto (avatar 38 + gap 12 + padding), esmaecendo à direita. */}
       {!first && <span aria-hidden="true" class="hf-rule absolute top-0 right-0 left-[64px]" />}
 
       {/*
@@ -113,14 +130,18 @@ function Row({
         type="button"
         aria-label={`Editar ${item.description}`}
         onClick={() => onEdit(item)}
-        class="hf-press flex h-16 w-full items-center gap-3 px-3.5 text-left hover:bg-fg/[0.04]"
+        class="hf-press flex h-16 w-full items-center gap-3 px-3.5 text-left hover:bg-fg/[0.04]
+          active:bg-accent/8"
       >
-        {/* Categoria apagada não empresta ícone nem cor: cai no ícone do tipo. */}
-        <IconTile
-          icon={category?.icon ?? fallbackIcon(item.kind)}
-          color={category?.color ?? NEUTRAL_TOKEN}
-          size={38}
-          iconSize={19}
+        {/*
+          Quem lançou é a âncora da linha. Com o mini-avatar de 14px na meta,
+          toda linha parecia do mesmo autor; a categoria continua legível pelo
+          ícone colorido logo abaixo do título.
+        */}
+        <AuthorAvatar
+          name={author?.name ?? "?"}
+          color={author?.color ?? NEUTRAL_TOKEN}
+          avatar={author?.avatar ?? null}
         />
 
         <span class="min-w-0 flex-1">
@@ -139,29 +160,46 @@ function Row({
             )}
           </span>
           {/*
-            Autoria como mini-avatar na meta, nunca fundo: fundo colorido
-            competiria com o único dado que importa nesta tela — o dinheiro.
-            Sem categoria nem forma, a meta fica só com o autor; um "Sem
+            Categoria apagada não empresta ícone nem cor: cai no ícone do tipo.
+            Sem categoria nem forma, a meta fica só com o ícone; um "Sem
             categoria · Sem forma" em toda linha seria ruído constante.
           */}
-          <span class="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-fg/55">
-            <MiniAvatar name={author?.name ?? "?"} color={author?.color ?? NEUTRAL_TOKEN} />
+          <span class="mt-0.5 flex min-w-0 items-center gap-[5px] text-xs text-fg/60">
+            <span
+              class="shrink-0"
+              style={{ color: cssVarForToken(category?.color ?? NEUTRAL_TOKEN) }}
+            >
+              <Icon name={category?.icon ?? fallbackIcon(item.kind)} size={13} />
+            </span>
             {detail !== "" && <span class="truncate">{detail}</span>}
           </span>
         </span>
 
-        {/* Verde só na receita: num diário de gastos a despesa é a regra. */}
-        <span
-          class={`hf-num shrink-0 text-right text-[15px] font-medium ${income ? "text-income-fg" : "text-fg"}`}
-        >
-          {/* "~" na estimativa: o número está no saldo, mas ainda é palpite. */}
-          {item.estimated === true && (
-            <>
-              <span class="sr-only">aproximadamente </span>
-              <span aria-hidden="true">~</span>
-            </>
+        <span class="flex shrink-0 flex-col items-end gap-0.5">
+          {/* Verde só na receita: num diário de gastos a despesa é a regra. */}
+          <span class={`hf-num text-[15px] font-medium ${income ? "text-income-fg" : "text-fg"}`}>
+            {/* "~" na estimativa: o número está no saldo, mas ainda é palpite. */}
+            {item.estimated === true && (
+              <>
+                <span class="sr-only">aproximadamente </span>
+                <span aria-hidden="true">~</span>
+              </>
+            )}
+            {signedBRL(income ? item.amountMinor : -item.amountMinor, "always")}
+          </span>
+          {/*
+            Na cor do perfil, que passa 4,5:1 sobre o surface neste tamanho —
+            não escurecer. Sem autor (histórico antigo) não há nome a mostrar.
+          */}
+          {author !== null && (
+            <span
+              data-testid="author-name"
+              class="text-xs font-medium"
+              style={{ color: cssVarForToken(author.color) }}
+            >
+              {authorLabel(author, currentUserId)}
+            </span>
           )}
-          {signedBRL(income ? item.amountMinor : -item.amountMinor, "always")}
         </span>
       </button>
     </li>
@@ -190,7 +228,13 @@ function GhostRows() {
   );
 }
 
-export function TransactionList({ items, state, today, onEdit }: TransactionListProps) {
+export function TransactionList({
+  items,
+  state,
+  today,
+  currentUserId,
+  onEdit,
+}: TransactionListProps) {
   if (items.length === 0) {
     // Estado vazio tipográfico: o esqueleto mostra onde a lista vai aparecer,
     // em vez de uma ilustração genérica que não diz nada sobre esta tela.
@@ -213,7 +257,14 @@ export function TransactionList({ items, state, today, onEdit }: TransactionList
           <DayHeading group={group} today={today} />
           <ul class="overflow-hidden rounded-lg bg-surface">
             {group.items.map((item, index) => (
-              <Row key={item.id} item={item} state={state} first={index === 0} onEdit={onEdit} />
+              <Row
+                key={item.id}
+                item={item}
+                state={state}
+                first={index === 0}
+                currentUserId={currentUserId}
+                onEdit={onEdit}
+              />
             ))}
           </ul>
         </div>

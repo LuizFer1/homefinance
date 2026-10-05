@@ -63,7 +63,15 @@ const STATE: AppState = {
 
 describe("TransactionList", () => {
   it("mostra uma linha por lançamento", () => {
-    render(<TransactionList items={ITEMS} state={STATE} today="2026-08-08" onEdit={vi.fn()} />);
+    render(
+      <TransactionList
+        items={ITEMS}
+        state={STATE}
+        today="2026-08-08"
+        currentUserId={null}
+        onEdit={vi.fn()}
+      />,
+    );
 
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
     expect(screen.getByText("Mercado")).toBeDefined();
@@ -72,7 +80,13 @@ describe("TransactionList", () => {
 
   it("avisa quando não há lançamentos", () => {
     const { container } = render(
-      <TransactionList items={[]} state={STATE} today="2026-08-08" onEdit={vi.fn()} />,
+      <TransactionList
+        items={[]}
+        state={STATE}
+        today="2026-08-08"
+        currentUserId={null}
+        onEdit={vi.fn()}
+      />,
     );
 
     expect(screen.getByRole("heading", { name: /Nenhum lançamento ainda/i })).toBeDefined();
@@ -82,7 +96,15 @@ describe("TransactionList", () => {
 
   it("pede edição do registro clicado", () => {
     const onEdit = vi.fn();
-    render(<TransactionList items={ITEMS} state={STATE} today="2026-08-08" onEdit={onEdit} />);
+    render(
+      <TransactionList
+        items={ITEMS}
+        state={STATE}
+        today="2026-08-08"
+        currentUserId={null}
+        onEdit={onEdit}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Editar Salário" }));
 
@@ -90,13 +112,29 @@ describe("TransactionList", () => {
   });
 
   it("não oferece excluir na linha: excluir mora na edição", () => {
-    render(<TransactionList items={ITEMS} state={STATE} today="2026-08-08" onEdit={vi.fn()} />);
+    render(
+      <TransactionList
+        items={ITEMS}
+        state={STATE}
+        today="2026-08-08"
+        currentUserId={null}
+        onEdit={vi.fn()}
+      />,
+    );
 
     expect(screen.queryByRole("button", { name: /Excluir/ })).toBeNull();
   });
 
   it("distingue receita de despesa no valor exibido", () => {
-    render(<TransactionList items={ITEMS} state={STATE} today="2026-08-08" onEdit={vi.fn()} />);
+    render(
+      <TransactionList
+        items={ITEMS}
+        state={STATE}
+        today="2026-08-08"
+        currentUserId={null}
+        onEdit={vi.fn()}
+      />,
+    );
 
     const linhas = screen.getAllByRole("listitem");
 
@@ -113,6 +151,7 @@ describe("TransactionList", () => {
         items={[estimada, record({ id: "r" })]}
         state={STATE}
         today="2026-08-08"
+        currentUserId={null}
         onEdit={vi.fn()}
       />,
     );
@@ -134,6 +173,7 @@ describe("rotulos de categoria, forma de pagamento e cashback", () => {
         items={[{ ...BASE_ITEM, ...over }]}
         state={STATE}
         today="2026-08-08"
+        currentUserId={null}
         onEdit={vi.fn()}
       />,
     );
@@ -166,7 +206,7 @@ describe("rotulos de categoria, forma de pagamento e cashback", () => {
     expect(screen.getByText(/de volta/)).toBeDefined();
   });
 
-  it("sem categoria nem forma, a meta fica so com o autor", () => {
+  it("sem categoria nem forma, a meta fica so com o icone", () => {
     // "Sem categoria - Sem forma de pagamento" em toda linha seria ruido
     // constante e empurraria o valor, que e o dado que importa.
     comAtributos({ categoryId: null, paymentMethodId: null, cashbackMinor: null });
@@ -178,6 +218,7 @@ describe("rotulos de categoria, forma de pagamento e cashback", () => {
 
 describe("autoria", () => {
   const AUTOR = "01J9F3K2M7QX8YB4TVWZ0DCEHU";
+  const OUTRA = "01J9F3K2M7QX8YB4TVWZ0DCEHV";
 
   const COM_AUTOR: AppState = {
     ...STATE,
@@ -189,59 +230,77 @@ describe("autoria", () => {
         avatar: "data:image/webp;base64,AAAA",
         ...ALIVE,
       },
+      [OUTRA]: {
+        id: OUTRA,
+        name: "ana souza",
+        color: "rose",
+        avatar: null,
+        ...ALIVE,
+      },
     },
   };
 
-  function comAutor(userId: string | null) {
+  function comAutor(userId: string | null, currentUserId: string | null = AUTOR) {
     render(
       <TransactionList
         items={[record({ id: "a", userId })]}
         state={COM_AUTOR}
         today="2026-08-08"
+        currentUserId={currentUserId}
         onEdit={vi.fn()}
       />,
     );
     return screen.getByRole("listitem");
   }
 
-  it("a cor do autor e um mini-avatar, nao fundo do item", () => {
-    // Fundo colorido competiria com o unico dado que importa na tela: o
-    // dinheiro. Mesmo raciocinio que o app.css ja registra para o tema.
-    const item = comAutor(AUTOR);
+  it("o avatar de quem lancou e a ancora da linha, no lugar do icone da categoria", () => {
+    const item = comAutor(OUTRA);
+    const avatar = screen.getByTestId("author-avatar");
 
-    expect(item.className).not.toMatch(/bg-\[var\(--color-tag/);
-    expect(item.querySelector("[data-testid='author-mark']")).not.toBeNull();
+    expect(item.querySelector("button")?.firstElementChild).toBe(avatar);
+    expect(avatar.className).toContain("rounded-full");
+    expect(avatar.className).toContain("size-[38px]");
   });
 
-  it("usa a cor do perfil que criou o lancamento", () => {
-    const item = comAutor(AUTOR);
+  it("sem foto, o avatar e a inicial maiuscula sobre a cor do perfil", () => {
+    comAutor(OUTRA);
+    const avatar = screen.getByTestId("author-avatar");
 
-    expect(item.querySelector("[data-testid='author-mark']")?.getAttribute("style")).toContain(
-      "--color-tag-teal",
-    );
+    expect(avatar.textContent).toBe("A");
+    expect(avatar.getAttribute("style")).toContain("--color-tag-rose");
   });
 
-  it("lancamento sem autor cai na cor neutra", () => {
-    // O historico gravado antes desta fatia e este caso.
-    const item = comAutor(null);
+  it("com foto, o avatar mostra a foto recortada em circulo", () => {
+    comAutor(AUTOR);
+    const avatar = screen.getByTestId("author-avatar");
 
-    expect(item.querySelector("[data-testid='author-mark']")?.getAttribute("style")).toContain(
+    expect(avatar.tagName).toBe("IMG");
+    expect(avatar.getAttribute("src")).toBe("data:image/webp;base64,AAAA");
+    expect(avatar.className).toContain("object-cover");
+  });
+
+  it("o proprio perfil aparece como Voce, na cor do perfil", () => {
+    comAutor(AUTOR);
+    const nome = screen.getByTestId("author-name");
+
+    expect(nome.textContent).toBe("Você");
+    expect(nome.getAttribute("style")).toContain("--color-tag-teal");
+  });
+
+  it("outro membro aparece pelo primeiro nome", () => {
+    comAutor(OUTRA);
+
+    expect(screen.getByTestId("author-name").textContent).toBe("ana");
+  });
+
+  it("lancamento sem autor cai no avatar neutro e nao mostra nome", () => {
+    // O historico gravado antes da autoria e este caso.
+    comAutor(null);
+
+    expect(screen.getByTestId("author-avatar").getAttribute("style")).toContain(
       "--color-tag-slate",
     );
-  });
-
-  it("nao mostra a foto do autor na lista", () => {
-    // Uma foto de 96px renderizada a 20px vira ruido cinza, e com um perfil so
-    // ela se repete identica em toda linha, comunicando nada.
-    comAutor(AUTOR);
-
-    expect(screen.queryByRole("img")).toBeNull();
-  });
-
-  it("o mini-avatar leva a inicial de quem lancou", () => {
-    const item = comAutor(AUTOR);
-
-    expect(item.querySelector("[data-testid='author-mark']")?.textContent).toBe("L");
+    expect(screen.queryByTestId("author-name")).toBeNull();
   });
 });
 
@@ -249,7 +308,15 @@ describe("agrupamento por dia", () => {
   const HOJE = "2026-08-10";
 
   function comItens(items: Transaction[]) {
-    render(<TransactionList items={items} state={STATE} today={HOJE} onEdit={vi.fn()} />);
+    render(
+      <TransactionList
+        items={items}
+        state={STATE}
+        today={HOJE}
+        currentUserId={null}
+        onEdit={vi.fn()}
+      />,
+    );
   }
 
   it("um cabecalho por dia, com o rotulo relativo", () => {
@@ -300,6 +367,7 @@ describe("ancora visual da linha", () => {
         items={[record({ id: "a", ...over })]}
         state={STATE}
         today="2026-08-08"
+        currentUserId={null}
         onEdit={vi.fn()}
       />,
     );
@@ -332,12 +400,12 @@ describe("ancora visual da linha", () => {
     expect(screen.getByTestId("icon-receipt")).toBeDefined();
   });
 
-  it("a marca de autoria e um disco pequeno na meta da linha", () => {
-    comCategoria({});
+  it("o icone da categoria vai para a meta, na cor da categoria", () => {
+    comCategoria({ categoryId: "cat-viva" });
 
-    const marca = screen.getByTestId("author-mark");
-    expect(marca.className).toContain("rounded-full");
-    expect(marca.className).toContain("size-3.5");
+    const icone = screen.getByTestId("icon-utensils").parentElement;
+    expect(icone?.getAttribute("style")).toContain("--color-tag-emerald");
+    expect(icone?.nextElementSibling?.textContent).toBe("Alimentacao");
   });
 
   it("recorrente ganha a tag com a frequencia da serie", () => {
@@ -346,6 +414,7 @@ describe("ancora visual da linha", () => {
         items={[record({ id: "a", recurrenceId: "serie-sumida" })]}
         state={STATE}
         today="2026-08-08"
+        currentUserId={null}
         onEdit={vi.fn()}
       />,
     );

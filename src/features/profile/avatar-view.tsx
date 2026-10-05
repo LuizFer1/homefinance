@@ -74,6 +74,48 @@ export function Avatar({ name, color, avatar, size = 36 }: AvatarProps) {
 }
 
 /**
+ * Autor como âncora da linha de lançamento, 38px.
+ *
+ * Uma inicial só, não as iniciais de `Avatar`: o nome já vem por extenso sob o
+ * valor, e o disco precisa apenas separar uma pessoa da outra num relance. A
+ * foto entra quando existe — a 38px ela ainda se reconhece — e fica fora da
+ * árvore de acessibilidade, porque o nome ao lado já diz quem é.
+ */
+export function AuthorAvatar({
+  name,
+  color,
+  avatar,
+}: {
+  name: string;
+  color: string;
+  avatar: string | null;
+}) {
+  if (isDisplayableAvatar(avatar)) {
+    return (
+      <img
+        src={avatar}
+        alt=""
+        aria-hidden="true"
+        data-testid="author-avatar"
+        class="size-[38px] shrink-0 rounded-full object-cover"
+      />
+    );
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="author-avatar"
+      style={{ backgroundColor: cssVarForToken(color) }}
+      class="grid size-[38px] shrink-0 place-items-center rounded-full text-[15px] font-semibold
+        text-bg"
+    >
+      {initialsFor(name).slice(0, 1)}
+    </span>
+  );
+}
+
+/**
  * Autor do lançamento em 14px, antes de "Categoria · Forma".
  *
  * Só a cor e a inicial, nunca a foto: 96px de foto renderizados a 14 viram um
