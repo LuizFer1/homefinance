@@ -21,6 +21,7 @@ function fakeStore(): RegistryStore {
     addPaymentMethod: vi.fn(method),
     editPaymentMethod: vi.fn(method),
     removePaymentMethod: vi.fn(method),
+    mergeLegacyDefaults: vi.fn(async () => {}),
   };
 }
 
