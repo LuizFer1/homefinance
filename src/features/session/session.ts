@@ -4,6 +4,7 @@ import type { HomeFinanceDb } from "../../data/db";
 import { createRepository, type Repository } from "../../data/repository";
 import { compareHlc, parseHlc } from "../../domain/clock/hlc";
 import { createRowClock, type RowClock } from "../../domain/clock/row-clock";
+import { resolveMerged } from "../../domain/defaults/resolve";
 import { createUlidFactory, type RandomChunk, type Ulid } from "../../domain/ids/ulid";
 import {
   type AppState,
@@ -169,6 +170,10 @@ function latestHlc(state: AppState): string | null {
  * Substitui as linhas recebidas no estado. O cast existe porque a chave
  * computada de um `TableName` em união não deixa o TypeScript provar que cada
  * lista cai no bucket certo; `RowsByTable` garante isso por construção.
+ *
+ * Toda publicação passa por `resolveMerged`: uma lápide de padrão fundido pode
+ * chegar em qualquer lote, e o lançamento antigo que aponta para ela tem que
+ * aparecer já com a categoria estável.
  */
 function withRows(state: AppState, rows: RowsByTable): AppState {
   let next = state;
@@ -177,7 +182,7 @@ function withRows(state: AppState, rows: RowsByTable): AppState {
     if (list === undefined || list.length === 0) continue;
     next = { ...next, [table]: { ...next[table], ...toRecord<BaseRow>(list) } } as AppState;
   }
-  return next;
+  return next === state ? state : resolveMerged(next);
 }
 
 export function createSession(deps: SessionDeps): Session {
@@ -223,7 +228,7 @@ export function createSession(deps: SessionDeps): Session {
         deps.db.reserveMovements.toArray(),
       ]),
     );
-    return {
+    return resolveMerged({
       users: toRecord(users),
       categories: toRecord(categories),
       paymentMethods: toRecord(paymentMethods),
@@ -232,7 +237,7 @@ export function createSession(deps: SessionDeps): Session {
       recurrenceAdjustments: toRecord(recurrenceAdjustments),
       reserves: toRecord(reserves),
       reserveMovements: toRecord(reserveMovements),
-    };
+    });
   }
 
   async function reload(): Promise<void> {
