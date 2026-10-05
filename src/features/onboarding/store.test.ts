@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
+import { DEFAULT_METHODS } from "../../domain/defaults/defaults";
 import { createSession, LOCAL_USER_ID_KEY } from "../session/session";
 import { createOnboardingStore } from "./store";
 
@@ -39,6 +40,28 @@ describe("createOnboardingStore", () => {
     expect(Object.keys(reaberta.state.value.categories)).toHaveLength(12);
     expect(Object.keys(reaberta.state.value.paymentMethods)).toHaveLength(4);
     expect(reaberta.state.value.users[reaberta.localUserId.value ?? ""]?.name).toBe("Luiz");
+  });
+
+  it("não rebaixa para a semente um padrão que já chegou editado", async () => {
+    const pix = DEFAULT_METHODS[1];
+    if (pix === undefined) throw new Error("sem Pix");
+    await db.paymentMethods.put({
+      ...pix.draft,
+      name: "Pix Nubank",
+      mergedInto: null,
+      id: pix.id,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "1759276800000-0000-01J9F3K2M7QX8YB4TVWZ0DCEHZ",
+      deletedAt: null,
+      dirty: 0,
+    });
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    await createOnboardingStore(session).complete(LUIZ);
+
+    expect((await db.paymentMethods.get(pix.id))?.name).toBe("Pix Nubank");
+    expect(session.state.value.paymentMethods[pix.id]?.name).toBe("Pix Nubank");
+    expect(await db.paymentMethods.count()).toBe(4);
   });
 
   it("falha no meio não grava nada e continua pedindo onboarding", async () => {
