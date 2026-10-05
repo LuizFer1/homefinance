@@ -27,6 +27,13 @@ export function createOnboardingStore(session: Session): OnboardingStore {
     if (inFlight !== null) return inFlight;
 
     const { rows, meta } = buildOnboardingRows(draft, session.clock());
+    // O padrão tem id fixo: se ele já está aqui (veio do hub antes do primeiro
+    // uso), regravar a semente por cima desfaria a edição que chegou.
+    const { categories, paymentMethods } = session.state.value;
+    rows.categories = rows.categories?.filter((row) => categories[row.id] === undefined);
+    rows.paymentMethods = rows.paymentMethods?.filter(
+      (row) => paymentMethods[row.id] === undefined,
+    );
     // Uma transação só: falha não deixa app meio semeado, e `localUserId`
     // continua nulo, então o usuário volta ao wizard.
     inFlight = session.putRows(rows, meta).finally(() => {

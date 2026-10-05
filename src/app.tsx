@@ -206,14 +206,18 @@ export function App({
     //
     // Recorrências antes das reservas: o salário recorrente materializado
     // primeiro é o que dá saldo ao mês para o depósito mensal sair dele.
+    //
+    // A fusão dos padrões duplicados vem antes de tudo: a série materializada
+    // já nasce apontando para a categoria que vai ficar.
     void session
       .init()
+      .then(() => registry.mergeLegacyDefaults().catch(ignoreHandled))
       .then(() => recurrence.materializeDue(today).catch(ignoreHandled))
       .then(() => reserves.materializeDue(today).catch(ignoreHandled))
       .then(() => sync.init())
       .then(() => sync.sync({ auto: true }))
       .catch(ignoreHandled);
-  }, [session, recurrence, reserves, sync, today]);
+  }, [session, registry, recurrence, reserves, sync, today]);
 
   // Deep link do QR: espera a sessão e o primeiro uso, porque o pareamento
   // manda o perfil local e o wizard ainda não o criou.

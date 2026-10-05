@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
 import { compareHlc } from "../../domain/clock/hlc";
+import { DEFAULT_CATEGORIES } from "../../domain/defaults/defaults";
 import { createSession, type Session } from "../session/session";
 import { createRegistryStore, type RegistryStore } from "./store";
 
@@ -85,5 +86,34 @@ describe("createRegistryStore", () => {
     expect(session.state.value.categories[created.id]).toEqual(created);
     expect(await db.categories.get(created.id)).toEqual(created);
     expect(session.error.value).toBe("quota exceeded");
+  });
+});
+
+describe("mergeLegacyDefaults", () => {
+  const ALIMENTACAO = {
+    name: "Alimentação",
+    icon: "utensils",
+    color: "orange",
+    kind: "expense",
+  } as const;
+  const FOOD_ID = DEFAULT_CATEGORIES[0]?.id ?? "";
+
+  it("funde as cópias antigas na linha estável e grava", async () => {
+    const a = await store.addCategory(ALIMENTACAO);
+    const b = await store.addCategory({ ...ALIMENTACAO, color: "rose" });
+
+    await store.mergeLegacyDefaults();
+
+    const stable = await db.categories.get(FOOD_ID);
+    expect(stable).toMatchObject({ name: "Alimentação", color: "rose", deletedAt: null });
+    expect(await db.categories.get(a.id)).toMatchObject({ mergedInto: FOOD_ID });
+    expect((await db.categories.get(b.id))?.deletedAt).not.toBeNull();
+    expect(session.state.value.categories[FOOD_ID]?.deletedAt).toBeNull();
+  });
+
+  it("sem cópias não grava nada", async () => {
+    const spy = vi.spyOn(session, "putRowsIfCurrent");
+    await store.mergeLegacyDefaults();
+    expect(spy).not.toHaveBeenCalled();
   });
 });
