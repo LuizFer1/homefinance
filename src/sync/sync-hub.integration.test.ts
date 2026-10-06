@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { HomeFinanceDb } from "../data/db";
 import { openTestDb } from "../data/test-db.fake";
 import { compareHlc } from "../domain/clock/hlc";
+import { buildDefaultRows, DEFAULT_CATEGORIES, DEFAULT_METHODS } from "../domain/defaults/defaults";
 import type { RandomChunk } from "../domain/ids/ulid";
 import { movement, reserve } from "../domain/reserves/fixtures.fake";
 import { createRegistryStore, type RegistryStore } from "../features/registry/store";
@@ -222,5 +223,96 @@ describe("dois aparelhos, um hub", () => {
 
     expect(b.sync.revoked.value).toBe(false);
     expect(categories(b).map((c) => c.name)).toEqual(["Mercado"]);
+  });
+});
+
+describe("categorias e formas padrão", () => {
+  const ALIMENTACAO = {
+    name: "Alimentação",
+    icon: "utensils",
+    color: "orange",
+    kind: "expense",
+  } as const;
+
+  function alive(d: Device) {
+    return Object.values(d.session.state.value.categories).filter((c) => c.deletedAt === null);
+  }
+
+  it("semeadas em dois aparelhos não se repetem, e a edição vence a semente", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+
+    await a.session.putRows(buildDefaultRows());
+    const pix = DEFAULT_METHODS[1];
+    if (pix === undefined) throw new Error("lista padrão mudou");
+    await a.registry.editPaymentMethod(pix.id, { ...pix.draft, name: "Pix Nubank" });
+    await a.sync.sync();
+
+    // B semeia depois da edição de A, e mesmo assim a semente perde.
+    await b.session.putRows(buildDefaultRows());
+    await b.sync.sync();
+    await a.sync.sync();
+
+    for (const d of [a, b]) {
+      expect(alive(d)).toHaveLength(12);
+      expect(Object.values(d.session.state.value.paymentMethods)).toHaveLength(4);
+      expect(d.session.state.value.paymentMethods[pix.id]?.name).toBe("Pix Nubank");
+    }
+  });
+
+  it("cópias antigas de dois aparelhos viram uma só, com os lançamentos apontando para ela", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+    const transactions = (d: Device, categoryId: string) =>
+      d.session.mutate("transactions", (repo) =>
+        repo.create({
+          kind: "expense",
+          description: "Feira",
+          amountMinor: 1000,
+          currency: "BRL",
+          categoryId,
+          paymentMethodId: null,
+          cashbackMinor: null,
+          occurredOn: "2026-10-01",
+          userId: null,
+          recurrenceId: null,
+          occurrenceKey: null,
+        }),
+      );
+
+    // Como o primeiro uso gravava antes da correção: id aleatório por aparelho.
+    const copiaA = await a.registry.addCategory(ALIMENTACAO);
+    const copiaB = await b.registry.addCategory(ALIMENTACAO);
+    const txA = await transactions(a, copiaA.id);
+    const txB = await transactions(b, copiaB.id);
+    await a.sync.sync();
+    await b.sync.sync();
+    await a.sync.sync();
+    expect(alive(a)).toHaveLength(2);
+
+    // O que o boot e o `afterPull` fazem em cada aparelho.
+    await a.registry.mergeLegacyDefaults();
+    await a.sync.sync();
+    await b.sync.sync();
+    await b.registry.mergeLegacyDefaults();
+    await b.sync.sync();
+    await a.sync.sync();
+
+    const food = DEFAULT_CATEGORIES[0]?.id;
+    for (const d of [a, b]) {
+      expect(alive(d).map((c) => [c.id, c.name])).toEqual([[food, "Alimentação"]]);
+      expect(d.session.state.value.transactions[txA.id]?.categoryId).toBe(food);
+      expect(d.session.state.value.transactions[txB.id]?.categoryId).toBe(food);
+    }
+
+    // Converge e para: nova fusão e novo sync não mexem em nada.
+    const seq = hub.maxSeq();
+    await a.registry.mergeLegacyDefaults();
+    await b.registry.mergeLegacyDefaults();
+    await a.sync.sync();
+    await b.sync.sync();
+    expect(hub.maxSeq()).toBe(seq);
   });
 });

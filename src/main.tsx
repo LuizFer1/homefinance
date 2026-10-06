@@ -116,9 +116,13 @@ const sync = createSyncStore({
   // não gerou; o id é determinístico, então o que ele gerar converge na mesma linha.
   // O mesmo vale para o depósito mensal de uma reserva recebida — e ele vem
   // depois, porque é o salário recorrente que dá saldo ao mês.
+  //
+  // Antes de tudo, a fusão dos padrões: um aparelho ainda na versão velha
+  // manda a cópia dele de "Alimentação", e ela some na linha estável.
   afterPull: async () => {
     const today = todayISO();
-    // A falha da primeira (já em `session.error`) não pode impedir a segunda.
+    // A falha de uma (já em `session.error`) não pode impedir as seguintes.
+    await registry.mergeLegacyDefaults().catch(ignoreHandled);
     await recurrence.materializeDue(today).catch(ignoreHandled);
     await reserves.materializeDue(today);
   },

@@ -1,3 +1,4 @@
+import { planDefaultsMerge } from "../../domain/defaults/merge";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { Category, CategoryDraft } from "../../domain/model/category";
 import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
@@ -15,6 +16,12 @@ export interface RegistryStore {
   addPaymentMethod: (draft: PaymentMethodDraft) => Promise<PaymentMethod>;
   editPaymentMethod: (id: Ulid, draft: PaymentMethodDraft) => Promise<PaymentMethod>;
   removePaymentMethod: (id: Ulid) => Promise<PaymentMethod>;
+  /**
+   * Funde as cópias de categoria e forma padrão que cada aparelho semeou com id
+   * próprio antes de o padrão ter id fixo (`planDefaultsMerge`). Para o boot e
+   * o `afterPull`; sem cópias, não grava.
+   */
+  mergeLegacyDefaults: () => Promise<void>;
 }
 
 /**
@@ -31,5 +38,14 @@ export function createRegistryStore(session: Session): RegistryStore {
     editPaymentMethod: (id, draft) =>
       session.mutate("paymentMethods", (repo) => repo.update(id, draft)),
     removePaymentMethod: (id) => session.mutate("paymentMethods", (repo) => repo.remove(id)),
+    async mergeLegacyDefaults() {
+      const clock = session.clock();
+      const plan = planDefaultsMerge(session.state.value, () => clock.stamp().hlc);
+      if (plan === null) return;
+      // `IfCurrent`: o plano regrava linhas inteiras a partir do state, que pode
+      // estar velho (outra aba, sync). Divergiu, nada é gravado; o próximo boot
+      // ou pull planeja de novo sobre o estado certo.
+      await session.putRowsIfCurrent(plan.rows, plan.expected);
+    },
   };
 }

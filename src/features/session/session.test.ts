@@ -395,3 +395,39 @@ describe("createSession", () => {
     expect(session.error.value).toBe("quota exceeded");
   });
 });
+
+describe("padrão fundido", () => {
+  it("o boot e o lote publicam o lançamento apontando para a linha estável", async () => {
+    const session = createSession(testSessionDeps(db));
+    await session.init();
+    const nova = await session.mutate("categories", (repo) => repo.create(MERCADO));
+    const velha = await session.mutate("categories", (repo) => repo.create(MERCADO));
+    const lancamento = await session.mutate("transactions", (repo) =>
+      repo.create({
+        kind: "expense",
+        description: "Feira",
+        amountMinor: 1000,
+        currency: "BRL",
+        categoryId: velha.id,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn: "2026-10-01",
+        userId: null,
+        recurrenceId: null,
+        occurrenceKey: null,
+      }),
+    );
+
+    const hlc = session.clock().stamp().hlc;
+    await session.putRows({
+      categories: [{ ...velha, deletedAt: hlc, updatedAt: hlc, mergedInto: nova.id }],
+    });
+    expect(session.state.value.transactions[lancamento.id]?.categoryId).toBe(nova.id);
+
+    const reaberta = createSession(testSessionDeps(db));
+    await reaberta.init();
+    expect(reaberta.state.value.transactions[lancamento.id]?.categoryId).toBe(nova.id);
+    // O disco fica como estava: a troca é só de leitura.
+    expect((await db.transactions.get(lancamento.id))?.categoryId).toBe(velha.id);
+  });
+});

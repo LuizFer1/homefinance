@@ -221,7 +221,13 @@ export function HomePage({
         Importar fatura ou extrato
       </button>
 
-      <TransactionList items={items} state={state} today={today} onEdit={onEdit} />
+      <TransactionList
+        items={items}
+        state={state}
+        today={today}
+        currentUserId={profile?.id ?? null}
+        onEdit={onEdit}
+      />
     </>
   );
 }
