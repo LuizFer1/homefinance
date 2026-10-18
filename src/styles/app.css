@@ -249,6 +249,16 @@
     outline-offset: 2px;
   }
 
+  /*
+   * Fieldset nasce com `min-width: min-content`, e o preflight nao zera isso.
+   * Qualquer `truncate` la dentro (o SummaryChip dos passos do lancamento)
+   * vira largura minima: uma descricao longa alarga o sheet alem da tela e
+   * a pagina ganha rolagem lateral em vez de cortar o texto com reticencias.
+   */
+  fieldset {
+    min-width: 0;
+  }
+
   /* Todo valor em dinheiro usa digito de largura fixa, ou as colunas dançam. */
   .hf-num {
     font-variant-numeric: tabular-nums;
