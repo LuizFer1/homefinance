@@ -168,6 +168,11 @@ render(
     deviceNameGuess={guessDeviceName(navigator.userAgent)}
     readPdf={readPdf}
     processFile={(file) => processAvatar(file, browserAvatarDeps)}
+    onExport={async () => {
+      // Sob demanda: quem nunca exporta não baixa este código.
+      const { exportAll } = await import("./data/export");
+      await exportAll(db, Date.now(), todayISO(), { doc: document, url: URL });
+    }}
     onReset={() =>
       resetDevice({
         db,

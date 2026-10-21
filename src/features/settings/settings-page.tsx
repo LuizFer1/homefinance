@@ -1,5 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
+import type { AppState } from "../../domain/model/app-state";
 import type { User } from "../../domain/model/user";
 import { colorName, cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
@@ -13,6 +14,7 @@ import { PageHeader } from "../ui/page-header";
 import { IconTile } from "../ui/tile";
 import type { UpdateStore } from "../update/store";
 import { UpdateSection } from "../update/update-section";
+import { ExportSheet } from "./export-sheet";
 import { ResetSection } from "./reset-section";
 
 export type SettingsSection = "category" | "paymentMethod" | "budget" | "profile" | "hub";
@@ -28,6 +30,12 @@ export interface SettingsPageProps {
   update: UpdateStore;
   onOpen: (section: SettingsSection) => void;
   onReset: () => Promise<void>;
+  /** Estado para a prévia da exportação (contagens). */
+  state: AppState;
+  /** Data de hoje em 'YYYY-MM-DD'; nome do arquivo exportado. */
+  today: string;
+  /** Lê o banco e baixa o arquivo JSON; rejeita se falhar. */
+  onExport: () => Promise<void>;
   sync: SyncStore;
 }
 
@@ -86,9 +94,13 @@ export function SettingsPage({
   update,
   onOpen,
   onReset,
+  state,
+  today,
+  onExport,
   sync,
 }: SettingsPageProps) {
   const [resetting, setResetting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const hubStatus = describeHubStatus({
     link: sync.link.value,
     status: sync.status.value,
@@ -200,6 +212,17 @@ export function SettingsPage({
             </button>
           )}
         </div>
+        <button type="button" class={TAPPABLE} onClick={() => setExporting(true)}>
+          <Divider />
+          <IconTile icon="download-simple" color={null} size={36} iconSize={18} />
+          <span class="min-w-0 flex-1">
+            <span class="block text-[15px]">Exportar</span>
+            <span class="mt-0.5 block text-xs leading-snug text-fg/55">
+              Baixa uma cópia dos seus dados em arquivo, sem internet.
+            </span>
+          </span>
+          <Chevron />
+        </button>
       </Group>
 
       <Group label="Aplicativo">
@@ -228,6 +251,17 @@ export function SettingsPage({
           <Chevron />
         </button>
       </Group>
+
+      <Modal open={exporting} title="Exportar dados" onClose={() => setExporting(false)}>
+        {exporting && (
+          <ExportSheet
+            state={state}
+            today={today}
+            onExport={onExport}
+            onClose={() => setExporting(false)}
+          />
+        )}
+      </Modal>
 
       <Modal open={resetting} title="Resetar conta" onClose={() => setResetting(false)}>
         {resetting && (
