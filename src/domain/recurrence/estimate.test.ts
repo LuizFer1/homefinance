@@ -104,3 +104,24 @@ describe("estimateFor", () => {
     expect(estimateFor(bi, rows, "2027-01")).toBe(6_000);
   });
 });
+
+describe("série semanal", () => {
+  it("compara competências em data e usa as 6 mais recentes antes da atual", () => {
+    const sem: Recurrence = { ...LUZ, frequency: "weekly" };
+    const days = [
+      "2026-03-04",
+      "2026-03-11",
+      "2026-03-18",
+      "2026-03-25",
+      "2026-04-01",
+      "2026-04-08",
+    ];
+    const rows = days.map((day, i) => occurrence(day, 1_000 * (i + 1), {}, sem));
+    rows.push(occurrence("2026-02-25", 90_000, {}, sem));
+
+    // 1000..6000 -> média 3500; a de fevereiro fica fora da janela de 6.
+    expect(estimateFor(sem, rows, "2026-04-15")).toBe(3_500);
+    // As posteriores à competência não entram.
+    expect(estimateFor(sem, rows, "2026-03-11")).toBe(Math.round((90_000 + 1_000) / 2));
+  });
+});
