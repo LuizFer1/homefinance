@@ -2,9 +2,11 @@ import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import { budgetReport } from "../../domain/budgets/status";
 import { shiftMonth } from "../../domain/dates/calendar";
+import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
 import { filterByMonth, monthlyTotals } from "../../domain/projections/breakdown";
+import { dailyExpenses, expensesOn } from "../../domain/projections/daily-expenses";
 import {
   averageSurplus,
   cashbackSummary,
@@ -31,6 +33,8 @@ import { MonthPicker } from "../ui/month-picker";
 import { PageHeader } from "../ui/page-header";
 import { IconTile } from "../ui/tile";
 import { BarChart } from "./bar-chart";
+import { DaySheet } from "./day-sheet";
+import { HeatMap } from "./heat-map";
 import { PaceChart } from "./pace-chart";
 
 export interface DashboardPageProps {
@@ -44,6 +48,10 @@ export interface DashboardPageProps {
   onGoHome?: () => void;
   /** Abre o Orçamento. Sem ele, o card de metas não tem para onde levar e some. */
   onOpenBudgets?: () => void;
+  /** Perfil deste aparelho, para o "Você" nas linhas do dia. */
+  currentUserId?: Ulid | null;
+  /** Abre a edição de um lançamento da lista do dia. Sem ele, tocar na linha não faz nada. */
+  onEdit?: (record: Transaction) => void;
 }
 
 /**
@@ -125,9 +133,12 @@ export function DashboardPage({
   today,
   onGoHome,
   onOpenBudgets,
+  currentUserId = null,
+  onEdit,
 }: DashboardPageProps) {
   const current = monthOf(today);
   const [month, setMonth] = useState(current);
+  const [pickedDay, setPickedDay] = useState<string | null>(null);
 
   const header = (
     <PageHeader
@@ -151,6 +162,8 @@ export function DashboardPage({
   const previous = shiftMonth(month, -1);
   const hadPrevious = filterByMonth(items, previous).length > 0;
   const pace = spendingPace(items, month, today);
+  // Médias só sobre os dias que já aconteceram: o mesmo corte do ritmo de gastos.
+  const daily = dailyExpenses(items, month, pace.cutoff);
   const categories = categoryBreakdown(monthItems, state);
   const biggest = categories[0]?.amountMinor ?? 0;
   const bars = monthlyTotals(items, lastMonths(`${month}-01`, WINDOW));
@@ -266,6 +279,35 @@ export function DashboardPage({
               showToday={month === current}
               monthShort={monthLabelShort(month)}
             />
+          </Card>
+        )}
+
+        {summary.expenseMinor > 0 && (
+          <Card title="Saídas por dia" aside={monthLabelShort(month)}>
+            <div class="mt-3 grid grid-cols-3 gap-3">
+              <div>
+                <p class="text-xs text-fg/55">Média por dia</p>
+                <p data-testid="heat-average" class="hf-num mt-1 text-[15px] font-medium">
+                  {wholeBRL(daily.averageMinor)}
+                </p>
+              </div>
+              <div>
+                <p class="text-xs text-fg/55">Maior dia</p>
+                <p data-testid="heat-peak" class="hf-num mt-1 text-[15px] font-medium">
+                  {wholeBRL(daily.maxMinor)}
+                </p>
+                {daily.peakDay !== null && (
+                  <p class="hf-num text-xs text-fg/55">dia {daily.peakDay}</p>
+                )}
+              </div>
+              <div>
+                <p class="text-xs text-fg/55">Dias sem saída</p>
+                <p data-testid="heat-empty" class="hf-num mt-1 text-[15px] font-medium">
+                  {daily.emptyDays}
+                </p>
+              </div>
+            </div>
+            <HeatMap month={month} daily={daily} today={today} onPickDay={setPickedDay} />
           </Card>
         )}
 
@@ -448,6 +490,15 @@ export function DashboardPage({
           </section>
         )}
       </div>
+      <DaySheet
+        date={pickedDay}
+        items={pickedDay === null ? [] : expensesOn(items, pickedDay, state)}
+        state={state}
+        today={today}
+        currentUserId={currentUserId}
+        onEdit={(record) => onEdit?.(record)}
+        onClose={() => setPickedDay(null)}
+      />
     </section>
   );
 }
