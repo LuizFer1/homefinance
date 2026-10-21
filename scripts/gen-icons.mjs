@@ -65,6 +65,8 @@ const REGULAR = [
   "caret-right",
   "chart-pie-slice",
   "check",
+  "eye",
+  "eye-slash",
   "circle-dashed",
   "circle-half",
   "coins",

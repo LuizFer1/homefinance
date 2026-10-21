@@ -6,6 +6,7 @@ import { cryptoRandomChunk } from "./domain/ids/ulid";
 import { createReadPdf } from "./features/import/read-pdf";
 import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
+import { initPrivacy } from "./features/privacy/privacy";
 import { processAvatar } from "./features/profile/avatar";
 import { browserAvatarDeps } from "./features/profile/avatar-canvas";
 import { createProfileStore } from "./features/profile/store";
@@ -145,6 +146,9 @@ const readPdf = createReadPdf({
   isOnline: () => navigator.onLine,
   onStale: () => void update.check(true),
 });
+
+// Antes do primeiro render: valor nunca aparece e some.
+initPrivacy(safeStorage());
 
 render(
   <App

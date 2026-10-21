@@ -11,7 +11,6 @@ import {
 } from "../../domain/model/reserve";
 import type { ColorToken, IconKey } from "../../domain/model/tokens";
 import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
-import { formatBRL } from "../../domain/money/money";
 import { monthOf } from "../../domain/projections/periods";
 import { emergencyOf, isDuplicateEmergency, reserveBalance } from "../../domain/reserves/balances";
 import { essentialCost, findEssentialCategoryIds } from "../../domain/reserves/essential";
@@ -22,7 +21,7 @@ import { Button } from "../ui/button";
 import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
 import { HoldToDelete } from "../ui/hold-button";
 import { SheetHeader } from "../ui/modal";
-import { compactBRL, wholeBRL } from "../ui/money";
+import { brl, compactBRL, wholeBRL } from "../ui/money";
 import { Progress } from "../ui/progress";
 import { SummaryChip } from "../ui/summary-chip";
 import { Swatches } from "../ui/swatches";
@@ -558,7 +557,7 @@ export function ReserveForm({
                 <span class="block truncate text-[15px] font-medium">{trimmed}</span>
                 <span class="mt-0.5 block truncate text-xs text-fg/55">{previewMeta}</span>
               </span>
-              <span class="hf-num text-[15px] font-medium">{formatBRL(balance)}</span>
+              <span class="hf-num text-[15px] font-medium">{brl(balance)}</span>
             </div>
           </>
         )}

@@ -1,7 +1,6 @@
 import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import type { EmergencyMultiple, Reserve, ReserveKind } from "../../domain/model/reserve";
-import { formatBRL } from "../../domain/money/money";
 import { monthOf } from "../../domain/projections/periods";
 import {
   emergencyOf,
@@ -18,7 +17,7 @@ import {
 import { formatMonths, monthsCovered } from "../../domain/reserves/goals";
 import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
-import { Money, wholeBRL } from "../ui/money";
+import { brl, Money, wholeBRL } from "../ui/money";
 import { PageHeader } from "../ui/page-header";
 import { IconTile } from "../ui/tile";
 import { AccentIconBox } from "./accent-icon-box";
@@ -120,7 +119,7 @@ function PotRow({ state, reserve, today, onOpen, first }: RowProps & { first: bo
         <span class="min-w-0 flex-1">
           <span class="flex items-baseline justify-between gap-3">
             <span class="truncate text-[15px] font-medium">{reserve.name}</span>
-            <span class="hf-num text-[15px] font-medium">{formatBRL(balance)}</span>
+            <span class="hf-num text-[15px] font-medium">{brl(balance)}</span>
           </span>
           <span class="mt-0.5 block text-xs text-fg/55">
             {metaLine(state, reserve, today, balance)}
@@ -201,8 +200,7 @@ export function ReservesPage({
             <p class="mt-1 flex items-center gap-1.5 text-[13px] text-fg/65">
               <Icon name={saved > 0 ? "arrow-down" : "arrow-up"} size={14} />
               <span class="hf-num">
-                {formatBRL(Math.abs(saved))} {saved > 0 ? "guardados" : "retirados"} em{" "}
-                {monthName(month)}
+                {brl(Math.abs(saved))} {saved > 0 ? "guardados" : "retirados"} em {monthName(month)}
               </span>
             </p>
           )}

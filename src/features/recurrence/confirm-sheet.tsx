@@ -1,11 +1,11 @@
 import { useState } from "preact/hooks";
 import type { Transaction } from "../../domain/model/transaction";
 import { MAX_MINOR, maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
-import { formatBRL } from "../../domain/money/money";
 import { Button } from "../ui/button";
 import { DateButton } from "../ui/date-field";
 import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
 import { SheetHeader } from "../ui/modal";
+import { brl } from "../ui/money";
 import { periodLabel } from "./adjust-sheet";
 
 export interface ConfirmSheetProps {
@@ -35,7 +35,7 @@ export function ConfirmSheet({ record, today, onConfirm, onClose }: ConfirmSheet
 
       <p class="mt-4 text-sm text-fg/70">
         {record.description} · {periodLabel(record.occurredOn.slice(0, 7))} · estimado{" "}
-        <span class="hf-num text-fg">~{formatBRL(record.amountMinor)}</span>
+        <span class="hf-num text-fg">~{brl(record.amountMinor)}</span>
       </p>
 
       <div class="mt-5">

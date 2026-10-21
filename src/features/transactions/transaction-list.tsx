@@ -4,7 +4,6 @@ import { FREQUENCY_LABELS, type RecurrenceFrequency } from "../../domain/model/r
 import { NEUTRAL_TOKEN } from "../../domain/model/tokens";
 import { REPORT_STATE_LABELS, type Transaction } from "../../domain/model/transaction";
 import type { User } from "../../domain/model/user";
-import { formatBRL } from "../../domain/money/money";
 import { dayHeading } from "../../domain/projections/periods";
 import {
   type DayGroup,
@@ -17,7 +16,7 @@ import {
 import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 import { AuthorAvatar } from "../profile/avatar-view";
-import { signedBRL } from "../ui/money";
+import { brl, signedBRL } from "../ui/money";
 
 export interface TransactionListProps {
   /** Já filtrados e ordenados por `listTransactions`. */
@@ -45,7 +44,7 @@ function metadata(state: AppState, item: Transaction): string {
   return [
     item.categoryId !== null ? resolveCategoryName(state, item.categoryId) : null,
     item.paymentMethodId !== null ? resolvePaymentMethodName(state, item.paymentMethodId) : null,
-    item.cashbackMinor !== null ? `${formatBRL(item.cashbackMinor)} de volta` : null,
+    item.cashbackMinor !== null ? `${brl(item.cashbackMinor)} de volta` : null,
   ]
     .filter((part) => part !== null)
     .join(" · ");

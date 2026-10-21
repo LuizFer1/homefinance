@@ -1,7 +1,6 @@
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction, TransactionKind } from "../../domain/model/transaction";
 import type { User } from "../../domain/model/user";
-import { formatBRL } from "../../domain/money/money";
 import { filterByMonth } from "../../domain/projections/breakdown";
 import { estimatedTotals, pendingEstimates } from "../../domain/projections/estimates";
 import { monthLabelLong, monthOf } from "../../domain/projections/periods";
@@ -12,7 +11,7 @@ import { Avatar } from "../profile/avatar-view";
 import { periodLabel } from "../recurrence/adjust-sheet";
 import { TransactionList } from "../transactions/transaction-list";
 import { greetingFor } from "../ui/greeting";
-import { compactBRL, MINUS, Money, moneyParts } from "../ui/money";
+import { brl, compactBRL, MINUS, Money, moneyParts } from "../ui/money";
 import { QuickActions } from "../ui/quick-actions";
 
 export interface HomePageProps {
@@ -96,7 +95,7 @@ function MonthCard({
       */}
       {estimatedMinor > 0 && (
         <p data-testid="month-estimated" class="mt-2.5 text-xs text-fg/55">
-          Inclui <span class="hf-num">~{formatBRL(estimatedMinor)}</span> estimado
+          Inclui <span class="hf-num">~{brl(estimatedMinor)}</span> estimado
         </p>
       )}
       {saved !== 0 && (
@@ -134,7 +133,7 @@ function PendingEstimates({
               <span class="block truncate text-sm font-medium">{record.description}</span>
               <span class="mt-0.5 block text-xs text-fg/55">
                 {periodLabel(record.occurredOn.slice(0, 7))} ·{" "}
-                <span class="hf-num">~{formatBRL(record.amountMinor)}</span>
+                <span class="hf-num">~{brl(record.amountMinor)}</span>
               </span>
             </span>
             <button

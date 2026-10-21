@@ -21,6 +21,7 @@ import type { ReadPdf } from "./features/import/read-pdf";
 import type { ImportStore } from "./features/import/store";
 import type { OnboardingStore } from "./features/onboarding/store";
 import { OnboardingWizard } from "./features/onboarding/wizard";
+import { PrivacyToggle } from "./features/privacy/privacy-toggle";
 import { ProfilePage } from "./features/profile/profile-page";
 import type { ProfileStore } from "./features/profile/store";
 import { AdjustSheet } from "./features/recurrence/adjust-sheet";
@@ -419,6 +420,8 @@ export function App({
         data-swiping={swipe["data-swiping"]}
         style={swipe.style}
       >
+        <PrivacyToggle />
+
         {update.ready.value && <UpdateBanner onApply={update.apply} />}
 
         {session.error.value !== null && (
