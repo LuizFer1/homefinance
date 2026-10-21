@@ -44,7 +44,7 @@ export interface BudgetReport {
   unbudgeted: UnbudgetedSpend[];
 }
 
-function levelOf(spentMinor: number, limitMinor: number): BudgetLevel {
+export function levelOf(spentMinor: number, limitMinor: number): BudgetLevel {
   if (spentMinor > limitMinor) return "over";
   return spentMinor >= limitMinor * BUDGET_WARN_RATIO ? "warning" : "ok";
 }

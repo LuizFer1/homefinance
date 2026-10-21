@@ -1,6 +1,11 @@
 import { useState } from "preact/hooks";
 import { budgetOf } from "../../domain/budgets/list";
-import { type BudgetStatus, budgetReport, type UnbudgetedSpend } from "../../domain/budgets/status";
+import {
+  type BudgetStatus,
+  budgetReport,
+  levelOf,
+  type UnbudgetedSpend,
+} from "../../domain/budgets/status";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
@@ -18,7 +23,9 @@ import { Modal, SheetHeader } from "../ui/modal";
 import { brl } from "../ui/money";
 import { MonthPicker } from "../ui/month-picker";
 import { PageHeader } from "../ui/page-header";
+import { Progress } from "../ui/progress";
 import { IconTile } from "../ui/tile";
+import { useSwipeNav } from "../ui/use-swipe-nav";
 import type { BudgetsStore } from "./store";
 
 export interface BudgetsPageProps {
@@ -110,8 +117,14 @@ function UnbudgetedRow({ spend, onDefine }: { spend: UnbudgetedSpend; onDefine: 
   );
 }
 
+const STEPS = ["Categoria", "Limite", "Prévia"] as const;
+type Step = (typeof STEPS)[number];
+
 interface BudgetSheetProps {
   state: AppState;
+  items: Transaction[];
+  /** Mês em exibição na página: é contra o gasto dele que a prévia compara o limite. */
+  month: string;
   categoryId: Ulid | null;
   onSave: (categoryId: Ulid, limitMinor: number) => void;
   onRemove: (categoryId: Ulid) => void;
@@ -119,13 +132,26 @@ interface BudgetSheetProps {
 }
 
 /**
- * Cria ou edita a meta de uma categoria: escolher a categoria (só na criação) e
- * digitar o teto mensal. Excluir segue o resto do app: segurar a lixeira.
+ * Cria ou edita a meta de uma categoria em três etapas: categoria, limite e prévia.
+ * Só a prévia grava, depois de mostrar o gasto do mês contra o novo limite.
+ * Excluir segue o resto do app: segurar a lixeira.
  */
-function BudgetSheet({ state, categoryId, onSave, onRemove, onClose }: BudgetSheetProps) {
+function BudgetSheet({
+  state,
+  items,
+  month,
+  categoryId,
+  onSave,
+  onRemove,
+  onClose,
+}: BudgetSheetProps) {
   const current = categoryId === null ? null : budgetOf(state, categoryId);
   const [chosen, setChosen] = useState<Ulid | null>(categoryId);
   const [digits, setDigits] = useState(current === null ? "" : String(current.limitMinor));
+  // Com a categoria já definida (edição ou convite "Definir meta") a escolha não
+  // tem o que decidir: abre direto no limite.
+  const [step, setStep] = useState<Step>(categoryId === null ? "Categoria" : "Limite");
+  const [dir, setDir] = useState<"next" | "back">("next");
 
   const editing = current !== null;
   const taken = new Set(
@@ -135,8 +161,38 @@ function BudgetSheet({ state, categoryId, onSave, onRemove, onClose }: BudgetShe
   );
   const choices = listCategoriesFor(state, "expense").filter((category) => !taken.has(category.id));
   const limitMinor = minorOf(digits);
-  const name = chosen === null ? null : (state.categories[chosen]?.name ?? null);
-  const canSave = chosen !== null && limitMinor > 0;
+  const category = chosen === null ? null : (state.categories[chosen] ?? null);
+  const name = category?.name ?? null;
+
+  // Sem categoria não há limite a digitar; sem limite não há prévia a mostrar.
+  const maxReachable = category === null ? 0 : limitMinor > 0 ? 2 : 1;
+  const index = STEPS.indexOf(step);
+
+  function goTo(next: Step) {
+    const target = Math.min(STEPS.indexOf(next), maxReachable);
+    setDir(target < index ? "back" : "next");
+    setStep(STEPS[target] ?? step);
+  }
+
+  const swipe = useSwipeNav({ screens: STEPS, screen: step, enabled: true, onChange: goTo });
+  // O arraste do app inteiro mora no <main>, que contém este sheet: sem parar a
+  // propagação, arrastar o formulário trocaria de aba por baixo do modal.
+  const stop = (handler: (event: PointerEvent) => void) => (event: PointerEvent) => {
+    event.stopPropagation();
+    handler(event);
+  };
+
+  // O gasto não depende do limite: vem da linha da meta atual ou, sendo meta nova,
+  // da lista "sem meta". Usar o mesmo `budgetReport` da página evita discordar dela.
+  const report = budgetReport(items, state, month);
+  const spentMinor =
+    category === null
+      ? 0
+      : (report.rows.find((row) => row.category.id === category.id)?.spentMinor ??
+        report.unbudgeted.find((spend) => spend.category?.id === category.id)?.spentMinor ??
+        0);
+  const ratio = limitMinor > 0 ? spentMinor / limitMinor : 0;
+  const level = levelOf(spentMinor, limitMinor);
 
   return (
     <div class="flex flex-col">
@@ -153,63 +209,177 @@ function BudgetSheet({ state, categoryId, onSave, onRemove, onClose }: BudgetShe
         }
       />
 
-      {!editing ? (
-        <fieldset class="mt-5">
-          <legend class={LABEL}>Categoria</legend>
-          {choices.length === 0 ? (
-            <p class="mt-2 rounded-lg bg-bg px-3.5 py-3 text-sm text-fg/60">
-              Toda categoria de despesa já tem meta.
-            </p>
-          ) : (
-            <div class="mt-2 grid grid-cols-3 gap-2">
-              {choices.map((category) => (
-                <CategoryTile
-                  key={category.id}
-                  group="budget-category"
-                  name={category.name}
-                  icon={category.icon}
-                  color={category.color}
-                  checked={chosen === category.id}
-                  onSelect={() => setChosen(category.id)}
-                />
-              ))}
+      <div class="mt-5">
+        <Progress
+          steps={STEPS}
+          current={index}
+          maxReachable={maxReachable}
+          onGo={(i) => goTo(STEPS[i] ?? step)}
+        />
+      </div>
+
+      <div class="mt-4 flex items-center justify-between">
+        <h3 class={LABEL}>{step}</h3>
+        <div class="flex gap-1">
+          <button
+            type="button"
+            aria-label="Etapa anterior"
+            disabled={index === 0}
+            onClick={() => goTo(STEPS[index - 1] ?? step)}
+            class="hf-press grid size-9 place-items-center rounded-lg text-fg/75 enabled:hover:bg-fg/[0.05] disabled:opacity-30"
+          >
+            <Icon name="caret-left" size={18} />
+          </button>
+          <button
+            type="button"
+            aria-label="Próxima etapa"
+            disabled={index >= maxReachable}
+            onClick={() => goTo(STEPS[index + 1] ?? step)}
+            class="hf-press grid size-9 place-items-center rounded-lg text-fg/75 enabled:hover:bg-fg/[0.05] disabled:opacity-30"
+          >
+            <Icon name="caret-right" size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div
+        class="touch-pan-y"
+        onPointerDown={stop(swipe.onPointerDown)}
+        onPointerMove={stop(swipe.onPointerMove)}
+        onPointerUp={stop(swipe.onPointerUp)}
+        onPointerCancel={stop(swipe.onPointerCancel)}
+        data-swiping={swipe["data-swiping"]}
+        style={swipe.style}
+      >
+        <div key={step} data-dir={dir} class="hf-step mt-2">
+          {step === "Categoria" &&
+            (editing && category !== null ? (
+              // Trocar a categoria de uma meta existente seria criar outra: fica travada.
+              <fieldset>
+                <legend class="sr-only">Categoria</legend>
+                <div class="mt-2 grid grid-cols-3 gap-2">
+                  <CategoryTile
+                    group="budget-category"
+                    name={category.name}
+                    icon={category.icon}
+                    color={category.color}
+                    checked
+                    onSelect={() => undefined}
+                  />
+                </div>
+                <p class={HINT}>
+                  A categoria de uma meta não muda. Exclua e crie outra, se preciso.
+                </p>
+              </fieldset>
+            ) : (
+              <fieldset>
+                <legend class="sr-only">Categoria</legend>
+                {choices.length === 0 ? (
+                  <p class="mt-2 rounded-lg bg-bg px-3.5 py-3 text-sm text-fg/60">
+                    Toda categoria de despesa já tem meta.
+                  </p>
+                ) : (
+                  <div class="mt-2 grid grid-cols-3 gap-2">
+                    {choices.map((choice) => (
+                      <CategoryTile
+                        key={choice.id}
+                        group="budget-category"
+                        name={choice.name}
+                        icon={choice.icon}
+                        color={choice.color}
+                        checked={chosen === choice.id}
+                        onSelect={() => setChosen(choice.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </fieldset>
+            ))}
+
+          {step === "Limite" && (
+            <div>
+              <label class={LABEL} for="budget-limit">
+                Limite por mês
+              </label>
+              <input
+                id="budget-limit"
+                type="text"
+                inputMode="numeric"
+                autocomplete="off"
+                placeholder="0,00"
+                value={maskDigits(digits)}
+                onInput={(event) => setDigits(digitsOf(event.currentTarget))}
+                class={`${FIELD_SHEET} hf-num mt-2`}
+              />
+              <p class={HINT}>Vale todo mês, até você mudar ou excluir.</p>
             </div>
           )}
-        </fieldset>
-      ) : null}
 
-      <div class="mt-5">
-        <label class={LABEL} for="budget-limit">
-          Limite por mês
-        </label>
-        <input
-          id="budget-limit"
-          type="text"
-          inputMode="numeric"
-          autocomplete="off"
-          placeholder="0,00"
-          value={maskDigits(digits)}
-          onInput={(event) => setDigits(digitsOf(event.currentTarget))}
-          class={`${FIELD_SHEET} hf-num mt-2`}
-        />
-        <p class={HINT}>Vale todo mês, até você mudar ou excluir.</p>
+          {step === "Prévia" && category !== null && (
+            <div>
+              <div class="flex items-center gap-3 rounded-lg bg-bg px-3.5 py-3">
+                <IconTile icon={category.icon} color={category.color} size={30} iconSize={17} />
+                <p class="min-w-0 flex-1 truncate text-[15px] font-medium">{category.name}</p>
+                <p class="hf-num shrink-0 text-[15px] font-medium">{brl(limitMinor)}</p>
+              </div>
+
+              <div class="mt-3 rounded-lg bg-bg px-3.5 py-3">
+                <p class="hf-num text-sm text-fg/75">
+                  Gasto no mês: {brl(spentMinor)} de {brl(limitMinor)}
+                  <span class={level === "over" ? " font-medium text-expense-fg" : ""}>
+                    {" "}
+                    · {Math.floor(ratio * 100)}%
+                  </span>
+                </p>
+                <div class="mt-2.5">
+                  <BudgetBar
+                    ratio={ratio}
+                    level={level}
+                    label={`Prévia da meta de ${category.name}`}
+                  />
+                </div>
+                <p class="hf-num mt-2 text-xs text-fg/60">
+                  {level === "over"
+                    ? `Passaria ${brl(spentMinor - limitMinor)} da meta`
+                    : `Restariam ${brl(limitMinor - spentMinor)}`}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div class="sticky bottom-0 -mx-5 mt-6 flex gap-2.5 bg-surface px-5 pt-2">
-        <Button variant="secondary" onClick={onClose}>
-          Fechar
-        </Button>
         <Button
-          class="flex-1"
-          icon="check"
-          iconSide="left"
-          disabled={!canSave}
-          onClick={() => {
-            if (chosen !== null && limitMinor > 0) onSave(chosen, limitMinor);
-          }}
+          variant="secondary"
+          onClick={() => (index === 0 ? onClose() : goTo(STEPS[index - 1] ?? step))}
         >
-          Salvar meta
+          {index === 0 ? "Fechar" : "Voltar"}
         </Button>
+        {index < 2 ? (
+          <Button
+            key="avancar"
+            icon="arrow-right"
+            class="flex-1"
+            disabled={index >= maxReachable}
+            onClick={() => goTo(STEPS[index + 1] ?? step)}
+          >
+            Continuar
+          </Button>
+        ) : (
+          <Button
+            key="salvar"
+            icon="check"
+            iconSide="left"
+            class="flex-1"
+            disabled={chosen === null || limitMinor <= 0}
+            onClick={() => {
+              if (chosen !== null && limitMinor > 0) onSave(chosen, limitMinor);
+            }}
+          >
+            Salvar meta
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -315,6 +485,8 @@ export function BudgetsPage({ state, items, today, store, onBack }: BudgetsPageP
             // A `key` remonta o formulário ao trocar de categoria: o campo parte do valor dela.
             key={target.categoryId ?? "new"}
             state={state}
+            items={items}
+            month={month}
             categoryId={target.categoryId}
             onSave={(categoryId, limitMinor) => {
               closeSheet();

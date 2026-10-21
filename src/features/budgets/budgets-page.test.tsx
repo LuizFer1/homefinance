@@ -121,37 +121,89 @@ describe("BudgetsPage", () => {
     const store = open();
     fireEvent.click(screen.getByRole("button", { name: "Definir meta para Pet" }));
 
+    // A categoria já veio do convite: abre direto no limite, com a etapa 1 acessível.
+    fireEvent.click(screen.getByRole("button", { name: "Etapa anterior" }));
     expect((screen.getByRole("radio", { name: "Pet" }) as HTMLInputElement).checked).toBe(true);
     // Quem já tem meta não é oferecido de novo.
     expect(screen.queryByRole("radio", { name: "Alimentação" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Próxima etapa" }));
 
     fireEvent.input(screen.getByLabelText("Limite por mês"), { target: { value: "15000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar meta" }));
 
     expect(store.set).toHaveBeenCalledWith("PET", 15_000);
   });
 
-  it("cria uma meta nova escolhendo a categoria", () => {
+  it("cria uma meta nova passando pelas três etapas", () => {
     const store = open();
     fireEvent.click(screen.getByRole("button", { name: "Meta" }));
 
-    expect(
-      (screen.getByRole("button", { name: "Salvar meta" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    // Sem categoria não dá para avançar, e salvar só existe na prévia.
+    expect((screen.getByRole("button", { name: "Continuar" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.queryByRole("button", { name: "Salvar meta" })).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "Pet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+
+    // Sem limite também não avança.
+    expect((screen.getByRole("button", { name: "Continuar" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     fireEvent.input(screen.getByLabelText("Limite por mês"), { target: { value: "20000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+
+    expect(screen.queryByLabelText("Limite por mês")).toBeNull();
+    expect(store.set).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Salvar meta" }));
 
     expect(store.set).toHaveBeenCalledWith("PET", 20_000);
   });
 
-  it("edita a meta existente já com o valor atual no campo", () => {
+  it("a prévia compara o gasto do mês com o novo limite", () => {
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Definir meta para Pet" }));
+    // Pet gastou R$ 120,00 em setembro: com limite de R$ 100,00 estoura.
+    fireEvent.input(screen.getByLabelText("Limite por mês"), { target: { value: "10000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+
+    const preview = screen.getByRole("progressbar", { name: "Prévia da meta de Pet" });
+    expect(preview.getAttribute("aria-valuetext")).toBe("Meta estourada: 120% usado");
+    const text = preview.closest("div.rounded-lg")?.textContent ?? "";
+    expect(text).toContain("120,00");
+    expect(text).toContain("100,00");
+    expect(text).toContain("120%");
+    expect(text).toContain("Passaria");
+  });
+
+  it("a prévia respeita ocultar valores", () => {
+    hideValues.value = true;
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Definir meta para Pet" }));
+    fireEvent.input(screen.getByLabelText("Limite por mês"), { target: { value: "10000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+
+    const preview = screen.getByRole("progressbar", { name: "Prévia da meta de Pet" });
+    const text = preview.closest("div.rounded-lg")?.textContent ?? "";
+    expect(text).not.toContain("120,00");
+    expect(text).not.toContain("100,00");
+  });
+
+  it("edita a meta existente já com o valor atual e a categoria travada", () => {
     const store = open();
     fireEvent.click(screen.getByRole("button", { name: "Editar meta de Alimentação" }));
 
     const field = screen.getByLabelText("Limite por mês") as HTMLInputElement;
     expect(field.value).toBe("1.000,00");
-    fireEvent.input(field, { target: { value: "120000" } });
+
+    // A categoria aparece, mas só ela: não dá para trocar.
+    fireEvent.click(screen.getByRole("button", { name: "Etapa anterior" }));
+    expect(screen.getAllByRole("radio")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Próxima etapa" }));
+
+    fireEvent.input(screen.getByLabelText("Limite por mês"), { target: { value: "120000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar meta" }));
 
     expect(store.set).toHaveBeenCalledWith("FOOD", 120_000);
@@ -159,7 +211,7 @@ describe("BudgetsPage", () => {
 
   it("o campo do limite recusa letras", () => {
     open();
-    fireEvent.click(screen.getByRole("button", { name: "Meta" }));
+    fireEvent.click(screen.getByRole("button", { name: "Definir meta para Pet" }));
     const field = screen.getByLabelText("Limite por mês") as HTMLInputElement;
     fireEvent.input(field, { target: { value: "12ab" } });
     expect(field.value).toBe("0,12");
