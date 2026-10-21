@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { consumeHelpLink, helpLink, parseHelpLink } from "./deep-link";
+import { PHASE_3_IDS } from "./phase-3.fake";
 
 describe("link da ajuda", () => {
   it("ida e volta", () => {
     expect(parseHelpLink(helpLink("sync-pair"))).toBe("sync-pair");
+  });
+
+  it("cada pergunta nova da Fase 3 tem link que abre", () => {
+    for (const id of PHASE_3_IDS) expect(parseHelpLink(helpLink(id))).toBe(id);
   });
 
   it("id desconhecido ou outro fragmento não é link de pergunta", () => {

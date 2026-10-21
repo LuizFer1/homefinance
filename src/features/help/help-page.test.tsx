@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { pendingHelp } from "./deep-link";
 import { HelpPage } from "./help-page";
+import { PHASE_3_IDS } from "./phase-3.fake";
 
 afterEach(() => {
   cleanup();
@@ -38,6 +39,17 @@ describe("HelpPage", () => {
     const question = screen.getByRole("button", { name: /Como pareio/ });
     expect(question.getAttribute("aria-expanded")).toBe("true");
     expect(pendingHelp.value).toBeNull();
+  });
+
+  it("o link #ajuda abre cada pergunta nova da Fase 3", () => {
+    for (const id of PHASE_3_IDS) {
+      pendingHelp.value = id;
+      const { container, unmount } = render(<HelpPage onBack={() => {}} />);
+      const open = container.querySelectorAll('button[aria-expanded="true"]');
+      expect(open.length, id).toBe(1);
+      expect(pendingHelp.value).toBeNull();
+      unmount();
+    }
   });
 
   it("copia o link da pergunta", async () => {
