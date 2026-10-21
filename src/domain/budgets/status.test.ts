@@ -60,6 +60,25 @@ describe("budgetReport", () => {
     });
   });
 
+  it("expõe os lançamentos da soma, do mais recente ao mais antigo, sem transferência nem outro mês", () => {
+    const { rows } = budgetReport(
+      [
+        tx("a", "expense", 30_000, "2026-09-02", "FOOD"),
+        tx("b", "expense", 25_000, "2026-09-09", "FOOD"),
+        tx("t", "expense", 90_000, "2026-09-05", "FOOD", { reportState: "transfer" }),
+        tx("o", "expense", 1_000, "2026-08-30", "FOOD"),
+        tx("x", "expense", 1_000, "2026-09-03", "FUN"),
+        tx("i", "income", 1_000, "2026-09-03", "FOOD"),
+      ],
+      state,
+      MONTH,
+    );
+    const food = rows.find((row) => row.category.id === "FOOD");
+    expect(food?.items.map((item) => item.id)).toEqual(["b", "a"]);
+    expect(food?.items.reduce((sum, item) => sum + item.amountMinor, 0)).toBe(food?.spentMinor);
+    expect(food?.items).toHaveLength(food?.count ?? -1);
+  });
+
   it("meta sem gasto aparece zerada", () => {
     const { rows } = budgetReport([], state, MONTH);
     expect(rows).toHaveLength(3);
