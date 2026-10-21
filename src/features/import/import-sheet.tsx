@@ -18,8 +18,10 @@ import {
 } from "../../domain/import/plan";
 import { buildCategoryIndex, suggestCategory } from "../../domain/import/suggest-category";
 import type { AppState } from "../../domain/model/app-state";
+import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
 import { pendingEstimates } from "../../domain/projections/estimates";
 import { listCategoriesFor, listPaymentMethods } from "../../domain/projections/selectors";
+import { NewCardButton, QuickCardSheet } from "../cards/quick-card-sheet";
 import { Icon } from "../icons/icon";
 import { periodLabel } from "../recurrence/adjust-sheet";
 import { describeError } from "../session/session";
@@ -36,6 +38,8 @@ export interface ImportSheetProps {
   /** 'YYYY-MM-DD', injetado como no resto do app. */
   today: string;
   readPdf: ReadPdf;
+  /** Grava um cartão novo; presente, a escolha do cartão oferece "Novo cartão de crédito". */
+  onCreateCard?: (draft: PaymentMethodDraft) => Promise<PaymentMethod>;
   onImport: (plan: ReturnType<typeof planImport>) => Promise<ImportResult>;
   onClose: () => void;
 }
@@ -95,7 +99,14 @@ function readError(cause: unknown): string {
  * A revisão não é opcional. O parser é genérico e erra; é a revisão que
  * transforma "o que o parser achou" em "o que o usuário confirmou".
  */
-export function ImportSheet({ state, today, readPdf, onImport, onClose }: ImportSheetProps) {
+export function ImportSheet({
+  state,
+  today,
+  readPdf,
+  onCreateCard,
+  onImport,
+  onClose,
+}: ImportSheetProps) {
   const methods = listPaymentMethods(state);
   // Cada cartão é um cadastro: completos primeiro, os por completar depois (ainda
   // servem para importar, mas a fatura deles não tem ciclo).
@@ -110,6 +121,8 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
   const [rows, setRows] = useState<Row[]>([]);
   const [skipped, setSkipped] = useState<SkippedLine[]>([]);
   const [saving, setSaving] = useState(false);
+  // O sheet do cartão ocupa o lugar da escolha: o estado da importação fica intacto.
+  const [creatingCard, setCreatingCard] = useState(false);
 
   const categoryIndex = useMemo(() => buildCategoryIndex(state), [state]);
   const estimates = pendingEstimates(state);
@@ -496,6 +509,19 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
 
   const offered = doc === "card" ? cards : methods;
   const selectedCard = cards.find((card) => card.id === methodId) ?? null;
+  if (creatingCard && onCreateCard !== undefined) {
+    return (
+      <QuickCardSheet
+        existingNames={methods.map((method) => method.name)}
+        onCreate={onCreateCard}
+        onCreated={(card) => {
+          setMethodId(card.id);
+          setCreatingCard(false);
+        }}
+        onCancel={() => setCreatingCard(false)}
+      />
+    );
+  }
   return (
     <div class="mt-2 space-y-5">
       <Segmented
@@ -541,6 +567,9 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
         )}
         {doc === "card" && selectedCard !== null && cardDetail(selectedCard) !== null && (
           <p class={HINT}>{cardDetail(selectedCard)}</p>
+        )}
+        {doc === "card" && onCreateCard !== undefined && (
+          <NewCardButton class="mt-3" onClick={() => setCreatingCard(true)} />
         )}
       </div>
 

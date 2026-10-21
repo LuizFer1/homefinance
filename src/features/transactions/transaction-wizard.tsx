@@ -1,9 +1,9 @@
 import { useState } from "preact/hooks";
-import { cardDetail } from "../../domain/cards/card";
+import { cardDetail, isCreditCard } from "../../domain/cards/card";
 import type { Ulid } from "../../domain/ids/ulid";
 import { type CategoryIndex, suggestCategory } from "../../domain/import/suggest-category";
 import type { Category } from "../../domain/model/category";
-import type { PaymentMethod } from "../../domain/model/payment-method";
+import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
 import {
   FREQUENCY_LABELS,
   OFFERED_FREQUENCIES,
@@ -26,6 +26,7 @@ import { dayMonth } from "../../domain/projections/periods";
 import { isDayStep } from "../../domain/recurrence/schedule";
 import { nextOccurrences } from "../../domain/recurrence/upcoming";
 import { offersCashback } from "../../domain/transactions/cashback";
+import { NewCardButton, QuickCardSheet } from "../cards/quick-card-sheet";
 import { Icon } from "../icons/icon";
 import { MiniAvatar } from "../profile/avatar-view";
 import { Button } from "../ui/button";
@@ -67,6 +68,11 @@ export interface TransactionWizardProps {
    * Sem ele não há sugestão: o formulário funciona igual.
    */
   categoryIndex?: CategoryIndex;
+  /**
+   * Grava um cartão de crédito novo (a escrita do cadastro). Presente, o passo de
+   * pagamento oferece "Novo cartão de crédito" e seleciona o cartão salvo.
+   */
+  onCreateCard?: (draft: PaymentMethodDraft) => Promise<PaymentMethod>;
 }
 
 /**
@@ -126,8 +132,12 @@ export function TransactionWizard({
   onAdjustSeries,
   onMakeVariable,
   categoryIndex,
+  onCreateCard,
 }: TransactionWizardProps) {
   const [step, setStep] = useState(0);
+  // Sheet do cartão no lugar do formulário (não por cima): o rascunho do lançamento
+  // vive nos estados deste componente e sobrevive a abrir e fechar o cadastro.
+  const [creatingCard, setCreatingCard] = useState(false);
   const [dir, setDir] = useState<"next" | "back">("next");
   const [description, setDescription] = useState(editing?.description ?? "");
   // Dígitos, não texto formatado: a máscara é quem decide como o número aparece.
@@ -335,6 +345,20 @@ export function TransactionWizard({
     />
   );
   const amountTone = kind === "income" ? "text-income-fg" : "";
+
+  if (creatingCard && onCreateCard !== undefined) {
+    return (
+      <QuickCardSheet
+        existingNames={paymentMethods.map((method) => method.name)}
+        onCreate={onCreateCard}
+        onCreated={(card) => {
+          setPaymentMethodId(card.id);
+          setCreatingCard(false);
+        }}
+        onCancel={() => setCreatingCard(false)}
+      />
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} class="flex flex-col">
@@ -809,12 +833,16 @@ export function TransactionWizard({
                       name={method.name}
                       icon={method.icon}
                       color={method.color}
+                      credit={isCreditCard(method)}
                       detail={cardDetail(method)}
                       checked={paymentMethodId === method.id}
                       onSelect={() => setPaymentMethodId(method.id)}
                     />
                   ))}
                 </div>
+              )}
+              {onCreateCard !== undefined && (
+                <NewCardButton class="mt-3" onClick={() => setCreatingCard(true)} />
               )}
             </fieldset>
 

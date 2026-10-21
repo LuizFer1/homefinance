@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
+import { useState } from "preact/hooks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Category } from "../../domain/model/category";
-import type { PaymentMethod } from "../../domain/model/payment-method";
+import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
 import { ALIVE } from "../../domain/model/row.fake";
 import { TransactionWizard } from "./transaction-wizard";
 
@@ -98,5 +99,93 @@ describe("wizard de lançamento: cartões", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Pix" }));
 
     expect(screen.queryByLabelText(/cashback/i)).toBeNull();
+  });
+});
+
+describe("wizard de lançamento: cartão identificado só pela cor", () => {
+  it("cartão de crédito aparece com marcador de cor e sem tile de ícone", () => {
+    montar();
+    ateOPagamento();
+
+    const nubank = screen.getByRole("radio", { name: /^Nubank/ }).closest("label") as HTMLElement;
+    expect(nubank.querySelector("[data-testid='card-mark']")).not.toBeNull();
+    expect(nubank.querySelector("[data-testid='icon-credit-card']")).toBeNull();
+
+    // As outras formas seguem com o tile de ícone.
+    const pix = screen.getByRole("radio", { name: "Pix" }).closest("label") as HTMLElement;
+    expect(pix.querySelector("[data-testid='card-mark']")).toBeNull();
+  });
+});
+
+describe("wizard de lançamento: cadastro rápido de cartão", () => {
+  function comCadastro(onCreate: (draft: PaymentMethodDraft) => Promise<PaymentMethod>) {
+    const onSubmit = vi.fn();
+    function Host() {
+      const [lista, setLista] = useState<PaymentMethod[]>([CARTOES[3] as PaymentMethod]);
+      return (
+        <TransactionWizard
+          editing={null}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          today="2026-08-08"
+          categories={CATEGORIAS}
+          paymentMethods={lista}
+          onCreateCard={async (draft) => {
+            const criado = await onCreate(draft);
+            setLista((atual) => [...atual, criado]);
+            return criado;
+          }}
+        />
+      );
+    }
+    render(<Host />);
+    return { onSubmit };
+  }
+
+  const criar = async (draft: PaymentMethodDraft) =>
+    ({ id: "pm-novo", ...draft, ...ALIVE }) as PaymentMethod;
+
+  function cadastrar() {
+    fireEvent.click(screen.getByRole("button", { name: "Novo cartão de crédito" }));
+    fireEvent.input(screen.getByLabelText("Banco"), { target: { value: "Inter" } });
+    fireEvent.input(screen.getByLabelText("Fechamento"), { target: { value: "10" } });
+    fireEvent.input(screen.getByLabelText("Vencimento"), { target: { value: "20" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar cartão" }));
+  }
+
+  it("salva o cartão e já o deixa selecionado, com o rascunho do lançamento intacto", async () => {
+    const onCreate = vi.fn(criar);
+    const { onSubmit } = comCadastro(onCreate);
+    ateOPagamento();
+
+    cadastrar();
+
+    await waitFor(() =>
+      expect((screen.getByRole("radio", { name: /^Inter/ }) as HTMLInputElement).checked).toBe(
+        true,
+      ),
+    );
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /adicionar|salvar/i }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentMethodId: "pm-novo", description: "Padaria" }),
+      null,
+    );
+  });
+
+  it("cancelar volta ao pagamento sem criar nada", () => {
+    const onCreate = vi.fn(criar);
+    comCadastro(onCreate);
+    ateOPagamento();
+
+    fireEvent.click(screen.getByRole("button", { name: "Novo cartão de crédito" }));
+    fireEvent.input(screen.getByLabelText("Banco"), { target: { value: "Inter" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
+
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(screen.getByRole("radio", { name: "Pix" })).toBeDefined();
+    expect(screen.queryByRole("radio", { name: /^Inter/ })).toBeNull();
   });
 });

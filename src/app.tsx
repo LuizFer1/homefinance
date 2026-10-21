@@ -661,6 +661,7 @@ export function App({
             state={state}
             today={today}
             readPdf={readPdf}
+            onCreateCard={registry.addPaymentMethod}
             onImport={(plan) => importer.commit(plan, today)}
             onClose={() => setImporting(false)}
           />
@@ -689,6 +690,7 @@ export function App({
             initialKind={composing ?? undefined}
             categories={categories}
             paymentMethods={pickableMethods}
+            onCreateCard={registry.addPaymentMethod}
             author={
               editingAuthor === null
                 ? null

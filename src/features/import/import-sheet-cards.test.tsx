@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/pr
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TextItem } from "../../domain/import/lines";
 import { type AppState, EMPTY_APP_STATE } from "../../domain/model/app-state";
-import type { PaymentMethod } from "../../domain/model/payment-method";
+import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
 import { ALIVE } from "../../domain/model/row.fake";
 import { ImportSheet } from "./import-sheet";
 
@@ -102,5 +102,38 @@ describe("importação de PDF com vários cartões", () => {
     };
     expect(plan.transactions.length).toBeGreaterThan(0);
     expect(plan.transactions.every((t) => t.draft.paymentMethodId === "CARTAO-1")).toBe(true);
+  });
+});
+
+describe("importação de PDF: cadastro rápido de cartão", () => {
+  it("sem cartão, oferece o cadastro e deixa o novo cartão escolhido", async () => {
+    const vazio: AppState = { ...EMPTY_APP_STATE, paymentMethods: {} };
+    const onCreateCard = vi.fn(
+      async (draft: PaymentMethodDraft) => ({ id: "NOVO-1", ...draft, ...ALIVE }) as PaymentMethod,
+    );
+    render(
+      <ImportSheet
+        state={vazio}
+        today="2026-10-01"
+        readPdf={vi.fn()}
+        onCreateCard={onCreateCard}
+        onImport={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect((screen.getByLabelText("Escolher PDF") as HTMLInputElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Novo cartão de crédito" }));
+    fireEvent.input(screen.getByLabelText("Banco"), { target: { value: "Inter" } });
+    fireEvent.input(screen.getByLabelText("Fechamento"), { target: { value: "10" } });
+    fireEvent.input(screen.getByLabelText("Vencimento"), { target: { value: "20" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar cartão" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Escolher PDF")).toBeDefined());
+    expect(onCreateCard).toHaveBeenCalledTimes(1);
+    // Com o cartão escolhido, o seletor de PDF deixa de estar travado.
+    expect((screen.getByLabelText("Escolher PDF") as HTMLInputElement).disabled).toBe(false);
   });
 });
