@@ -297,7 +297,7 @@ describe("categorias e formas padrão", () => {
 
     for (const d of [a, b]) {
       expect(alive(d)).toHaveLength(12);
-      expect(Object.values(d.session.state.value.paymentMethods)).toHaveLength(4);
+      expect(Object.values(d.session.state.value.paymentMethods)).toHaveLength(3);
       expect(d.session.state.value.paymentMethods[pix.id]?.name).toBe("Pix Nubank");
     }
   });

@@ -4,7 +4,12 @@ import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
 import type { Category } from "../model/category";
 import type { PaymentMethod } from "../model/payment-method";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
-import { buildDefaultRows, DEFAULT_CATEGORIES, DEFAULT_METHODS } from "./defaults";
+import {
+  buildDefaultRows,
+  DEFAULT_CATEGORIES,
+  DEFAULT_METHODS,
+  LEGACY_CREDIT_METHOD_ID,
+} from "./defaults";
 import { planDefaultsMerge } from "./merge";
 
 const FOOD = DEFAULT_CATEGORIES[0];
@@ -123,5 +128,19 @@ describe("planDefaultsMerge", () => {
       >((acc, row) => [...acc.filter((r) => r.id !== row.id), row], []),
     );
     expect(planDefaultsMerge(after, stamper())).toBeNull();
+  });
+});
+
+describe("cartão de crédito genérico (já não semeado)", () => {
+  it("a cópia de um aparelho antigo ainda é fundida no id estável", () => {
+    const credit = DEFAULT_METHODS.find((entry) => entry.id === LEGACY_CREDIT_METHOD_ID);
+    if (credit === undefined) throw new Error("o genérico saiu da lista de fusão");
+    const copy: PaymentMethod = { ...ALIVE, ...(credit.draft as PaymentMethod), id: "COPIA" };
+
+    const plan = planDefaultsMerge(state([], [copy]), stamper());
+
+    const rows = byId(plan?.rows.paymentMethods ?? []);
+    expect(rows[LEGACY_CREDIT_METHOD_ID]).toMatchObject({ deletedAt: null, kind: "credit" });
+    expect(rows.COPIA).toMatchObject({ mergedInto: LEGACY_CREDIT_METHOD_ID });
   });
 });
