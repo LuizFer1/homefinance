@@ -1,5 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import { listBudgets } from "./domain/budgets/list";
 import type { Ulid } from "./domain/ids/ulid";
 import { isAlive } from "./domain/model/base";
 import type { RecurrenceRule } from "./domain/model/recurrence";
@@ -12,6 +13,8 @@ import {
   listTransactions,
 } from "./domain/projections/selectors";
 import { BrandMark } from "./features/brand/brand-mark";
+import { BudgetsPage } from "./features/budgets/budgets-page";
+import type { BudgetsStore } from "./features/budgets/store";
 import { cssVarForToken } from "./features/colors/color-token";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
 import { HomePage } from "./features/home/home-page";
@@ -60,6 +63,7 @@ export interface AppProps {
   profileStore: ProfileStore;
   recurrence: RecurrenceStore;
   reserves: ReservesStore;
+  budgets: BudgetsStore;
   onboarding: OnboardingStore;
   importer: ImportStore;
   /** Versão nova do app esperando a pessoa aceitar. */
@@ -144,6 +148,7 @@ export function App({
   profileStore,
   recurrence,
   reserves,
+  budgets,
   onboarding,
   importer,
   update,
@@ -464,6 +469,7 @@ export function App({
             <SettingsPage
               categoryCount={categories.length}
               paymentMethodCount={paymentMethods.length}
+              budgetCount={listBudgets(state).length}
               profile={profile}
               theme={theme}
               update={update}
@@ -487,6 +493,14 @@ export function App({
                 }}
               />
             ) : null
+          ) : section === "budget" ? (
+            <BudgetsPage
+              state={state}
+              items={items}
+              today={today}
+              store={budgets}
+              onBack={() => setSection(null)}
+            />
           ) : section === "hub" ? (
             <HubPage
               sync={sync}
