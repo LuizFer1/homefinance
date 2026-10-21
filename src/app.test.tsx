@@ -103,6 +103,8 @@ function buildStores(db: HomeFinanceDb) {
     processFile: () => Promise.resolve("data:image/webp;base64,AAAA"),
     onReset: async () => {},
     onExport: async () => {},
+    onImportPrepare: async () => ({ ok: false as const, message: "sem arquivo" }),
+    onImportApply: async () => {},
   };
 }
 
@@ -982,6 +984,17 @@ describe("perfil e reset nas configuracoes", () => {
     fireEvent.click(within(sheet).getByRole("button", { name: /baixar arquivo/i }));
 
     await waitFor(() => expect(onExport).toHaveBeenCalledTimes(1));
+  });
+
+  it("abre a importacao em Seus dados, em duas etapas, sem gravar nada", async () => {
+    await emAjustes();
+
+    fireEvent.click(screen.getByRole("button", { name: /^importar/i }));
+    const sheet = screen.getByRole("dialog", { name: "Importar dados" });
+
+    expect(within(sheet).getByLabelText("Escolher arquivo")).toBeDefined();
+    expect(within(sheet).getByRole("list", { name: "Etapas" }).children).toHaveLength(2);
+    expect(within(sheet).queryByRole("button", { name: /^importar \d+/i })).toBeNull();
   });
 
   it("oferece resetar a conta atras da digitacao exata", async () => {

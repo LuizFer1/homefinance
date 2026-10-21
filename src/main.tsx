@@ -185,6 +185,15 @@ render(
       const { exportAll } = await import("./data/export");
       await exportAll(db, Date.now(), todayISO(), { doc: document, url: URL });
     }}
+    onImportPrepare={async (file) => {
+      // Sob demanda, como a exportação: quem nunca importa não baixa este código.
+      const { prepareImport } = await import("./data/import");
+      return prepareImport(db, file);
+    }}
+    onImportApply={async (plan) => {
+      const { applyImport } = await import("./data/import");
+      await applyImport(session, plan);
+    }}
     onReset={() =>
       resetDevice({
         db,

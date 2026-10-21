@@ -1,5 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
+import type { PrepareResult } from "../../data/import";
+import type { ImportPlan } from "../../domain/export/import-data";
 import type { AppState } from "../../domain/model/app-state";
 import type { User } from "../../domain/model/user";
 import { colorName, cssVarForToken } from "../colors/color-token";
@@ -15,6 +17,7 @@ import { IconTile } from "../ui/tile";
 import type { UpdateStore } from "../update/store";
 import { UpdateSection } from "../update/update-section";
 import { ExportSheet } from "./export-sheet";
+import { ImportSheet } from "./import-sheet";
 import { ResetSection } from "./reset-section";
 
 export type SettingsSection =
@@ -45,6 +48,8 @@ export interface SettingsPageProps {
   today: string;
   /** Lê o banco e baixa o arquivo JSON; rejeita se falhar. */
   onExport: () => Promise<void>;
+  onImportPrepare: (file: File) => Promise<PrepareResult>;
+  onImportApply: (plan: ImportPlan) => Promise<void>;
   sync: SyncStore;
 }
 
@@ -107,10 +112,13 @@ export function SettingsPage({
   state,
   today,
   onExport,
+  onImportPrepare,
+  onImportApply,
   sync,
 }: SettingsPageProps) {
   const [resetting, setResetting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const hubStatus = describeHubStatus({
     link: sync.link.value,
     status: sync.status.value,
@@ -240,6 +248,17 @@ export function SettingsPage({
           </span>
           <Chevron />
         </button>
+        <button type="button" class={TAPPABLE} onClick={() => setImporting(true)}>
+          <Divider />
+          <IconTile icon="upload-simple" color={null} size={36} iconSize={18} />
+          <span class="min-w-0 flex-1">
+            <span class="block text-[15px]">Importar</span>
+            <span class="mt-0.5 block text-xs leading-snug text-fg/55">
+              Restaura um arquivo exportado, sem apagar o que já está aqui.
+            </span>
+          </span>
+          <Chevron />
+        </button>
       </Group>
 
       <Group label="Aplicativo">
@@ -289,6 +308,16 @@ export function SettingsPage({
             today={today}
             onExport={onExport}
             onClose={() => setExporting(false)}
+          />
+        )}
+      </Modal>
+
+      <Modal open={importing} title="Importar dados" onClose={() => setImporting(false)}>
+        {importing && (
+          <ImportSheet
+            onPrepare={onImportPrepare}
+            onApply={onImportApply}
+            onClose={() => setImporting(false)}
           />
         )}
       </Modal>
