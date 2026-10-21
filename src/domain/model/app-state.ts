@@ -1,4 +1,5 @@
 import type { Ulid } from "../ids/ulid";
+import type { Budget } from "./budget";
 import type { Category } from "./category";
 import type { PaymentMethod } from "./payment-method";
 import type { Recurrence } from "./recurrence";
@@ -17,6 +18,7 @@ export interface RowMap {
   recurrenceAdjustments: RecurrenceAdjustment;
   reserves: Reserve;
   reserveMovements: ReserveMovement;
+  budgets: Budget;
 }
 
 export type TableName = keyof RowMap;
@@ -42,6 +44,7 @@ const TABLES: Record<TableName, true> = {
   recurrenceAdjustments: true,
   reserves: true,
   reserveMovements: true,
+  budgets: true,
 };
 
 export const TABLE_NAMES: readonly TableName[] = Object.keys(TABLES) as TableName[];
@@ -61,4 +64,5 @@ export const EMPTY_APP_STATE: AppState = Object.freeze({
   recurrenceAdjustments: Object.freeze({}),
   reserves: Object.freeze({}),
   reserveMovements: Object.freeze({}),
+  budgets: Object.freeze({}),
 }) as AppState;

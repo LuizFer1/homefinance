@@ -216,6 +216,7 @@ export function createSession(deps: SessionDeps): Session {
       recurrenceAdjustments,
       reserves,
       reserveMovements,
+      budgets,
     ] = await deps.db.transaction("r", tables, () =>
       Promise.all([
         deps.db.users.toArray(),
@@ -226,6 +227,7 @@ export function createSession(deps: SessionDeps): Session {
         deps.db.recurrenceAdjustments.toArray(),
         deps.db.reserves.toArray(),
         deps.db.reserveMovements.toArray(),
+        deps.db.budgets.toArray(),
       ]),
     );
     return resolveMerged({
@@ -237,6 +239,7 @@ export function createSession(deps: SessionDeps): Session {
       recurrenceAdjustments: toRecord(recurrenceAdjustments),
       reserves: toRecord(reserves),
       reserveMovements: toRecord(reserveMovements),
+      budgets: toRecord(budgets),
     });
   }
 
