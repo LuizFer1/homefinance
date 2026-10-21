@@ -96,6 +96,7 @@ function buildStores(db: HomeFinanceDb) {
     readPdf: () => Promise.resolve([]),
     processFile: () => Promise.resolve("data:image/webp;base64,AAAA"),
     onReset: async () => {},
+    onExport: async () => {},
   };
 }
 
@@ -880,12 +881,16 @@ describe("primeiro uso", () => {
 });
 
 describe("perfil e reset nas configuracoes", () => {
-  async function emAjustes(onReset: () => Promise<void> = async () => {}) {
+  async function emAjustes(
+    onReset: () => Promise<void> = async () => {},
+    onExport: () => Promise<void> = async () => {},
+  ) {
     const db = await cadastrado();
     render(
       <App
         {...buildStores(db)}
         onReset={onReset}
+        onExport={onExport}
         today="2026-08-08"
         hour={9}
         theme={fakeTheme()}
@@ -897,6 +902,21 @@ describe("perfil e reset nas configuracoes", () => {
     fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
     return db;
   }
+
+  it("exporta os dados em duas etapas: aviso e depois o download", async () => {
+    const onExport = vi.fn(async () => {});
+    await emAjustes(async () => {}, onExport);
+
+    fireEvent.click(screen.getByRole("button", { name: /^exportar/i }));
+    const sheet = screen.getByRole("dialog", { name: "Exportar dados" });
+    expect(onExport).not.toHaveBeenCalled();
+
+    fireEvent.click(within(sheet).getByRole("button", { name: /entendi, continuar/i }));
+    expect(within(sheet).getByText("homefinance-2026-08-08.json")).toBeDefined();
+    fireEvent.click(within(sheet).getByRole("button", { name: /baixar arquivo/i }));
+
+    await waitFor(() => expect(onExport).toHaveBeenCalledTimes(1));
+  });
 
   it("oferece resetar a conta atras da digitacao exata", async () => {
     const onReset = vi.fn();

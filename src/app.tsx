@@ -77,6 +77,8 @@ export interface AppProps {
   processFile: (file: Blob) => Promise<string>;
   /** Rejeita se o banco não apagou; a tela de reset mostra o motivo. */
   onReset: () => Promise<void>;
+  /** Lê o banco e baixa o JSON de exportação; rejeita se falhar. */
+  onExport: () => Promise<void>;
   /** Data de hoje em 'YYYY-MM-DD'. Vem de fora para o teste não depender do relógio. */
   today: string;
   /** Hora local 0..23, injetada pelo mesmo motivo que `today`. */
@@ -157,6 +159,7 @@ export function App({
   readPdf,
   processFile,
   onReset,
+  onExport,
   today,
   hour,
   theme,
@@ -477,6 +480,9 @@ export function App({
               update={update}
               onOpen={openSection}
               onReset={onReset}
+              state={state}
+              today={today}
+              onExport={onExport}
               sync={sync}
             />
           ) : section === "profile" ? (
