@@ -1,10 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildCategoryIndex } from "../../domain/import/suggest-category";
 import type { Category } from "../../domain/model/category";
 import type { PaymentMethod } from "../../domain/model/payment-method";
 import { ALIVE } from "../../domain/model/row.fake";
 import type { Transaction } from "../../domain/model/transaction";
+import { stateOf, tx } from "../../domain/reserves/fixtures.fake";
 import { HOLD_MS } from "../ui/hold-button";
 import { TransactionWizard } from "./transaction-wizard";
 
@@ -718,5 +720,60 @@ describe("edição", () => {
     montar({ editing: RECORD, author: { name: "Luiz", color: "sky" } });
 
     expect(screen.getByText(/Criado por Luiz/)).toBeDefined();
+  });
+});
+
+describe("TransactionWizard: sugestão de categoria", () => {
+  const historico = {
+    ...stateOf({
+      transactions: [
+        tx("h1", "expense", 900, "2026-08-01", "cat-1", { description: "Padaria Pão Quente" }),
+      ],
+    }),
+    categories: { "cat-1": CATEGORIAS[0] as Category },
+  };
+  const categoryIndex = buildCategoryIndex(historico);
+
+  it("sugere a categoria do histórico mesmo com outra caixa, acento ou número de loja", () => {
+    montar({ categoryIndex });
+    expect(screen.queryByTestId("category-suggestion")).toBeNull();
+
+    fireEvent.input(screen.getByLabelText("Descrição"), {
+      target: { value: "PADARIA PAO QUENTE 042" },
+    });
+    expect(screen.getByTestId("category-suggestion").textContent).toMatch(/Alimentacao/);
+  });
+
+  it("não grava a sugestão sozinha: sem 'Usar' o lançamento sai sem categoria", () => {
+    const { onSubmit } = montar({ categoryIndex });
+    preencherDados("Padaria Pão Quente 7");
+    for (const _ of [1, 2, 3]) fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Adicionar despesa/ }));
+    expect(onSubmit.mock.calls[0]?.[0].categoryId).toBeNull();
+  });
+
+  it("'Usar' aplica a categoria sugerida", () => {
+    const { onSubmit } = montar({ categoryIndex });
+    preencherDados("padaria pao quente");
+    fireEvent.click(screen.getByRole("button", { name: "Usar" }));
+    expect(screen.queryByTestId("category-suggestion")).toBeNull();
+    for (const _ of [1, 2, 3]) fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Adicionar despesa/ }));
+    expect(onSubmit.mock.calls[0]?.[0].categoryId).toBe("cat-1");
+  });
+
+  it("pode ser dispensada", () => {
+    montar({ categoryIndex });
+    preencherDados("Padaria Pão Quente");
+    fireEvent.click(screen.getByRole("button", { name: "Dispensar sugestão" }));
+    expect(screen.queryByTestId("category-suggestion")).toBeNull();
+  });
+
+  it("nunca sobrescreve categoria já escolhida na edição", () => {
+    montar({
+      categoryIndex,
+      editing: { ...RECORD, description: "Padaria Pão Quente", categoryId: "outra-cat" },
+    });
+    expect(screen.queryByTestId("category-suggestion")).toBeNull();
   });
 });
