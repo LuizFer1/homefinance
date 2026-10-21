@@ -36,6 +36,8 @@ describe("searchHelp", () => {
     expect(ids("homefinance json")).toContain("privacy-export");
     expect(ids("quatro degraus")).toContain("dashboard-heatmap");
     expect(ids("outros cartoes")).toContain("cards-home-bar");
+    expect(ids("novo cartao de credito")).toContain("cards-register");
+    expect(ids("reconhecido so pela cor")).toContain("cards-register");
     expect(ids("estimativa fechamento")).toContain("cards-invoices");
     expect(ids("exportar dados antes")).toContain("cards-migration");
     expect(ids("transferencia duas vezes")).toContain("cards-pay-invoice");

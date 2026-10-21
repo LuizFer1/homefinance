@@ -185,8 +185,9 @@ export const HELP_TEXT_PT: Record<string, HelpText> = {
   "cards-register": {
     question: "Como cadastro um cartão de crédito?",
     answer: [
-      "Em Ajustes, abra Formas de pagamento e crie uma nova com o tipo Crédito. Depois do nome, há uma etapa Cartão com Banco, Fechamento e Vencimento. Fechamento e vencimento são dias do mês, de 1 a 31, e os três campos são obrigatórios para cartão de crédito.",
-      "Esses dados definem a fatura: compra feita até o dia do fechamento (inclusive) entra na fatura que fecha naquele mês, e depois dele, na do mês seguinte. Em mês curto, vale o último dia. Cada cartão tem ícone e cor próprios, e essa cor aparece na barra da aba Início.",
+      "O caminho mais rápido é o botão Novo cartão de crédito. Ele aparece em Ajustes, em Formas de pagamento, e também onde você escolhe a forma de pagamento de um lançamento e ao importar uma fatura em PDF. Um sheet curto pede Banco, Fechamento e Vencimento, depois o nome (em branco, vale o banco) e a cor, e mostra uma prévia antes de Salvar cartão. Se você veio de um lançamento ou da importação, o cartão novo já fica selecionado.",
+      "Também dá para criar em Ajustes, Formas de pagamento, Nova, com o tipo Crédito: depois do nome, há uma etapa Cartão com os mesmos campos. Fechamento e vencimento são dias do mês, de 1 a 31, e banco, fechamento e vencimento são obrigatórios para cartão de crédito.",
+      "Esses dados definem a fatura: compra feita até o dia do fechamento (inclusive) entra na fatura que fecha naquele mês, e depois dele, na do mês seguinte. Em mês curto, vale o último dia. Cartão de crédito não tem ícone: ele é reconhecido só pela cor, que você escolhe no cadastro e que aparece nas listas, nas faturas e na barra da aba Início.",
     ],
   },
   "cards-invoices": {
@@ -249,7 +250,7 @@ export const HELP_TEXT_PT: Record<string, HelpText> = {
   "import-how": {
     question: "Como importo uma fatura de cartão ou um extrato em PDF?",
     answer: [
-      "Na aba Início, toque em Importar fatura ou extrato. Escolha o tipo, a forma de pagamento (a fatura exige um cartão de crédito cadastrado) e o PDF baixado do app ou do site do banco.",
+      "Na aba Início, toque em Importar fatura ou extrato. Escolha o tipo, a forma de pagamento (a fatura exige um cartão de crédito; se não houver, toque em Novo cartão de crédito ali mesmo) e o PDF baixado do app ou do site do banco.",
       "O app lista o que reconheceu, com categorias sugeridas pelo seu histórico. Revise, desmarque o que não quer, ajuste descrições e importe. Reimportar o mesmo PDF não duplica lançamentos. Ao final, o app mostra um resumo do que entrou.",
     ],
   },
