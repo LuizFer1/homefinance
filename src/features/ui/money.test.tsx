@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it } from "vitest";
-import { compactBRL, MINUS, Money, moneyParts, signedBRL } from "./money";
+import { hideValues } from "../privacy/privacy";
+import { compactBRL, MINUS, Money, moneyParts, shortBRL, signedBRL } from "./money";
 
 afterEach(cleanup);
 
@@ -43,5 +44,20 @@ describe("Money", () => {
     render(<Money minor={-100} size={44} testId="saldo" />);
 
     expect(screen.getByTestId("saldo").textContent).toContain(`${MINUS}R$ 1,00`);
+  });
+});
+
+describe("shortBRL", () => {
+  it("abrevia por escala e arredonda", () => {
+    expect(shortBRL(85_000)).toBe("850");
+    expect(shortBRL(130_000)).toBe("1,3 mil");
+    expect(shortBRL(200_000)).toBe("2 mil");
+    expect(shortBRL(250_000_000)).toBe("2,5 mi");
+  });
+
+  it("oculta o valor com a privacidade ligada", () => {
+    hideValues.value = true;
+    expect(shortBRL(130_000)).toBe("•••");
+    hideValues.value = false;
   });
 });
