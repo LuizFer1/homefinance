@@ -328,6 +328,64 @@ describe("cartão de crédito", () => {
     expect(screen.queryByRole("button", { name: "Cartão" })).toBeNull();
   });
 
+  it("crédito não tem a etapa de ícone: Nome, Cartão e Cor", () => {
+    montar({ entity: "paymentMethod" });
+    expect(screen.getByRole("button", { name: /Ícone/ })).toBeDefined();
+
+    escolherCredito();
+
+    expect(screen.queryByRole("button", { name: /Ícone/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Cartão" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Cor" })).toBeDefined();
+  });
+
+  it("outros tipos continuam com a etapa de ícone", () => {
+    montar({ entity: "paymentMethod" });
+    fireEvent.click(screen.getByRole("radio", { name: "Pix" }));
+
+    expect(screen.getByRole("button", { name: /Ícone/ })).toBeDefined();
+    digitarNome("Pix");
+    continuar();
+    expect(screen.getByRole("radio", { name: "pill" })).toBeDefined();
+  });
+
+  it("cartão novo grava o ícone padrão sem pedir escolha", () => {
+    const { onSubmit } = montar({ entity: "paymentMethod" });
+    escolherCredito();
+    continuar();
+    preencherCartao("Inter", "10", "20");
+    continuar();
+    salvar();
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ icon: "credit-card" }));
+  });
+
+  it("cartão em edição mantém o ícone que já tinha", () => {
+    const antigo: PaymentMethod = {
+      ...METODO,
+      icon: "pill",
+      bank: "Nubank",
+      closingDay: 5,
+      dueDay: 12,
+    };
+    const { onSubmit } = montar({ entity: "paymentMethod", editing: antigo });
+    continuar();
+    continuar();
+    salvar();
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ icon: "pill" }));
+  });
+
+  it("a prévia do cartão mostra só a cor, sem tile de ícone", () => {
+    montar({ entity: "paymentMethod" });
+    escolherCredito();
+    continuar();
+    preencherCartao("Inter", "10", "20");
+    continuar();
+
+    expect(screen.getByTestId("card-mark")).toBeDefined();
+  });
+
   it("grava banco, fechamento e vencimento no draft", () => {
     const { onSubmit } = montar({ entity: "paymentMethod" });
 
@@ -335,7 +393,6 @@ describe("cartão de crédito", () => {
     escolherCredito();
     continuar();
     preencherCartao("Nubank", "5", "12");
-    continuar();
     continuar();
     salvar();
 
@@ -356,7 +413,6 @@ describe("cartão de crédito", () => {
     escolherCredito();
     continuar();
     preencherCartao("Inter", "10", "20");
-    continuar();
     continuar();
     salvar();
 
@@ -411,7 +467,6 @@ describe("cartão de crédito", () => {
     escolherCredito();
     continuar();
     preencherCartao("Nubank", "5", "12");
-    continuar();
     continuar();
 
     expect(screen.getByTestId("card-preview").textContent).toContain("Fecha dia 5 · vence dia 12");

@@ -1,3 +1,4 @@
+import { CardMark } from "../cards/card-mark";
 import { IconTile } from "../ui/tile";
 
 export interface ChoiceProps {
@@ -59,8 +60,14 @@ export function MethodRow({
   onSelect,
   first,
   detail,
+  credit = false,
   group = "paymentMethodId",
-}: ChoiceProps & { first?: boolean; detail?: string | null }) {
+}: ChoiceProps & {
+  first?: boolean;
+  detail?: string | null;
+  /** Cartão de crédito: identificado só pela cor, sem tile de ícone. */
+  credit?: boolean;
+}) {
   return (
     <label
       class="relative flex h-[52px] cursor-pointer items-center gap-3 px-3
@@ -77,7 +84,11 @@ export function MethodRow({
         onChange={onSelect}
         class="sr-only"
       />
-      <IconTile icon={icon} color={color} size={30} iconSize={17} />
+      {credit && color !== null ? (
+        <CardMark color={color} size={30} />
+      ) : (
+        <IconTile icon={icon} color={color} size={30} iconSize={17} />
+      )}
       <span class="min-w-0 flex-1">
         <span class={`block truncate text-[15px] ${color === null ? "text-fg/60" : ""}`}>
           {name}

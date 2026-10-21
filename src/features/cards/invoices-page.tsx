@@ -6,7 +6,7 @@ import type { AppState } from "../../domain/model/app-state";
 import { dayMonth, monthLabelShort } from "../../domain/projections/periods";
 import { brl, signedBRL } from "../ui/money";
 import { PageHeader } from "../ui/page-header";
-import { IconTile } from "../ui/tile";
+import { CardMark } from "./card-mark";
 
 export interface InvoicesPageProps {
   state: AppState;
@@ -194,7 +194,7 @@ export function InvoicesPage({
             class="mt-6 rounded-lg bg-surface px-4 pt-4 pb-1"
           >
             <div class="flex items-center gap-3 pb-3">
-              <IconTile icon={card.icon} color={card.color} size={36} iconSize={18} />
+              <CardMark color={card.color} size={36} />
               <span class="min-w-0 flex-1">
                 <h2 class="truncate text-[15px] font-medium">{card.name}</h2>
                 <span class="mt-0.5 block truncate text-xs text-fg/55">{cardDetail(card)}</span>

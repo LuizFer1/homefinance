@@ -431,6 +431,7 @@ function GroupStep({
             name={card.name}
             icon={card.icon}
             color={card.color}
+            credit
             detail={cardDetail(card) ?? cardCycleText(card)}
             checked={choice.pick === card.id}
             onSelect={() => onChange({ pick: card.id })}

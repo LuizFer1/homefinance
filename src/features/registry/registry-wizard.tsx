@@ -14,6 +14,7 @@ import {
   cardFieldsProblem,
   parseCardDay,
 } from "../cards/card-fields";
+import { CardMark } from "../cards/card-mark";
 import { Icon } from "../icons/icon";
 import { PICKABLE_ICONS } from "../icons/icon-set";
 import { Button } from "../ui/button";
@@ -43,8 +44,14 @@ export interface RegistryWizardProps {
 }
 
 const STEPS = ["Nome", "Ícone", "Cor"] as const;
-/** Cartão de crédito ganha a etapa com os dados que definem a fatura. */
-const CREDIT_STEPS = ["Nome", "Cartão", "Ícone", "Cor"] as const;
+/**
+ * Cartão de crédito ganha a etapa com os dados que definem a fatura e perde a de
+ * ícone: ele se reconhece só pela cor.
+ */
+const CREDIT_STEPS = ["Nome", "Cartão", "Cor"] as const;
+
+/** Ícone gravado num cartão novo: o campo existe no modelo, mas ninguém o escolhe nem o vê. */
+const CARD_ICON = "credit-card";
 
 /** Nome do tipo na lista de Pagamentos (meta da linha). */
 export const PAYMENT_KIND_LABELS: Record<PaymentKind, string> = {
@@ -84,13 +91,12 @@ function normalize(name: string): string {
 }
 
 /**
- * Cadastro de entidade de referência: Nome → Ícone → Cor, e uma etapa "Cartão"
- * (banco, fechamento, vencimento) entre Nome e Ícone **só** quando a forma de
- * pagamento é de crédito.
+ * Cadastro de entidade de referência: Nome → Ícone → Cor. Crédito troca a de
+ * ícone por "Cartão" (banco, fechamento, vencimento): Nome → Cartão → Cor.
  *
  * Nome e tipo ficam juntos na primeira: são os dados de identidade — o que a
- * coisa é. Ícone e cor são aparência. Escolher "Crédito" na primeira etapa
- * acrescenta a quarta; os outros tipos continuam com três.
+ * coisa é. Ícone e cor são aparência. Cartão de crédito não tem ícone, só cor:
+ * escolher "Crédito" na primeira etapa troca a etapa de ícone pela de dados.
  *
  * Em crédito o nome é opcional: em branco, vale o banco ("Nubank"). Por isso a
  * validação do nome olha o nome **efetivo**, também na checagem de duplicata.
@@ -207,7 +213,15 @@ export function RegistryWizard({
 
     onSubmit(
       isPayment
-        ? ({ name: trimmed, icon, color, kind, ...cardData } as PaymentMethodDraft)
+        ? ({
+            name: trimmed,
+            // Cartão novo grava o ícone padrão; um cartão em edição mantém o que tinha
+            // (linhas antigas e de outros aparelhos seguem válidas, sem regravar à toa).
+            icon: isCredit && editing === null ? CARD_ICON : icon,
+            color,
+            kind,
+            ...cardData,
+          } as PaymentMethodDraft)
         : ({ name: trimmed, icon, color, kind: categoryKind } as CategoryDraft),
     );
   }
@@ -350,10 +364,14 @@ export function RegistryWizard({
               surface="surface"
             />
 
-            {/* Prévia: é a primeira vez que ícone e cor aparecem juntos, onde vão morar. */}
+            {/* Prévia: primeira vez que a aparência aparece junta (no cartão, só a cor). */}
             <p class={`${LABEL} mt-7`}>Prévia</p>
             <div class="mt-2 flex h-16 items-center gap-3 rounded-lg bg-bg px-3.5">
-              <IconTile icon={icon} color={color} size={38} iconSize={19} />
+              {isCredit ? (
+                <CardMark color={color} size={38} />
+              ) : (
+                <IconTile icon={icon} color={color} size={38} iconSize={19} />
+              )}
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-[15px] font-medium">
                   {isPayment ? "Mercado" : "Exemplo"}

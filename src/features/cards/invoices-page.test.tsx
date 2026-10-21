@@ -94,3 +94,13 @@ describe("InvoicesPage", () => {
     expect(screen.getAllByTestId("card-invoices")).toHaveLength(2);
   });
 });
+
+describe("InvoicesPage: identidade do cartão", () => {
+  it("o cabeçalho do cartão usa só a cor, sem tile de ícone", () => {
+    montar();
+
+    const secao = screen.getByTestId("card-invoices");
+    expect(within(secao).getByTestId("card-mark")).toBeDefined();
+    expect(within(secao).queryByTestId("icon-credit-card")).toBeNull();
+  });
+});
