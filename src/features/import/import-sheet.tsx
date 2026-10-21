@@ -3,7 +3,13 @@ import { cardDetail, listCreditCards } from "../../domain/cards/card";
 import type { Ulid } from "../../domain/ids/ulid";
 import { groupLines } from "../../domain/import/lines";
 import { confirmedImportKeys, suggestLinks } from "../../domain/import/link";
-import { type DocumentKind, detectReferenceMonth, parseStatement } from "../../domain/import/parse";
+import {
+  type DocumentKind,
+  detectReferenceMonth,
+  parseStatement,
+  SKIP_REASON_LABEL,
+  type SkippedLine,
+} from "../../domain/import/parse";
 import {
   type ImportContext,
   identify,
@@ -44,7 +50,15 @@ type Step =
   | { step: "reading" }
   | { step: "password"; file: Blob; wrong: boolean }
   | { step: "review" }
-  | { step: "done"; result: ImportResult };
+  | { step: "done"; result: ImportResult; summary: ImportSummary };
+
+/** As três contagens do resumo final; o que o usuário desmarcou não entra em nenhuma. */
+interface ImportSummary {
+  imported: number;
+  /** Linhas cujo id já estava no banco (reimportação, ou apagada depois). */
+  existing: number;
+  skipped: SkippedLine[];
+}
 
 const DOC_OPTIONS = [
   { value: "card", label: "Fatura de cartão", icon: "credit-card" },
@@ -53,6 +67,15 @@ const DOC_OPTIONS = [
 
 function shortDate(date: string): string {
   return `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(2, 4)}`;
+}
+
+function SummaryCount({ label, value }: { label: string; value: number }) {
+  return (
+    <div class="rounded-lg bg-bg p-3">
+      <dt class="text-xs text-fg/60">{label}</dt>
+      <dd class="hf-num mt-1 text-xl font-medium">{value}</dd>
+    </div>
+  );
 }
 
 /** O pdf.js desce sob demanda, e o `import()` falha por dois motivos distintos. */
@@ -85,14 +108,15 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
   const [lines, setLines] = useState<string[]>([]);
   const [referenceMonth, setReferenceMonth] = useState(today.slice(0, 7));
   const [rows, setRows] = useState<Row[]>([]);
+  const [skipped, setSkipped] = useState<SkippedLine[]>([]);
   const [saving, setSaving] = useState(false);
 
   const categoryIndex = useMemo(() => buildCategoryIndex(state), [state]);
   const estimates = pendingEstimates(state);
   const needsCard = doc === "card" && methodId === null;
 
-  function buildRows(source: string[], month: string): Row[] {
-    const entries = parseStatement(source, doc, month);
+  function buildRows(source: string[], month: string): { rows: Row[]; skipped: SkippedLine[] } {
+    const { entries, skipped: dropped } = parseStatement(source, doc, month);
     const ctx: ImportContext = { paymentMethodId: methodId, referenceMonth: month };
     const ids = identify(entries, ctx);
     // Uma linha que confirmou uma estimativa não criou transação com o próprio
@@ -122,7 +146,10 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
         eligible: row.selected && !row.existing && row.installment === null,
       })),
     );
-    return built.map((row, index) => ({ ...row, linkTo: links[index] ?? null }));
+    return {
+      rows: built.map((row, index) => ({ ...row, linkTo: links[index] ?? null })),
+      skipped: dropped,
+    };
   }
 
   function chooseDoc(next: DocumentKind) {
@@ -144,14 +171,19 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
       const fallback = today.slice(0, 7);
       const month = doc === "card" ? detectReferenceMonth(found, fallback) : fallback;
       const built = buildRows(found, month);
-      if (built.length === 0) {
-        setError("Nenhum lançamento reconhecido neste PDF.");
+      if (built.rows.length === 0) {
+        setError(
+          built.skipped.length === 0
+            ? "Nenhum lançamento reconhecido neste PDF."
+            : `Nenhum lançamento reconhecido neste PDF (${built.skipped.length} ${built.skipped.length === 1 ? "linha" : "linhas"} com data não puderam ser lidas).`,
+        );
         setPhase({ step: "choose" });
         return;
       }
       setLines(found);
       setReferenceMonth(month);
-      setRows(built);
+      setRows(built.rows);
+      setSkipped(built.skipped);
       setPhase({ step: "review" });
     } catch (cause) {
       if (cause instanceof PdfPasswordError) {
@@ -167,7 +199,9 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
     if (!/^\d{4}-\d{2}$/.test(month)) return;
     setReferenceMonth(month);
     // O ano de cada linha e a âncora das parcelas dependem do mês: reparseia.
-    setRows(buildRows(lines, month));
+    const rebuilt = buildRows(lines, month);
+    setRows(rebuilt.rows);
+    setSkipped(rebuilt.skipped);
   }
 
   function patch(index: number, changes: Partial<Row>) {
@@ -190,7 +224,16 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
     try {
       const plan = planImport(rows, { paymentMethodId: methodId, referenceMonth });
       const result = await onImport(plan);
-      setPhase({ step: "done", result });
+      setPhase({
+        step: "done",
+        result,
+        // `existing` vem da revisão (o estado em memória já mudou com a gravação).
+        summary: {
+          imported: result.transactions + result.confirmed,
+          existing: rows.filter((row) => row.existing).length,
+          skipped,
+        },
+      });
     } catch (cause) {
       setError(`Não foi possível gravar: ${describeError(cause)}`);
     } finally {
@@ -249,15 +292,21 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
 
   if (phase.step === "done") {
     const { transactions, series, confirmed } = phase.result;
+    const { imported, existing, skipped: unread } = phase.summary;
     return (
-      <div class="py-6 text-center">
-        <p class="text-lg font-medium" role="status">
+      <div class="mt-2">
+        <p class="text-center text-lg font-medium" role="status">
           {transactions === 0 && confirmed === 0
             ? "Nada novo para importar"
             : transactions === 0
               ? `${confirmed} ${confirmed === 1 ? "estimativa confirmada" : "estimativas confirmadas"}`
               : `${transactions} ${transactions === 1 ? "lançamento importado" : "lançamentos importados"}`}
         </p>
+        <dl class="mt-4 grid grid-cols-3 gap-2 text-center" aria-label="Resumo da importação">
+          <SummaryCount label="Importadas" value={imported} />
+          <SummaryCount label="Já existiam" value={existing} />
+          <SummaryCount label="Não interpretadas" value={unread.length} />
+        </dl>
         {transactions > 0 && confirmed > 0 && (
           <p class={HINT}>
             {confirmed} {confirmed === 1 ? "estimativa confirmada" : "estimativas confirmadas"} com
@@ -270,6 +319,22 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
             as próximas parcelas aparecem nos meses seguintes.
           </p>
         )}
+        {unread.length > 0 && (
+          <div class="mt-4">
+            <p class={LABEL}>Linhas que o leitor não interpretou</p>
+            <ul class="mt-2 divide-y divide-divider" aria-label="Linhas não interpretadas">
+              {unread.map((line, index) => (
+                <li key={`${index}-${line.text}`} class="py-2">
+                  <p class="break-words text-[13px] text-fg">{line.text}</p>
+                  <p class="text-xs text-fg/55">{SKIP_REASON_LABEL[line.reason]}</p>
+                </li>
+              ))}
+            </ul>
+            <p class={HINT}>
+              Lance à mão o que faltar. O texto fica só aqui, no aparelho: nada é enviado.
+            </p>
+          </div>
+        )}
         <Button class="mt-6 w-full" icon="check" onClick={onClose}>
           Fechar
         </Button>
@@ -279,6 +344,9 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
 
   if (phase.step === "review") {
     const selected = rows.filter((row) => row.selected).length;
+    // Reimportar o mesmo arquivo deixa tudo travado: sem este caminho a pessoa
+    // nunca veria o resumo dizendo que tudo já existia.
+    const onlyExisting = selected === 0 && rows.some((row) => row.existing);
     return (
       <div class="mt-2">
         {doc === "card" && (
@@ -416,10 +484,10 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
           <Button
             icon="check"
             class="flex-1"
-            disabled={selected === 0 || saving}
+            disabled={(selected === 0 && !onlyExisting) || saving}
             onClick={() => void confirm()}
           >
-            {saving ? "Importando..." : `Importar ${selected}`}
+            {saving ? "Importando..." : onlyExisting ? "Ver resumo" : `Importar ${selected}`}
           </Button>
         </div>
       </div>
