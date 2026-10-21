@@ -96,6 +96,29 @@ describe("aviso de meta em risco na Início", () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
+  it("meta estourada: gravidade 'over' e barra da pior meta", () => {
+    home(withBudgets, vi.fn());
+    const alert = screen.getByTestId("budget-alert");
+    expect(alert.getAttribute("data-level")).toBe("over");
+    const bar = within(alert).getByRole("progressbar", { name: "Meta de Lazer" });
+    expect(bar.getAttribute("aria-valuetext")).toBe("Meta estourada: 175% usado");
+  });
+
+  it("só atenção: gravidade 'warning', singular e porcentagem", () => {
+    const warn = {
+      ...withBudgets,
+      budgets: { "B-FOOD": budget("FOOD", 100_000) },
+    };
+    home(warn, vi.fn());
+    const alert = screen.getByTestId("budget-alert");
+    expect(alert.getAttribute("data-level")).toBe("warning");
+    expect(alert.textContent).toContain("meta em risco");
+    expect(alert.textContent).not.toContain("metas em risco");
+    expect(alert.textContent).toContain("Alimentação 85%");
+    expect(alert.textContent).not.toContain("estourou");
+    expect(within(alert).getByRole("progressbar", { name: "Meta de Alimentação" })).toBeDefined();
+  });
+
   it("sem metas, nada aparece", () => {
     home(withoutBudgets, vi.fn());
     expect(screen.queryByTestId("budget-alert")).toBeNull();

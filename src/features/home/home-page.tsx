@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import { budgetAlerts, budgetReport } from "../../domain/budgets/status";
+import { type BudgetStatus, budgetAlerts, budgetReport } from "../../domain/budgets/status";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction, TransactionKind } from "../../domain/model/transaction";
 import type { User } from "../../domain/model/user";
@@ -15,9 +15,11 @@ import { Avatar } from "../profile/avatar-view";
 import { periodLabel } from "../recurrence/adjust-sheet";
 import { FilterBar, FilterSummary, NothingFound } from "../transactions/transaction-filters";
 import { TransactionList } from "../transactions/transaction-list";
+import { BudgetBar } from "../ui/budget-bar";
 import { greetingFor } from "../ui/greeting";
 import { brl, compactBRL, MINUS, Money, moneyParts } from "../ui/money";
 import { QuickActions } from "../ui/quick-actions";
+import { IconTile } from "../ui/tile";
 
 export interface HomePageProps {
   items: Transaction[];
@@ -162,6 +164,63 @@ function PendingEstimates({
 }
 
 /**
+ * Aviso de metas em risco. A gravidade não vive só na cor: o ícone muda
+ * (círculo de alerta quando estourou) e o texto diz "estourou".
+ *
+ * Só nomes e porcentagem, nunca reais: o aviso não vaza o que "Ocultar valores"
+ * esconde. `rows` já vem ordenado por uso, então a pior meta é a primeira.
+ */
+function BudgetAlert({ rows, onOpen }: { rows: BudgetStatus[]; onOpen: () => void }) {
+  const worst = rows[0];
+  if (worst === undefined) return null;
+  const over = rows.some((row) => row.level === "over");
+  const detail = rows
+    .slice(0, 2)
+    .map((row) =>
+      row.level === "over"
+        ? `${row.category.name} estourou`
+        : `${row.category.name} ${Math.floor(row.usedRatio * 100)}%`,
+    )
+    .join(" · ");
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid="budget-alert"
+      data-level={over ? "over" : "warning"}
+      class={`hf-press mt-3 flex min-h-14 w-full items-center gap-3 rounded-lg border p-3 text-left
+        ${
+          over
+            ? "border-expense/40 bg-expense/10 hover:bg-expense/15"
+            : "border-tag-amber/35 bg-tag-amber/10 hover:bg-tag-amber/15"
+        }`}
+    >
+      <IconTile
+        icon={over ? "warning-circle" : "warning"}
+        color={over ? "red" : "amber"}
+        size={36}
+      />
+      <span class="min-w-0 flex-1">
+        <span class={`block text-sm font-medium ${over ? "text-expense-fg" : "text-tag-amber"}`}>
+          <span class="hf-num">{rows.length}</span>{" "}
+          {rows.length === 1 ? "meta em risco" : "metas em risco"}
+        </span>
+        <span class="mt-0.5 block truncate text-xs text-fg/65">{detail}</span>
+        <span class="mt-2 block">
+          <BudgetBar
+            ratio={worst.usedRatio}
+            level={worst.level}
+            label={`Meta de ${worst.category.name}`}
+          />
+        </span>
+      </span>
+      <Icon name="caret-right" size={16} class="shrink-0 text-fg/45" />
+    </button>
+  );
+}
+
+/**
  * Início: saudação, saldo total, o mês, as duas ações diárias e o extrato.
  *
  * O seletor de tema saiu daqui (foi para Ajustes → Aparência): no topo da tela
@@ -240,32 +299,8 @@ export function HomePage({
         Importar fatura ou extrato
       </button>
 
-      {onOpenBudgets !== undefined && atRisk.length > 0 && (
-        <button
-          type="button"
-          onClick={onOpenBudgets}
-          data-testid="budget-alert"
-          class="hf-press mt-3 flex min-h-10 w-full items-center justify-between gap-3 rounded-lg px-3.5 py-2 text-left text-[13px] text-fg/70 hover:bg-fg/[0.05]"
-        >
-          <span class="min-w-0">
-            <span class="block">
-              <span class="hf-num font-medium text-fg">{atRisk.length}</span>{" "}
-              {atRisk.length === 1 ? "meta em risco" : "metas em risco"}
-            </span>
-            {/* Só nome e porcentagem: o aviso não carrega valor, então "Ocultar valores" não vaza. */}
-            <span class="mt-0.5 block truncate text-xs text-fg/55">
-              {atRisk
-                .slice(0, 2)
-                .map((row) =>
-                  row.level === "over"
-                    ? `${row.category.name} estourou`
-                    : `${row.category.name} ${Math.floor(row.usedRatio * 100)}%`,
-                )
-                .join(" · ")}
-            </span>
-          </span>
-          <span class="shrink-0 font-medium text-accent-300">Ver</span>
-        </button>
+      {onOpenBudgets !== undefined && atRisk[0] !== undefined && (
+        <BudgetAlert rows={atRisk} onOpen={onOpenBudgets} />
       )}
 
       {onClassify !== undefined && pendingCategory > 0 && (

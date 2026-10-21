@@ -88,6 +88,7 @@ const REGULAR = [
   "trend-down",
   "trend-up",
   "warning",
+  "warning-circle",
   "wave-sine",
   "x",
   // Reservas.
