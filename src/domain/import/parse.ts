@@ -32,6 +32,32 @@ export interface ParsedEntry {
   note: string | null;
 }
 
+/** Por que uma linha que parecia lançamento (começa com data) não foi lida. */
+export type SkipReason = "invalid-date" | "no-amount" | "unknown-format";
+
+/** Texto do motivo para a tela; fica no domínio para o teste e a UI não divergirem. */
+export const SKIP_REASON_LABEL: Record<SkipReason, string> = {
+  "invalid-date": "Data inválida",
+  "no-amount": "Sem valor",
+  "unknown-format": "Formato desconhecido",
+};
+
+/** Linha descartada pelo leitor, com o texto original para o usuário conferir. */
+export interface SkippedLine {
+  text: string;
+  reason: SkipReason;
+}
+
+export interface ParseResult {
+  entries: ParsedEntry[];
+  /**
+   * Só linhas que começam com algo que parece data: cabeçalhos, totais e
+   * rodapés não são lançamentos e listá-los afogaria o que importa. Linhas que
+   * o leitor ignora de propósito (saldo corrido) também ficam fora.
+   */
+  skipped: SkippedLine[];
+}
+
 const MONTHS = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
 
 const NUMERIC_DATE = /^(\d{1,2})\s*[/.-]\s*(\d{1,2})(?:\s*[/.-]\s*(\d{4}|\d{2}))?(?!\d)/;
@@ -187,7 +213,7 @@ export function hasAmount(text: string): boolean {
 }
 
 /**
- * Parser genérico:uma linha é lançamento se começa com data e tem valor.
+ * Parser genérico: uma linha é lançamento se começa com data e tem valor.
  *
  * Genérico de propósito — um layout por banco quebraria no primeiro banco que
  * ninguém cadastrou. O preço é errar mais, e é por isso que tudo passa por uma
@@ -197,12 +223,17 @@ export function parseStatement(
   lines: readonly string[],
   doc: DocumentKind,
   referenceMonth: string,
-): ParsedEntry[] {
+): ParseResult {
   const entries: ParsedEntry[] = [];
+  const skipped: SkippedLine[] = [];
+  const skip = (text: string, reason: SkipReason) => skipped.push({ text, reason });
 
   for (const line of lines) {
     const prefix = readDate(line, referenceMonth);
-    if (prefix === null) continue;
+    if (prefix === null) {
+      if (startsWithDate(line)) skip(line, "invalid-date");
+      continue;
+    }
     const body = line.slice(prefix.length);
 
     const amounts = [...body.matchAll(MONEY)];
@@ -210,10 +241,16 @@ export function parseStatement(
     // Fatura: o último valor (colunas de moeda estrangeira vêm antes do real).
     // Extrato: o primeiro (o seguinte é o saldo corrido).
     const chosen = doc === "card" ? amounts[amounts.length - 1] : first;
-    if (first === undefined || chosen === undefined) continue;
+    if (first === undefined || chosen === undefined) {
+      skip(line, "no-amount");
+      continue;
+    }
 
     const amountMinor = Number(`${(chosen[3] ?? "").replace(/\./g, "")}${chosen[4] ?? ""}`);
-    if (amountMinor === 0) continue;
+    if (amountMinor === 0) {
+      skip(line, "no-amount");
+      continue;
+    }
 
     const printed = body
       .slice(0, first.index)
@@ -222,7 +259,10 @@ export function parseStatement(
       .replace(OPERATION_ID, " ")
       .replace(/\s+/g, " ")
       .replace(/^[\s\-–|]+|[\s\-–|]+$/g, "");
-    if (printed === "") continue;
+    if (printed === "") {
+      skip(line, "unknown-format");
+      continue;
+    }
     if (doc === "account" && BALANCE.test(printed)) continue;
 
     const sign = `${chosen[1] ?? ""}${chosen[2] ?? ""}${chosen[5] ?? ""}`;
@@ -274,5 +314,5 @@ export function parseStatement(
     });
   }
 
-  return entries;
+  return { entries, skipped };
 }
