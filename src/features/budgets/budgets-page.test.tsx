@@ -109,6 +109,83 @@ describe("BudgetsPage", () => {
     expect(semMeta.queryByRole("button", { name: /Sem categoria/ })).toBeNull();
   });
 
+  it("a meta vem em destaque: restante como número principal e estado em texto", () => {
+    open();
+    const food = screen.getByRole("progressbar", { name: "Meta de Alimentação" }).closest("li");
+    expect(food?.textContent).toContain("Restam");
+    expect(food?.textContent).toContain("Atenção");
+    expect(food?.getAttribute("data-level")).toBe("warning");
+    const fun = screen.getByRole("progressbar", { name: "Meta de Lazer" }).closest("li");
+    expect(fun?.textContent).toContain("Estourou");
+    expect(within(fun as HTMLElement).getByTestId("limit-marker")).toBeDefined();
+  });
+
+  it("começa recolhida e expande/recolhe os lançamentos da categoria", () => {
+    open();
+    const toggle = screen.getByRole("button", { name: "Lançamentos de Alimentação" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("list", { name: "Lançamentos de Alimentação" })).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const list = within(screen.getByRole("list", { name: "Lançamentos de Alimentação" }));
+    // Só o gasto da categoria no mês: a transferência de R$ 900 e as outras categorias ficam fora.
+    expect(list.getAllByRole("listitem")).toHaveLength(1);
+    expect(list.getByText("a")).toBeDefined();
+    expect(list.queryByText("d")).toBeNull();
+    expect(list.queryByText("b")).toBeNull();
+    expect(list.getByText("2 set")).toBeDefined();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("list", { name: "Lançamentos de Alimentação" })).toBeNull();
+  });
+
+  it("mostra os 3 mais recentes e 'Ver todos (N)' abre o resto", () => {
+    const many = [
+      tx("m1", "expense", 1_000, "2026-09-01", "FOOD"),
+      tx("m2", "expense", 1_000, "2026-09-02", "FOOD"),
+      tx("m3", "expense", 1_000, "2026-09-03", "FOOD"),
+      tx("m4", "expense", 1_000, "2026-09-04", "FOOD"),
+      tx("m5", "expense", 1_000, "2026-08-31", "FOOD"),
+    ];
+    open({ items: many });
+    fireEvent.click(screen.getByRole("button", { name: "Lançamentos de Alimentação" }));
+    const list = () => within(screen.getByRole("list", { name: "Lançamentos de Alimentação" }));
+    expect(
+      list()
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual([
+      expect.stringContaining("m4"),
+      expect.stringContaining("m3"),
+      expect.stringContaining("m2"),
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver todos (4)" }));
+    // m5 é de agosto: não é do mês selecionado.
+    expect(list().getAllByRole("listitem")).toHaveLength(4);
+    expect(list().queryByText("m5")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Ver menos" }));
+    expect(list().getAllByRole("listitem")).toHaveLength(3);
+  });
+
+  it("ocultar valores esconde também o valor de cada lançamento", () => {
+    hideValues.value = true;
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Lançamentos de Alimentação" }));
+    const list = screen.getByRole("list", { name: "Lançamentos de Alimentação" });
+    expect(list.textContent).not.toContain("850");
+  });
+
+  it("expandir não abre o formulário; o lápis edita", () => {
+    open();
+    fireEvent.click(screen.getByRole("button", { name: "Lançamentos de Alimentação" }));
+    expect(screen.queryByLabelText("Limite por mês")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Editar meta de Alimentação" }));
+    expect(screen.getByLabelText("Limite por mês")).toBeDefined();
+  });
+
   it("estado vazio convida a definir a primeira meta", () => {
     open({ state: { ...state, budgets: {} }, items: [] });
     expect(

@@ -6,6 +6,8 @@ export interface BudgetBarProps {
   level: BudgetLevel;
   /** Nome acessível: "Meta de Alimentação". */
   label: string;
+  /** `lg` para a meta em destaque; marca onde ficava o limite quando estourou. */
+  size?: "sm" | "lg";
 }
 
 const FILL: Record<BudgetLevel, string> = {
@@ -22,7 +24,7 @@ const FILL: Record<BudgetLevel, string> = {
  * `aria-valuetext` carrega só a porcentagem, nunca o valor em reais, para o
  * leitor de tela não ler o que "Ocultar valores" esconde.
  */
-export function BudgetBar({ ratio, level, label }: BudgetBarProps) {
+export function BudgetBar({ ratio, level, label, size = "sm" }: BudgetBarProps) {
   // `floor`, e não `round`: 99,6% não pode ser lido como "100%" enquanto a meta
   // ainda não foi atingida.
   const percent = Math.floor(ratio * 100);
@@ -36,12 +38,26 @@ export function BudgetBar({ ratio, level, label }: BudgetBarProps) {
       aria-valuemax={100}
       aria-valuenow={Math.min(100, percent)}
       aria-valuetext={text}
-      class="h-1.5 w-full overflow-hidden rounded-full bg-neutral-800"
+      class={`relative w-full overflow-hidden rounded-full bg-neutral-800 ${
+        size === "lg" ? "h-3" : "h-1.5"
+      }`}
     >
       <div
         class={`h-full rounded-full transition-[width] duration-300 ${FILL[level]}`}
         style={{ width: `${Math.min(100, Math.max(0, ratio * 100))}%` }}
       />
+      {/*
+        Estourou: a barra já está cheia e não mostraria onde o limite passou. O traço
+        fica na fração `1/ratio` do total gasto, que é onde a meta terminava.
+      */}
+      {size === "lg" && level === "over" && ratio > 1 && (
+        <div
+          aria-hidden="true"
+          data-testid="limit-marker"
+          class="absolute inset-y-0 w-0.5 bg-fg"
+          style={{ left: `${100 / ratio}%` }}
+        />
+      )}
     </div>
   );
 }

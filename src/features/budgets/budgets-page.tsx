@@ -10,8 +10,8 @@ import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
 import { digitsOf, maskDigits, minorOf } from "../../domain/money/mask";
-import { monthOf } from "../../domain/projections/periods";
-import { listCategoriesFor } from "../../domain/projections/selectors";
+import { dayMonth, monthOf } from "../../domain/projections/periods";
+import { listCategoriesFor, resolvePaymentMethodName } from "../../domain/projections/selectors";
 import { Icon } from "../icons/icon";
 import { ignoreHandled } from "../session/session";
 import { CategoryTile } from "../transactions/choice-tiles";
@@ -46,40 +46,152 @@ function countLabel(count: number): string {
   return count === 1 ? "1 lançamento" : `${count} lançamentos`;
 }
 
-function BudgetRow({ row, onEdit }: { row: BudgetStatus; onEdit: () => void }) {
+const PREVIEW_COUNT = 3;
+
+/** Estado em texto e ícone, para a gravidade não depender só da cor. */
+const LEVEL_BADGE: Record<BudgetStatus["level"], { label: string; icon: string; tone: string }> = {
+  ok: { label: "Dentro da meta", icon: "check", tone: "bg-accent/12 text-accent-300" },
+  warning: { label: "Atenção", icon: "warning", tone: "bg-tag-amber/15 text-tag-amber" },
+  over: { label: "Estourou", icon: "warning-circle", tone: "bg-expense/12 text-expense-fg" },
+};
+
+function ExpenseLine({
+  item,
+  state,
+  first,
+}: {
+  item: Transaction;
+  state: AppState;
+  first: boolean;
+}) {
+  const method =
+    item.paymentMethodId === null ? null : resolvePaymentMethodName(state, item.paymentMethodId);
+  return (
+    <li class="relative flex min-h-12 items-center gap-3 py-2">
+      {!first && <span aria-hidden="true" class="hf-rule absolute inset-x-0 top-0" />}
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-sm font-medium">{item.description}</span>
+        <span class="mt-0.5 block truncate text-xs text-fg/60">
+          {[dayMonth(item.occurredOn), method].filter((part) => part !== null).join(" · ")}
+        </span>
+      </span>
+      <span class="hf-num shrink-0 text-sm font-medium">{brl(item.amountMinor)}</span>
+    </li>
+  );
+}
+
+/**
+ * A meta em destaque: o que resta (ou passou) é o número principal, e tocar no card
+ * abre os lançamentos que formam o gasto. Editar é um botão à parte, para o toque de
+ * expandir não abrir o formulário por engano.
+ */
+function BudgetRow({
+  row,
+  state,
+  onEdit,
+}: {
+  row: BudgetStatus;
+  state: AppState;
+  onEdit: () => void;
+}) {
   const { category } = row;
   const over = row.level === "over";
+  const badge = LEVEL_BADGE[row.level];
+  const [expanded, setExpanded] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const listId = `budget-items-${row.budget.id}`;
+  const shown = showAll ? row.items : row.items.slice(0, PREVIEW_COUNT);
 
   return (
-    <li class="rounded-lg bg-surface p-4">
-      <button
-        type="button"
-        onClick={onEdit}
-        aria-label={`Editar meta de ${category.name}`}
-        class="hf-press flex w-full items-center gap-3 text-left"
-      >
-        <IconTile icon={category.icon} color={category.color} size={36} iconSize={18} />
-        <span class="min-w-0 flex-1">
-          <span class="block truncate text-[15px] font-medium">{category.name}</span>
-          <span class="hf-num mt-0.5 block truncate text-xs text-fg/60">
-            {brl(row.spentMinor)} de {brl(row.limitMinor)}
-          </span>
-        </span>
-        <span
-          class={`hf-num shrink-0 text-sm font-medium ${over ? "text-expense-fg" : "text-fg/75"}`}
+    <li
+      data-level={row.level}
+      class={`rounded-xl bg-surface p-4 ${over ? "ring-1 ring-expense/40" : ""}`}
+    >
+      <div class="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          aria-controls={listId}
+          aria-label={`Lançamentos de ${category.name}`}
+          class="hf-press flex min-h-11 min-w-0 flex-1 items-center gap-3 text-left"
         >
-          {Math.floor(row.usedRatio * 100)}%
-        </span>
-      </button>
-
-      <div class="mt-3">
-        <BudgetBar ratio={row.usedRatio} level={row.level} label={`Meta de ${category.name}`} />
+          <IconTile icon={category.icon} color={category.color} size={40} iconSize={20} />
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-base font-medium">{category.name}</span>
+            <span
+              class={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.tone}`}
+            >
+              <Icon name={badge.icon} size={12} />
+              {badge.label}
+            </span>
+          </span>
+          <Icon
+            name="caret-down"
+            size={18}
+            class={`shrink-0 text-fg/55 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
+          />
+        </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Editar meta de ${category.name}`}
+          class="hf-press grid size-11 shrink-0 place-items-center rounded-lg text-fg/70 hover:bg-fg/[0.05]"
+        >
+          <Icon name="pencil-simple" size={18} />
+        </button>
       </div>
 
-      <p class={`hf-num mt-2 text-xs ${over ? "font-medium text-expense-fg" : "text-fg/60"}`}>
-        {over ? `Passou ${brl(row.overMinor)} da meta` : `Restam ${brl(row.remainingMinor)}`}
+      <div class="mt-3 flex items-end justify-between gap-3">
+        <p
+          class={`hf-num min-w-0 text-2xl font-medium tracking-tight ${over ? "text-expense-fg" : ""}`}
+        >
+          <span class="text-base font-normal text-fg/65">{over ? "Passou " : "Restam "}</span>
+          {brl(over ? row.overMinor : row.remainingMinor)}
+        </p>
+        <p class={`hf-num shrink-0 text-xl font-medium ${over ? "text-expense-fg" : "text-fg/85"}`}>
+          {Math.floor(row.usedRatio * 100)}%
+        </p>
+      </div>
+
+      <div class="mt-3">
+        <BudgetBar
+          ratio={row.usedRatio}
+          level={row.level}
+          label={`Meta de ${category.name}`}
+          size="lg"
+        />
+      </div>
+
+      <p class="hf-num mt-2.5 text-xs text-fg/60">
+        {brl(row.spentMinor)} de {brl(row.limitMinor)}
         <span class="text-fg/45"> · {countLabel(row.count)}</span>
       </p>
+
+      {expanded && (
+        <div id={listId} class="mt-3 border-t border-divider pt-1">
+          {row.items.length === 0 ? (
+            <p class="py-3 text-sm text-fg/60">Nenhum lançamento neste mês.</p>
+          ) : (
+            <>
+              <ul aria-label={`Lançamentos de ${category.name}`}>
+                {shown.map((item, index) => (
+                  <ExpenseLine key={item.id} item={item} state={state} first={index === 0} />
+                ))}
+              </ul>
+              {row.items.length > PREVIEW_COUNT && (
+                <button
+                  type="button"
+                  onClick={() => setShowAll(!showAll)}
+                  class="hf-press mt-1 flex min-h-11 w-full items-center justify-center text-[13px] font-medium text-accent-300"
+                >
+                  {showAll ? "Ver menos" : `Ver todos (${row.items.length})`}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </li>
   );
 }
@@ -428,15 +540,6 @@ export function BudgetsPage({ state, items, today, store, onBack }: BudgetsPageP
         <MonthPicker month={month} current={current} onChange={setMonth} />
       </div>
 
-      {rows.length > 0 && (
-        <section aria-label="Total das metas" class="mt-4 rounded-lg bg-surface p-4">
-          <h2 class="hf-label">Gasto nas metas</h2>
-          <p class="hf-num mt-1.5 text-2xl font-medium">
-            {brl(spent)} <span class="text-base text-fg/55">de {brl(limit)}</span>
-          </p>
-        </section>
-      )}
-
       {empty && (
         <section aria-label="Sem metas" class="mt-7">
           <h2 class="text-xl font-medium">Defina quanto gastar por categoria</h2>
@@ -452,12 +555,20 @@ export function BudgetsPage({ state, items, today, store, onBack }: BudgetsPageP
         </section>
       )}
 
+      {/* Resumo discreto: o protagonista é cada meta, não a soma delas. */}
+      {rows.length > 0 && (
+        <p class="hf-num mt-3 px-1 text-xs text-fg/60">
+          Total nas metas: {brl(spent)} de {brl(limit)}
+        </p>
+      )}
+
       {rows.length > 0 && (
         <ul aria-label="Metas" class="mt-4 flex flex-col gap-3">
           {rows.map((row) => (
             <BudgetRow
               key={row.budget.id}
               row={row}
+              state={state}
               onEdit={() => setTarget({ categoryId: row.category.id })}
             />
           ))}
