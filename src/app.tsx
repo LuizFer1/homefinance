@@ -443,6 +443,7 @@ export function App({
             state={state}
             today={today}
             onGoHome={() => goToScreen("inicio")}
+            onOpenBudgets={() => openSection("budget")}
           />
         )}
 
@@ -458,6 +459,7 @@ export function App({
             onEdit={setEditing}
             onConfirm={setConfirming}
             onClassify={() => setClassifying(true)}
+            onOpenBudgets={() => openSection("budget")}
             onOpenProfile={() => openSection("profile")}
           />
         )}

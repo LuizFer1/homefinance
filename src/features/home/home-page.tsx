@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { budgetAlerts, budgetReport } from "../../domain/budgets/status";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction, TransactionKind } from "../../domain/model/transaction";
 import type { User } from "../../domain/model/user";
@@ -32,6 +33,8 @@ export interface HomePageProps {
   onOpenProfile: () => void;
   /** Abre a fila de lançamentos sem categoria. Sem ele, o contador não aparece. */
   onClassify?: () => void;
+  /** Abre o Orçamento. Sem ele, o aviso de meta em risco não aparece. */
+  onOpenBudgets?: () => void;
 }
 
 /** "Setembro" — nome do mês, sem o ano, com inicial maiúscula. */
@@ -177,6 +180,7 @@ export function HomePage({
   onConfirm,
   onOpenProfile,
   onClassify,
+  onOpenBudgets,
 }: HomePageProps) {
   // O que está nas reservas não é para gastar: contá-lo aqui de novo mostraria
   // o mesmo dinheiro em dois lugares (saldo e reserva) e o saldo pareceria maior
@@ -189,6 +193,7 @@ export function HomePage({
   const [filters, setFilters] = useState(NO_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const pendingCategory = uncategorized(items, state).length;
+  const atRisk = budgetAlerts(budgetReport(items, state, monthOf(today)).rows);
   const filtering = hasFilters(filters);
   const shown = filtering ? filterTransactions(items, filters, state) : items;
 
@@ -234,6 +239,34 @@ export function HomePage({
         <Icon name="file-pdf" size={16} />
         Importar fatura ou extrato
       </button>
+
+      {onOpenBudgets !== undefined && atRisk.length > 0 && (
+        <button
+          type="button"
+          onClick={onOpenBudgets}
+          data-testid="budget-alert"
+          class="hf-press mt-3 flex min-h-10 w-full items-center justify-between gap-3 rounded-lg px-3.5 py-2 text-left text-[13px] text-fg/70 hover:bg-fg/[0.05]"
+        >
+          <span class="min-w-0">
+            <span class="block">
+              <span class="hf-num font-medium text-fg">{atRisk.length}</span>{" "}
+              {atRisk.length === 1 ? "meta em risco" : "metas em risco"}
+            </span>
+            {/* Só nome e porcentagem: o aviso não carrega valor, então "Ocultar valores" não vaza. */}
+            <span class="mt-0.5 block truncate text-xs text-fg/55">
+              {atRisk
+                .slice(0, 2)
+                .map((row) =>
+                  row.level === "over"
+                    ? `${row.category.name} estourou`
+                    : `${row.category.name} ${Math.floor(row.usedRatio * 100)}%`,
+                )
+                .join(" · ")}
+            </span>
+          </span>
+          <span class="shrink-0 font-medium text-accent-300">Ver</span>
+        </button>
+      )}
 
       {onClassify !== undefined && pendingCategory > 0 && (
         <button

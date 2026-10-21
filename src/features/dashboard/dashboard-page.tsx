@@ -1,5 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
+import { budgetReport } from "../../domain/budgets/status";
 import { shiftMonth } from "../../domain/dates/calendar";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
@@ -23,6 +24,7 @@ import { findCategory } from "../../domain/projections/selectors";
 import { upcomingRecurrences } from "../../domain/recurrence/upcoming";
 import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
+import { BudgetBar } from "../ui/budget-bar";
 import { Button } from "../ui/button";
 import { brl, Money, signedBRL, wholeBRL } from "../ui/money";
 import { MonthPicker } from "../ui/month-picker";
@@ -40,6 +42,8 @@ export interface DashboardPageProps {
   today: string;
   /** Botão do estado vazio. */
   onGoHome?: () => void;
+  /** Abre o Orçamento. Sem ele, o card de metas não tem para onde levar e some. */
+  onOpenBudgets?: () => void;
 }
 
 /**
@@ -47,6 +51,8 @@ export interface DashboardPageProps {
  * frase "últimos seis meses" do vazio — por extenso, não dá para compor daqui.
  */
 const WINDOW = 6;
+/** Metas no card do Dashboard: as mais usadas; o resto fica na tela de Orçamento. */
+const BUDGET_CARD_ROWS = 3;
 /** Janela dos "Recorrentes a caminho". */
 const UPCOMING_DAYS = 30;
 
@@ -113,7 +119,13 @@ function EmptyDashboard({ month, onGoHome }: { month: string; onGoHome?: () => v
  * compara no mesmo dia, "para onde foi" ordena as categorias, "a caminho"
  * antecipa o que a recorrência vai lançar. O seletor de mês recalcula tudo.
  */
-export function DashboardPage({ items, state, today, onGoHome }: DashboardPageProps) {
+export function DashboardPage({
+  items,
+  state,
+  today,
+  onGoHome,
+  onOpenBudgets,
+}: DashboardPageProps) {
   const current = monthOf(today);
   const [month, setMonth] = useState(current);
 
@@ -144,6 +156,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
   const bars = monthlyTotals(items, lastMonths(`${month}-01`, WINDOW));
   const upcoming = month === current ? upcomingRecurrences(state, today, UPCOMING_DAYS) : [];
   const cashback = cashbackSummary(monthItems, state);
+  const budgets = budgetReport(items, state, month).rows;
   const moved = summary.incomeMinor + summary.expenseMinor;
   const label = monthLabelLong(month);
   const up = comparison.deltaMinor >= 0;
@@ -292,6 +305,53 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
             </ul>
           )}
         </Card>
+
+        {onOpenBudgets !== undefined && budgets.length > 0 && (
+          <Card
+            title="Metas"
+            aside={`${budgets.length} ${budgets.length === 1 ? "categoria" : "categorias"}`}
+          >
+            <ul class="mt-3 space-y-3.5">
+              {budgets.slice(0, BUDGET_CARD_ROWS).map((row) => (
+                <li key={row.budget.id}>
+                  <div class="flex items-center gap-2.5">
+                    <IconTile
+                      icon={row.category.icon}
+                      color={row.category.color}
+                      size={28}
+                      iconSize={15}
+                    />
+                    <span class="min-w-0 flex-1 truncate text-sm">{row.category.name}</span>
+                    <span class="hf-num text-xs text-fg/60">
+                      {brl(row.spentMinor)} de {brl(row.limitMinor)}
+                    </span>
+                    <span
+                      class={`hf-num w-10 text-right text-xs font-medium ${
+                        row.level === "over" ? "text-expense-fg" : "text-fg/60"
+                      }`}
+                    >
+                      {Math.floor(row.usedRatio * 100)}%
+                    </span>
+                  </div>
+                  <div class="mt-1.5 ml-[38px]">
+                    <BudgetBar
+                      ratio={row.usedRatio}
+                      level={row.level}
+                      label={`Meta de ${row.category.name}`}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={onOpenBudgets}
+              class="hf-press mt-3 text-[13px] font-medium text-accent-300"
+            >
+              Ver orçamento
+            </button>
+          </Card>
+        )}
 
         {upcoming.length > 0 && (
           <Card title="Recorrentes a caminho" aside={`próximos ${UPCOMING_DAYS} dias`}>
