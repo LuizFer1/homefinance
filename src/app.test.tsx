@@ -6,6 +6,7 @@ import type { HomeFinanceDb } from "./data/db";
 import { buildRow } from "./data/repository";
 import { openTestDb, TEST_DEVICE_ID, testSessionDeps } from "./data/test-db.fake";
 import { createRowClock } from "./domain/clock/row-clock";
+import type { Category } from "./domain/model/category";
 import type { Reserve } from "./domain/model/reserve";
 import type { Transaction } from "./domain/model/transaction";
 import type { User } from "./domain/model/user";
@@ -215,6 +216,66 @@ describe("App", () => {
     await edit.mock.results[0]?.value;
     const [linha] = await db.transactions.toArray();
     expect(linha).toMatchObject({ description: "Mercado", amountMinor: 500, dirty: 1 });
+  });
+
+  it("reclassificar oferece aplicar às semelhantes e grava só o confirmado", async () => {
+    const db = await cadastrado();
+    const clock = seedClock();
+    const CAT = "01J9F3K2M7QX8YB4TVWZ0DCCAT";
+    await db.categories.put(
+      buildRow<Category>(
+        clock,
+        { name: "Padarias", icon: "tag", color: "amber", kind: "expense" },
+        CAT,
+      ),
+    );
+    const base = {
+      kind: "expense" as const,
+      amountMinor: 1_000,
+      currency: "BRL" as const,
+      categoryId: null,
+      paymentMethodId: null,
+      cashbackMinor: null,
+      occurredOn: "2026-08-01",
+      userId: null,
+      recurrenceId: null,
+      occurrenceKey: null,
+    };
+    await db.transactions.bulkPut([
+      buildRow<Transaction>(
+        clock,
+        { ...base, description: "Padaria" },
+        "01J9F3K2M7QX8YB4TVWZ0DCT01",
+      ),
+      buildRow<Transaction>(
+        clock,
+        { ...base, description: "PADARIA 12" },
+        "01J9F3K2M7QX8YB4TVWZ0DCT02",
+      ),
+      buildRow<Transaction>(
+        clock,
+        { ...base, description: "Cinema" },
+        "01J9F3K2M7QX8YB4TVWZ0DCT03",
+      ),
+    ]);
+    const stores = buildStores(db);
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await waitFor(() => expect(screen.getByText("Padaria")).toBeDefined());
+
+    await abrirEdicao("Padaria");
+    fireEvent.click(screen.getByRole("button", { name: "Categoria" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Padarias" }));
+    concluirWizard();
+
+    await waitFor(() => expect(screen.getByText(/Outros 1 lançamento/)).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: /Continuar/, hidden: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar a 1", hidden: true }));
+
+    await waitFor(async () => {
+      const rows = await db.transactions.toArray();
+      const byId = Object.fromEntries(rows.map((row) => [row.description, row.categoryId]));
+      expect(byId).toEqual({ Padaria: CAT, "PADARIA 12": CAT, Cinema: null });
+    });
   });
 
   it("não regrava a linha quando nada mudou na edição", async () => {
