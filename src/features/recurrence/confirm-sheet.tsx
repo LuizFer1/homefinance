@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import type { Transaction } from "../../domain/model/transaction";
-import { MAX_MINOR, maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
+import { digitsOf, MAX_MINOR, maskDigits, minorOf } from "../../domain/money/mask";
 import { Button } from "../ui/button";
 import { DateButton } from "../ui/date-field";
 import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
@@ -49,7 +49,7 @@ export function ConfirmSheet({ record, today, onConfirm, onClose }: ConfirmSheet
           autocomplete="off"
           placeholder="0,00"
           value={maskDigits(amount)}
-          onInput={(event) => setAmount(onlyDigits(event.currentTarget.value))}
+          onInput={(event) => setAmount(digitsOf(event.currentTarget))}
           class={`${FIELD_SHEET} hf-num mt-2`}
         />
         <p class={HINT}>Entra na média das próximas estimativas.</p>

@@ -9,7 +9,7 @@ import {
   parsePercent,
   percentChange,
 } from "../../domain/money/adjust";
-import { MAX_MINOR, maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
+import { digitsOf, MAX_MINOR, maskDigits, minorOf } from "../../domain/money/mask";
 import { monthLabelShort } from "../../domain/projections/periods";
 import {
   type AdjustmentInput,
@@ -158,7 +158,7 @@ export function AdjustSheet({
             autocomplete="off"
             placeholder="0,00"
             value={maskDigits(amount)}
-            onInput={(event) => setAmount(onlyDigits(event.currentTarget.value))}
+            onInput={(event) => setAmount(digitsOf(event.currentTarget))}
             class={`${FIELD_SHEET} hf-num mt-2`}
           />
         </div>

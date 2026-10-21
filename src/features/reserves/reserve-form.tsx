@@ -10,7 +10,7 @@ import {
   type ReserveKind,
 } from "../../domain/model/reserve";
 import type { ColorToken, IconKey } from "../../domain/model/tokens";
-import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
+import { digitsOf, maskDigits, minorOf } from "../../domain/money/mask";
 import { monthOf } from "../../domain/projections/periods";
 import { emergencyOf, isDuplicateEmergency, reserveBalance } from "../../domain/reserves/balances";
 import { essentialCost, findEssentialCategoryIds } from "../../domain/reserves/essential";
@@ -92,7 +92,7 @@ function MoneyField({
           autocomplete="off"
           placeholder="0,00"
           value={maskDigits(digits)}
-          onInput={(event) => onDigits(onlyDigits(event.currentTarget.value))}
+          onInput={(event) => onDigits(digitsOf(event.currentTarget))}
           aria-describedby={hint === undefined ? undefined : `${id}-hint`}
           class="hf-num min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-fg/40"
         />

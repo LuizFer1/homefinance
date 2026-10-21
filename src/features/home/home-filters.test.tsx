@@ -106,8 +106,12 @@ describe("filtros", () => {
     renderHome();
     fireEvent.click(screen.getByRole("button", { name: "Filtros" }));
 
-    fireEvent.change(screen.getByLabelText("Categoria"), { target: { value: CAT } });
     fireEvent.click(screen.getByRole("radio", { name: "Despesas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Próxima etapa" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Alimentação" }));
+    // Nada muda atrás do sheet até "Filtrar".
+    expect(rows()).toHaveLength(4);
+    fireEvent.click(screen.getByRole("button", { name: "Filtrar" }));
 
     expect(rows()).toHaveLength(2);
     const chips = screen.getByRole("list", { name: "Filtros ativos" });
@@ -121,9 +125,42 @@ describe("filtros", () => {
   it("'Sem categoria' recorta o que não tem categoria", () => {
     renderHome();
     fireEvent.click(screen.getByRole("button", { name: "Filtros" }));
-    fireEvent.change(screen.getByLabelText("Categoria"), { target: { value: "none" } });
+    fireEvent.click(screen.getByRole("button", { name: "Próxima etapa" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Sem categoria" }));
+    fireEvent.click(screen.getByRole("button", { name: "Filtrar" }));
 
     expect(rows()).toHaveLength(2);
     expect(screen.getAllByText("Sem categoria").length).toBeGreaterThan(0);
+  });
+
+  it("navega pelas três etapas com as setas e pela barra de progresso", () => {
+    renderHome();
+    fireEvent.click(screen.getByRole("button", { name: "Filtros" }));
+
+    expect(screen.getByRole("radio", { name: "Receitas" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Etapa anterior" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Próxima etapa" }));
+    expect(screen.getByRole("radio", { name: "Todas" })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Próxima etapa" }));
+    expect(screen.getByRole("radio", { name: "Sem forma de pagamento" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Próxima etapa" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Tipo" }));
+    expect(screen.getByRole("radio", { name: "Receitas" })).toBeDefined();
+  });
+
+  it("Limpar zera a escolha do rascunho sem mexer na lista", () => {
+    renderHome();
+    fireEvent.click(screen.getByRole("button", { name: "Filtros" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Receitas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Limpar" }));
+    expect((screen.getByRole("radio", { name: "Todos" }) as HTMLInputElement).checked).toBe(true);
+    expect(rows()).toHaveLength(4);
   });
 });
