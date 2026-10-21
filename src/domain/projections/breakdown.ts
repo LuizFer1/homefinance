@@ -1,4 +1,5 @@
 import type { Transaction } from "../model/transaction";
+import { countsInTotals } from "../transactions/counts-in-totals";
 import { monthOf } from "./periods";
 
 export interface MonthTotals {
@@ -29,6 +30,7 @@ export function monthlyTotals(records: Transaction[], months: string[]): MonthTo
   }
 
   for (const record of records) {
+    if (!countsInTotals(record)) continue;
     const entry = buckets.get(monthOf(record.occurredOn));
     // Fora da janela pedida. Não é erro: o banco guarda tudo, a janela é da tela.
     if (entry === undefined) continue;

@@ -11,10 +11,12 @@ import {
   SCHEDULE_TYPES,
   type ScheduleType,
 } from "../../domain/model/recurrence";
-import type {
-  Transaction,
-  TransactionDraft,
-  TransactionKind,
+import {
+  REPORT_STATES,
+  type ReportState,
+  type Transaction,
+  type TransactionDraft,
+  type TransactionKind,
 } from "../../domain/model/transaction";
 import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
 import { dayMonth } from "../../domain/projections/periods";
@@ -70,6 +72,21 @@ const KINDS = [
   { value: "income", label: "Receita", tone: "income" },
 ] as const;
 
+/** Como o lançamento entra nas contas; `counts` é a ausência de `reportState`. */
+type CountMode = "counts" | ReportState;
+
+const COUNT_OPTIONS: readonly { value: CountMode; label: string }[] = [
+  { value: "counts", label: "Conta" },
+  { value: "transfer", label: "Transferência" },
+  { value: "hidden", label: "Oculto" },
+];
+
+const COUNT_HINTS: Record<CountMode, string> = {
+  counts: "Entra no saldo, na receita ou na despesa e nos gráficos.",
+  transfer: "Movimento entre contas suas, como pagar a fatura. Não é receita nem despesa.",
+  hidden: "Continua na lista, mas fica fora de saldo, gráficos e relatórios.",
+};
+
 /** Rótulo curto da tag do cashback: de onde ele foi liberado. */
 const CASHBACK_SOURCE: Record<string, string> = {
   credit: "liberado pelo crédito",
@@ -123,6 +140,14 @@ export function TransactionWizard({
   const [variable, setVariable] = useState(false);
   const [hasEnd, setHasEnd] = useState(false);
   const [endOn, setEndOn] = useState(today);
+  // Valor que esta versão não conhece (vindo do sync) aparece como "Conta", que é
+  // como ele é tratado; e só é regravado se o usuário escolher outra opção.
+  const initialCount: CountMode = (REPORT_STATES as readonly string[]).includes(
+    editing?.reportState ?? "",
+  )
+    ? (editing?.reportState as ReportState)
+    : "counts";
+  const [countMode, setCountMode] = useState<CountMode>(initialCount);
   const [problem, setProblem] = useState<string | null>(null);
 
   const selectedMethod = paymentMethods.find((method) => method.id === paymentMethodId) ?? null;
@@ -224,6 +249,11 @@ export function TransactionWizard({
         // o valor: abrir e salvar é um ato deliberado, e deixá-la estimada
         // depois de mexer na data seria um limbo sem explicação.
         ...(editing?.estimated === true ? { estimated: false } : {}),
+        // Só quando mudou: criar sem escolher não grava a coluna, e abrir e salvar
+        // uma linha com valor futuro não o apaga.
+        ...(countMode !== initialCount
+          ? { reportState: countMode === "counts" ? null : countMode }
+          : {}),
       },
       canConfigureRecurrence && repeats ? recurrenceInput() : null,
     );
@@ -710,6 +740,20 @@ export function TransactionWizard({
                   ))}
                 </div>
               )}
+            </fieldset>
+
+            <fieldset class="mt-5">
+              <legend class={LABEL}>Nas contas</legend>
+              <Segmented
+                name="count-mode"
+                legend="Nas contas"
+                dense
+                class="mt-2"
+                options={COUNT_OPTIONS}
+                value={countMode}
+                onChange={setCountMode}
+              />
+              <p class={HINT}>{COUNT_HINTS[countMode]}</p>
             </fieldset>
 
             {showsCashback && (

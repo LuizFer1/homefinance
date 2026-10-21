@@ -31,7 +31,26 @@ export interface Transaction extends BaseRow {
    * com o próprio id) e a conta entraria duas vezes.
    */
   importKey?: string | null;
+  /**
+   * Fora dos totais por decisão do usuário. `transfer`: movimento entre contas
+   * próprias (não é receita nem despesa); `hidden`: continua na lista, mas não
+   * entra em relatório algum. Ausente e `null` valem "conta normalmente".
+   */
+  reportState?: ReportState | null;
 }
+
+/**
+ * Um campo com valores fechados, e não dois booleanos: dois campos permitiriam o
+ * par contraditório (transferência e oculto) depois de um merge entre aparelhos,
+ * e o hub teria de decidir qual vence.
+ */
+export const REPORT_STATES = ["transfer", "hidden"] as const;
+export type ReportState = (typeof REPORT_STATES)[number];
+
+export const REPORT_STATE_LABELS: Record<ReportState, string> = {
+  transfer: "Transferência",
+  hidden: "Oculto",
+};
 
 /**
  * `userId` fica fora do draft: autoria não é campo de formulário. Como `edit`

@@ -4,6 +4,7 @@ import type { AppState } from "../model/app-state";
 import { NEUTRAL_TOKEN } from "../model/tokens";
 import type { Transaction } from "../model/transaction";
 import { offersCashback } from "../transactions/cashback";
+import { countsInTotals } from "../transactions/counts-in-totals";
 import { filterByMonth, type MonthTotals } from "./breakdown";
 import { monthOf } from "./periods";
 import { findCategory, type Totals, totals } from "./selectors";
@@ -50,7 +51,7 @@ function cumulativeExpense(items: Transaction[], month: string): number[] {
   const daily = new Array<number>(daysInMonth(month)).fill(0);
 
   for (const item of filterByMonth(items, month)) {
-    if (item.kind !== "expense") continue;
+    if (item.kind !== "expense" || !countsInTotals(item)) continue;
     const index = Number(item.occurredOn.slice(8, 10)) - 1;
     if (index >= 0 && index < daily.length) daily[index] = (daily[index] ?? 0) + item.amountMinor;
   }
@@ -130,7 +131,7 @@ export function categoryBreakdown(items: Transaction[], state: AppState): Catego
   let total = 0;
 
   for (const item of items) {
-    if (item.kind !== "expense") continue;
+    if (item.kind !== "expense" || !countsInTotals(item)) continue;
     const id = findCategory(state, item.categoryId)?.id ?? null;
     sums.set(id, (sums.get(id) ?? 0) + item.amountMinor);
     total += item.amountMinor;
@@ -169,6 +170,7 @@ export function cashbackSummary(items: Transaction[], state: AppState): Cashback
   let purchases = 0;
 
   for (const item of items) {
+    if (!countsInTotals(item)) continue;
     const method =
       item.paymentMethodId === null ? undefined : state.paymentMethods[item.paymentMethodId];
     if (offersCashback(method?.kind ?? null, item.kind)) purchases += 1;
