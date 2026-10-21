@@ -7,9 +7,14 @@ import { listCategories, listTransactions } from "../../domain/projections/selec
 import { suggestionsFor, uncategorized } from "../../domain/projections/uncategorized";
 import { describeError } from "../session/session";
 import { Button } from "../ui/button";
-import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
+import { HINT, LABEL } from "../ui/field";
 import { SheetHeader } from "../ui/modal";
 import { signedBRL } from "../ui/money";
+import { Progress } from "../ui/progress";
+import { IconTile } from "../ui/tile";
+import { CategoryTile } from "./choice-tiles";
+
+const STEPS = ["Lançamentos", "Categoria", "Prévia"] as const;
 
 export interface UncategorizedSheetProps {
   state: AppState;
@@ -19,7 +24,8 @@ export interface UncategorizedSheetProps {
 }
 
 /**
- * Fila do que ficou sem categoria, com seleção múltipla.
+ * Fila do que ficou sem categoria, em três etapas: marcar, escolher a categoria e
+ * conferir a prévia antes de gravar.
  *
  * A sugestão (a mesma da importação de PDF, pelo histórico) só **pré-seleciona**
  * o campo de categoria quando todos os marcados concordam. Nunca é aplicada
@@ -30,6 +36,8 @@ export function UncategorizedSheet({ state, onApply, onClose }: UncategorizedShe
   const suggestions = useMemo(() => suggestionsFor(items, state), [items, state]);
   const [picked, setPicked] = useState<ReadonlySet<Ulid>>(new Set());
   const [chosen, setChosen] = useState<Ulid | null>(null);
+  const [step, setStep] = useState(0);
+  const [dir, setDir] = useState<"next" | "back">("next");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -73,6 +81,7 @@ export function UncategorizedSheet({ state, onApply, onClose }: UncategorizedShe
       // a seleção e a categoria escolhida.
       setPicked(new Set());
       setChosen(null);
+      setStep(0);
     } catch (cause) {
       // Nada foi gravado (o lote é tudo ou nada): a seleção fica para tentar de novo.
       setProblem(`Nada foi alterado. ${describeError(cause)}`);
@@ -82,6 +91,18 @@ export function UncategorizedSheet({ state, onApply, onClose }: UncategorizedShe
   }
 
   const allPicked = items.length > 0 && selected.length === items.length;
+  const chosenCategory = value === "" ? null : (state.categories[value] ?? null);
+
+  // Desmarcar tudo (ou a categoria deixar de servir) rebaixa a etapa em vez de
+  // deixar a prévia mostrando o que não vale mais.
+  const maxReachable = selected.length === 0 ? 0 : chosenCategory === null ? 1 : 2;
+  const current = Math.min(step, maxReachable);
+
+  function goTo(index: number) {
+    const next = Math.max(0, Math.min(index, maxReachable));
+    setDir(next < current ? "back" : "next");
+    setStep(next);
+  }
 
   return (
     <div class="flex flex-col">
@@ -97,97 +118,175 @@ export function UncategorizedSheet({ state, onApply, onClose }: UncategorizedShe
         </div>
       ) : (
         <>
-          <div class="mt-4 flex items-center justify-between gap-3">
-            <p class="text-sm text-fg/65">
-              {items.length} {items.length === 1 ? "lançamento" : "lançamentos"}
-            </p>
-            <button
-              type="button"
-              onClick={() =>
-                setPicked(allPicked ? new Set() : new Set(items.map((item) => item.id)))
-              }
-              class="hf-press text-[13px] font-medium text-accent-300"
-            >
-              {allPicked ? "Desmarcar todos" : "Marcar todos"}
-            </button>
+          <div class="mt-5">
+            <Progress steps={STEPS} current={current} maxReachable={maxReachable} onGo={goTo} />
           </div>
 
-          <ul class="mt-2 overflow-hidden rounded-lg bg-bg">
-            {items.map((item) => {
-              const suggestion = suggestions.get(item.id);
-              const suggestionName =
-                suggestion === undefined ? null : state.categories[suggestion]?.name;
-              const income = item.kind === "income";
-              return (
-                <li key={item.id} class="border-b border-divider last:border-b-0">
-                  <label class="flex min-h-14 cursor-pointer items-center gap-3 px-3.5 py-2.5">
-                    <input
-                      type="checkbox"
-                      checked={picked.has(item.id)}
-                      onChange={() => toggle(item)}
-                      aria-label={`Selecionar ${item.description}`}
-                      class="size-5 shrink-0 accent-[var(--color-accent)]"
-                    />
-                    <span class="min-w-0 flex-1">
-                      <span class="block truncate text-[15px] font-medium">{item.description}</span>
-                      <span class="mt-0.5 block truncate text-xs text-fg/55">
-                        {dayMonth(item.occurredOn)}
-                        {suggestionName != null && ` · sugestão: ${suggestionName}`}
-                      </span>
-                    </span>
-                    <span
-                      class={`hf-num shrink-0 text-[15px] font-medium ${income ? "text-income-fg" : ""}`}
-                    >
-                      {signedBRL(income ? item.amountMinor : -item.amountMinor, "always")}
-                    </span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
+          <div key={current} data-dir={dir} class="hf-step mt-5">
+            {current === 0 && (
+              <>
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-sm text-fg/65">
+                    {items.length} {items.length === 1 ? "lançamento" : "lançamentos"}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPicked(allPicked ? new Set() : new Set(items.map((item) => item.id)))
+                    }
+                    class="hf-press text-[13px] font-medium text-accent-300"
+                  >
+                    {allPicked ? "Desmarcar todos" : "Marcar todos"}
+                  </button>
+                </div>
 
-          <div class="mt-5">
-            <label class={LABEL} for="uncategorized-category">
-              Categoria para os marcados
-            </label>
-            <select
-              id="uncategorized-category"
-              class={`${FIELD_SHEET} mt-2 text-[15px]`}
-              value={value}
-              disabled={selected.length === 0}
-              onChange={(event) => setChosen(event.currentTarget.value || null)}
-            >
-              <option value="">
-                {selected.length === 0 ? "Marque os lançamentos" : "Escolha a categoria"}
-              </option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-            {common !== null && value === common && chosen === null && (
-              <p class={HINT}>Sugerida pelo seu histórico. Confirme para aplicar.</p>
+                <ul class="mt-2 overflow-hidden rounded-lg bg-bg">
+                  {items.map((item) => {
+                    const suggestion = suggestions.get(item.id);
+                    const suggestionName =
+                      suggestion === undefined ? null : state.categories[suggestion]?.name;
+                    const income = item.kind === "income";
+                    return (
+                      <li key={item.id} class="border-b border-divider last:border-b-0">
+                        <label class="flex min-h-14 cursor-pointer items-center gap-3 px-3.5 py-2.5">
+                          <input
+                            type="checkbox"
+                            checked={picked.has(item.id)}
+                            onChange={() => toggle(item)}
+                            aria-label={`Selecionar ${item.description}`}
+                            class="size-5 shrink-0 accent-[var(--color-accent)]"
+                          />
+                          <span class="min-w-0 flex-1">
+                            <span class="block truncate text-[15px] font-medium">
+                              {item.description}
+                            </span>
+                            <span class="mt-0.5 block truncate text-xs text-fg/55">
+                              {dayMonth(item.occurredOn)}
+                              {suggestionName != null && ` · sugestão: ${suggestionName}`}
+                            </span>
+                          </span>
+                          <span
+                            class={`hf-num shrink-0 text-[15px] font-medium ${income ? "text-income-fg" : ""}`}
+                          >
+                            {signedBRL(income ? item.amountMinor : -item.amountMinor, "always")}
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+
+            {current === 1 && (
+              <fieldset>
+                <legend class={LABEL}>Categoria para os marcados</legend>
+                {categories.length === 0 ? (
+                  <p class="mt-2 rounded-lg bg-bg px-3.5 py-3 text-sm text-fg/60">
+                    Nenhuma categoria serve a receitas e despesas juntas. Volte e marque só um tipo.
+                  </p>
+                ) : (
+                  <div class="mt-2 grid grid-cols-3 gap-2">
+                    {categories.map((category) => (
+                      <CategoryTile
+                        key={category.id}
+                        group="uncategorized-category"
+                        name={category.name}
+                        icon={category.icon}
+                        color={category.color}
+                        checked={value === category.id}
+                        onSelect={() => setChosen(category.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+                {common !== null && value === common && chosen === null && (
+                  <p class={HINT}>Sugerida pelo seu histórico. Confirme para aplicar.</p>
+                )}
+              </fieldset>
+            )}
+
+            {current === 2 && chosenCategory !== null && (
+              <>
+                <div class="flex items-center gap-3 rounded-lg bg-bg px-3.5 py-3">
+                  <IconTile
+                    icon={chosenCategory.icon}
+                    color={chosenCategory.color}
+                    size={30}
+                    iconSize={17}
+                  />
+                  <p class="min-w-0 flex-1 text-sm text-fg/75">
+                    {selected.length === 1
+                      ? "1 lançamento passa para "
+                      : `${selected.length} lançamentos passam para `}
+                    <span class="font-medium text-fg">{chosenCategory.name}</span>
+                  </p>
+                </div>
+
+                <ul aria-label="Prévia" class="mt-3 overflow-hidden rounded-lg bg-bg">
+                  {selected.map((item) => {
+                    const income = item.kind === "income";
+                    return (
+                      <li
+                        key={item.id}
+                        class="flex min-h-12 items-center gap-3 border-b border-divider px-3.5 py-2 last:border-b-0"
+                      >
+                        <span class="min-w-0 flex-1">
+                          <span class="block truncate text-[15px] font-medium">
+                            {item.description}
+                          </span>
+                          <span class="mt-0.5 block truncate text-xs text-fg/55">
+                            {dayMonth(item.occurredOn)} · Sem categoria → {chosenCategory.name}
+                          </span>
+                        </span>
+                        <span
+                          class={`hf-num shrink-0 text-[15px] font-medium ${income ? "text-income-fg" : ""}`}
+                        >
+                          {signedBRL(income ? item.amountMinor : -item.amountMinor, "always")}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                {problem !== null && (
+                  <p role="alert" class="mt-4 text-sm text-expense-fg">
+                    {problem}
+                  </p>
+                )}
+              </>
             )}
           </div>
 
-          {problem !== null && (
-            <p role="alert" class="mt-4 text-sm text-expense-fg">
-              {problem}
-            </p>
-          )}
-
           <div class="sticky bottom-0 -mx-5 mt-6 flex gap-2.5 bg-surface px-5 pt-2">
-            <Button variant="secondary" onClick={onClose}>
-              Fechar
-            </Button>
             <Button
-              class="flex-1"
-              disabled={value === "" || selected.length === 0 || busy}
-              onClick={apply}
+              variant="secondary"
+              onClick={() => (current === 0 ? onClose() : goTo(current - 1))}
             >
-              Aplicar categoria{selected.length > 0 ? ` (${selected.length})` : ""}
+              {current === 0 ? "Fechar" : "Voltar"}
             </Button>
+            {current < 2 ? (
+              <Button
+                key="avancar"
+                icon="arrow-right"
+                class="flex-1"
+                disabled={current >= maxReachable}
+                onClick={() => goTo(current + 1)}
+              >
+                Continuar
+              </Button>
+            ) : (
+              <Button
+                key="aplicar"
+                icon="check"
+                iconSide="left"
+                class="flex-1"
+                disabled={busy}
+                onClick={apply}
+              >
+                Aplicar categoria ({selected.length})
+              </Button>
+            )}
           </div>
         </>
       )}
