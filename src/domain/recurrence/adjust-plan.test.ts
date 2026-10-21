@@ -273,3 +273,69 @@ describe("periodChoices", () => {
     expect(periods.slice(0, 3)).toEqual(["2026-01", "2026-03", "2026-05"]);
   });
 });
+
+describe("série semanal", () => {
+  const SEMANAL: Recurrence = {
+    ...SALARIO,
+    id: "SERIE-SEM",
+    frequency: "weekly",
+    startOn: "2026-06-03",
+  };
+
+  function semana(period: string, amountMinor = 500_000): Transaction {
+    const key = occurrenceKey(SEMANAL.id, period);
+    return {
+      ...ocorrencia(period, amountMinor),
+      id: stableEntityId(key),
+      recurrenceId: SEMANAL.id,
+      occurrenceKey: key,
+      occurredOn: period,
+    };
+  }
+
+  it("reajusta a partir de uma data, sem mexer nas semanas anteriores", () => {
+    const rows = ["2026-06-03", "2026-06-10", "2026-06-17"].map((d) => semana(d));
+    const state: AppState = {
+      ...EMPTY_APP_STATE,
+      recurrences: { [SEMANAL.id]: SEMANAL },
+      transactions: Object.fromEntries(rows.map((row) => [row.id, row])),
+    };
+    const plan = planAdjustment(state, {
+      recurrenceId: SEMANAL.id,
+      fromPeriod: "2026-06-10",
+      amountMinor: 600_000,
+    });
+
+    expect(plan?.updates.map((u) => u.transaction.occurredOn)).toEqual([
+      "2026-06-10",
+      "2026-06-17",
+    ]);
+    expect(plan?.baseMinor).toBe(500_000);
+  });
+
+  it("periodChoices anda de 7 em 7 dias e começa na primeira semana sem linha", () => {
+    const first = semana("2026-06-03");
+    const state: AppState = {
+      ...EMPTY_APP_STATE,
+      recurrences: { [SEMANAL.id]: SEMANAL },
+      transactions: { [first.id]: first },
+    };
+    const { periods, initial } = periodChoices(state, SEMANAL);
+
+    expect(initial).toBe("2026-06-10");
+    expect(periods.slice(0, 3)).toEqual(["2026-06-03", "2026-06-10", "2026-06-17"]);
+  });
+
+  it("série antiga bimestral segue com competências de mês", () => {
+    const bi: Recurrence = { ...SALARIO, frequency: "bimonthly", startOn: "2026-01-05" };
+    const { periods } = periodChoices({ ...EMPTY_APP_STATE, recurrences: { [bi.id]: bi } }, bi);
+
+    expect(periods.slice(0, 3)).toEqual(["2026-01", "2026-03", "2026-05"]);
+  });
+
+  it("frequência desconhecida não trava periodChoices", () => {
+    const futura = { ...SALARIO, frequency: "daily" } as unknown as Recurrence;
+
+    expect(periodChoices(EMPTY_APP_STATE, futura).periods).toEqual(["2026-06"]);
+  });
+});
