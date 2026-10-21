@@ -67,6 +67,8 @@ const REGULAR = [
   "check",
   "eye",
   "eye-slash",
+  "magnifying-glass",
+  "sliders-horizontal",
   "circle-dashed",
   "circle-half",
   "coins",

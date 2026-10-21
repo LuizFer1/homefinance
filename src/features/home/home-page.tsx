@@ -1,14 +1,17 @@
+import { useState } from "preact/hooks";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction, TransactionKind } from "../../domain/model/transaction";
 import type { User } from "../../domain/model/user";
 import { filterByMonth } from "../../domain/projections/breakdown";
 import { estimatedTotals, pendingEstimates } from "../../domain/projections/estimates";
+import { filterTransactions, hasFilters, NO_FILTERS } from "../../domain/projections/filter";
 import { monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { totals } from "../../domain/projections/selectors";
 import { availableBalance, savedInMonth } from "../../domain/reserves/balances";
 import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
 import { periodLabel } from "../recurrence/adjust-sheet";
+import { FilterBar, FilterSummary, NothingFound } from "../transactions/transaction-filters";
 import { TransactionList } from "../transactions/transaction-list";
 import { greetingFor } from "../ui/greeting";
 import { brl, compactBRL, MINUS, Money, moneyParts } from "../ui/money";
@@ -176,6 +179,13 @@ export function HomePage({
   // do que realmente se pode usar.
   const available = availableBalance(state);
   const savedThisMonth = savedInMonth(state, monthOf(today)) !== 0;
+  // Estado de tela, não dado: não grava nem sincroniza. A lista do Início é de
+  // todos os meses, então não há troca de mês que zere o recorte; sair da aba
+  // desmonta a página e zera.
+  const [filters, setFilters] = useState(NO_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtering = hasFilters(filters);
+  const shown = filtering ? filterTransactions(items, filters, state) : items;
 
   return (
     <>
@@ -198,7 +208,7 @@ export function HomePage({
         <Money minor={available} size={44} testId="total-balance" />
       </p>
 
-      {(items.length > 0 || savedThisMonth) && (
+      {!filtering && (items.length > 0 || savedThisMonth) && (
         <MonthCard items={items} state={state} today={today} />
       )}
 
@@ -220,13 +230,29 @@ export function HomePage({
         Importar fatura ou extrato
       </button>
 
-      <TransactionList
-        items={items}
-        state={state}
-        today={today}
-        currentUserId={profile?.id ?? null}
-        onEdit={onEdit}
-      />
+      {items.length > 0 && (
+        <FilterBar
+          state={state}
+          filters={filters}
+          onChange={setFilters}
+          sheetOpen={filtersOpen}
+          onSheetOpen={setFiltersOpen}
+        />
+      )}
+
+      {filtering && <FilterSummary items={shown} />}
+
+      {filtering && shown.length === 0 ? (
+        <NothingFound onClear={() => setFilters(NO_FILTERS)} />
+      ) : (
+        <TransactionList
+          items={shown}
+          state={state}
+          today={today}
+          currentUserId={profile?.id ?? null}
+          onEdit={onEdit}
+        />
+      )}
     </>
   );
 }
