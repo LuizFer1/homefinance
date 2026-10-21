@@ -153,4 +153,53 @@ describe("createTransactionsStore", () => {
     expect(session.error.value).toMatch(/inválido/);
     expect((await db.transactions.get(estimada.id))?.estimated).toBe(true);
   });
+
+  describe("setCategory", () => {
+    async function withCategory() {
+      const category = await session.mutate("categories", (repo) =>
+        repo.create({ name: "Alimentação", icon: "utensils", color: "sky", kind: "expense" }),
+      );
+      const a = await store.add(MERCADO);
+      const b = await store.add({ ...MERCADO, description: "Padaria" });
+      return { category, a, b };
+    }
+
+    it("aplica a categoria a todos num lote só", async () => {
+      const { category, a, b } = await withCategory();
+
+      expect(await store.setCategory([a.id, b.id], category.id)).toBe(2);
+
+      expect((await db.transactions.get(a.id))?.categoryId).toBe(category.id);
+      expect((await db.transactions.get(b.id))?.categoryId).toBe(category.id);
+      expect((await db.transactions.get(a.id))?.dirty).toBe(1);
+      expect(session.state.value.transactions[b.id]?.categoryId).toBe(category.id);
+    });
+
+    it("quem já tem a categoria não conta como mudado", async () => {
+      const { category, a, b } = await withCategory();
+      await store.setCategory([a.id], category.id);
+
+      expect(await store.setCategory([a.id, b.id], category.id)).toBe(1);
+    });
+
+    it("uma linha mudada por fora recusa o lote inteiro, sem gravar nenhuma", async () => {
+      const { category, a, b } = await withCategory();
+      // Outra aba mexe em `b` depois de a tela ter lido o estado.
+      await db.transactions.put({ ...b, updatedAt: "9999" });
+
+      await expect(store.setCategory([a.id, b.id], category.id)).rejects.toThrow();
+
+      expect((await db.transactions.get(a.id))?.categoryId).toBeNull();
+      expect(session.error.value).not.toBeNull();
+    });
+
+    it("lançamento apagado ou categoria inexistente recusa e avisa", async () => {
+      const { category, a } = await withCategory();
+      await store.remove(a.id);
+
+      await expect(store.setCategory([a.id], category.id)).rejects.toThrow(/não existe/);
+      await expect(store.setCategory([a.id], "FANTASMA")).rejects.toThrow(/não existe/);
+      expect(session.error.value).toMatch(/não existe/);
+    });
+  });
 });

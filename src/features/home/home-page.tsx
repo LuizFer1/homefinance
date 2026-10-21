@@ -1,18 +1,21 @@
+import { useState } from "preact/hooks";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction, TransactionKind } from "../../domain/model/transaction";
 import type { User } from "../../domain/model/user";
-import { formatBRL } from "../../domain/money/money";
 import { filterByMonth } from "../../domain/projections/breakdown";
 import { estimatedTotals, pendingEstimates } from "../../domain/projections/estimates";
+import { filterTransactions, hasFilters, NO_FILTERS } from "../../domain/projections/filter";
 import { monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { totals } from "../../domain/projections/selectors";
+import { uncategorized } from "../../domain/projections/uncategorized";
 import { availableBalance, savedInMonth } from "../../domain/reserves/balances";
 import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
 import { periodLabel } from "../recurrence/adjust-sheet";
+import { FilterBar, FilterSummary, NothingFound } from "../transactions/transaction-filters";
 import { TransactionList } from "../transactions/transaction-list";
 import { greetingFor } from "../ui/greeting";
-import { compactBRL, MINUS, Money, moneyParts } from "../ui/money";
+import { brl, compactBRL, MINUS, Money, moneyParts } from "../ui/money";
 import { QuickActions } from "../ui/quick-actions";
 
 export interface HomePageProps {
@@ -27,6 +30,8 @@ export interface HomePageProps {
   /** Abre a confirmação de valor de uma estimativa. */
   onConfirm: (record: Transaction) => void;
   onOpenProfile: () => void;
+  /** Abre a fila de lançamentos sem categoria. Sem ele, o contador não aparece. */
+  onClassify?: () => void;
 }
 
 /** "Setembro" — nome do mês, sem o ano, com inicial maiúscula. */
@@ -96,7 +101,7 @@ function MonthCard({
       */}
       {estimatedMinor > 0 && (
         <p data-testid="month-estimated" class="mt-2.5 text-xs text-fg/55">
-          Inclui <span class="hf-num">~{formatBRL(estimatedMinor)}</span> estimado
+          Inclui <span class="hf-num">~{brl(estimatedMinor)}</span> estimado
         </p>
       )}
       {saved !== 0 && (
@@ -134,7 +139,7 @@ function PendingEstimates({
               <span class="block truncate text-sm font-medium">{record.description}</span>
               <span class="mt-0.5 block text-xs text-fg/55">
                 {periodLabel(record.occurredOn.slice(0, 7))} ·{" "}
-                <span class="hf-num">~{formatBRL(record.amountMinor)}</span>
+                <span class="hf-num">~{brl(record.amountMinor)}</span>
               </span>
             </span>
             <button
@@ -171,12 +176,21 @@ export function HomePage({
   onEdit,
   onConfirm,
   onOpenProfile,
+  onClassify,
 }: HomePageProps) {
   // O que está nas reservas não é para gastar: contá-lo aqui de novo mostraria
   // o mesmo dinheiro em dois lugares (saldo e reserva) e o saldo pareceria maior
   // do que realmente se pode usar.
   const available = availableBalance(state);
   const savedThisMonth = savedInMonth(state, monthOf(today)) !== 0;
+  // Estado de tela, não dado: não grava nem sincroniza. A lista do Início é de
+  // todos os meses, então não há troca de mês que zere o recorte; sair da aba
+  // desmonta a página e zera.
+  const [filters, setFilters] = useState(NO_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const pendingCategory = uncategorized(items, state).length;
+  const filtering = hasFilters(filters);
+  const shown = filtering ? filterTransactions(items, filters, state) : items;
 
   return (
     <>
@@ -199,7 +213,7 @@ export function HomePage({
         <Money minor={available} size={44} testId="total-balance" />
       </p>
 
-      {(items.length > 0 || savedThisMonth) && (
+      {!filtering && (items.length > 0 || savedThisMonth) && (
         <MonthCard items={items} state={state} today={today} />
       )}
 
@@ -221,13 +235,44 @@ export function HomePage({
         Importar fatura ou extrato
       </button>
 
-      <TransactionList
-        items={items}
-        state={state}
-        today={today}
-        currentUserId={profile?.id ?? null}
-        onEdit={onEdit}
-      />
+      {onClassify !== undefined && pendingCategory > 0 && (
+        <button
+          type="button"
+          onClick={onClassify}
+          data-testid="uncategorized-counter"
+          class="hf-press mt-3 flex h-10 w-full items-center justify-between gap-2 rounded-lg px-3.5 text-[13px] text-fg/70 hover:bg-fg/[0.05]"
+        >
+          <span>
+            <span class="hf-num font-medium text-fg">{pendingCategory}</span>{" "}
+            {pendingCategory === 1 ? "lançamento sem categoria" : "lançamentos sem categoria"}
+          </span>
+          <span class="font-medium text-accent-300">Classificar</span>
+        </button>
+      )}
+
+      {items.length > 0 && (
+        <FilterBar
+          state={state}
+          filters={filters}
+          onChange={setFilters}
+          sheetOpen={filtersOpen}
+          onSheetOpen={setFiltersOpen}
+        />
+      )}
+
+      {filtering && <FilterSummary items={shown} />}
+
+      {filtering && shown.length === 0 ? (
+        <NothingFound onClear={() => setFilters(NO_FILTERS)} />
+      ) : (
+        <TransactionList
+          items={shown}
+          state={state}
+          today={today}
+          currentUserId={profile?.id ?? null}
+          onEdit={onEdit}
+        />
+      )}
     </>
   );
 }

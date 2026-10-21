@@ -1,6 +1,6 @@
-import { formatBRL } from "../../domain/money/money";
 import type { MonthTotals } from "../../domain/projections/breakdown";
 import { monthLabelShort } from "../../domain/projections/periods";
+import { brl } from "../ui/money";
 
 export interface BarChartProps {
   /** Do mais antigo para o mais novo; o último é o mês escolhido. */
@@ -34,13 +34,13 @@ export function BarChart({ data }: BarChartProps) {
             >
               <span
                 data-testid={`bar-income-${item.month}`}
-                title={`Receita: ${formatBRL(item.incomeMinor)}`}
+                title={`Receita: ${brl(item.incomeMinor)}`}
                 class="w-2.5 rounded-t-[3px] bg-income"
                 style={{ height: height(item.incomeMinor) }}
               />
               <span
                 data-testid={`bar-expense-${item.month}`}
-                title={`Despesa: ${formatBRL(item.expenseMinor)}`}
+                title={`Despesa: ${brl(item.expenseMinor)}`}
                 class="w-2.5 rounded-t-[3px] bg-expense"
                 style={{ height: height(item.expenseMinor) }}
               />

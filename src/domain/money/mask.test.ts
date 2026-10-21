@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_DIGITS, maskDigits, minorOf, onlyDigits } from "./mask";
+import { digitsOf, MAX_DIGITS, maskDigits, minorOf, onlyDigits } from "./mask";
 
 /** Simula digitar caractere a caractere num campo controlado pela máscara. */
 function digitar(teclas: string): string {
@@ -81,5 +81,14 @@ describe("conversão para centavos", () => {
     expect(maskDigits("")).toBe("");
     expect(onlyDigits("")).toBe("");
     expect(onlyDigits("0")).toBe("");
+  });
+});
+
+describe("digitsOf", () => {
+  it("regrava o campo sem as letras, mesmo quando os dígitos não mudam", () => {
+    const field = document.createElement("input");
+    field.value = "1,23a";
+    expect(digitsOf(field)).toBe("123");
+    expect(field.value).toBe("1,23");
   });
 });

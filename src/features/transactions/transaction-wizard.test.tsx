@@ -352,6 +352,50 @@ describe("limpeza do cashback", () => {
   });
 });
 
+describe("estado nas contas", () => {
+  it("lançamento novo sem escolha não grava reportState", () => {
+    const { onSubmit } = montar();
+    ateOPagamento();
+    enviar();
+
+    expect(onSubmit.mock.calls[0]?.[0]).not.toHaveProperty("reportState");
+  });
+
+  it("marcar como transferência emite reportState transfer", () => {
+    const { onSubmit } = montar();
+    ateOPagamento();
+    escolher("Transferência");
+    enviar();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ reportState: "transfer" }),
+      null,
+    );
+  });
+
+  it("desmarcar na edição emite reportState null", () => {
+    const { onSubmit } = montar({ editing: { ...RECORD, reportState: "hidden" } });
+    fireEvent.click(screen.getByRole("button", { name: /Pagamento/ }));
+    expect((screen.getByRole("radio", { name: "Oculto" }) as HTMLInputElement).checked).toBe(true);
+
+    escolher("Conta");
+    enviar();
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ reportState: null }), null);
+  });
+
+  it("valor desconhecido de versão futura aparece como Conta e não é regravado", () => {
+    const futuro = { ...RECORD, reportState: "archived" } as unknown as Transaction;
+    const { onSubmit } = montar({ editing: futuro });
+    fireEvent.click(screen.getByRole("button", { name: /Pagamento/ }));
+    expect((screen.getByRole("radio", { name: "Conta" }) as HTMLInputElement).checked).toBe(true);
+
+    enviar();
+
+    expect(onSubmit.mock.calls[0]?.[0]).not.toHaveProperty("reportState");
+  });
+});
+
 describe("referências e listas vazias", () => {
   it("mantém a seleção de uma categoria apagada, com rótulo neutro", () => {
     montar({ editing: { ...RECORD, categoryId: "cat-apagada" } });

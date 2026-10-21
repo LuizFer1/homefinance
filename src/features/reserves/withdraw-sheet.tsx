@@ -7,7 +7,6 @@ import {
   WITHDRAW_REASONS,
 } from "../../domain/model/reserve";
 import { MAX_MINOR, minorOf } from "../../domain/money/mask";
-import { formatBRL } from "../../domain/money/money";
 import { monthOf } from "../../domain/projections/periods";
 import { actsAsEmergency, reserveBalance } from "../../domain/reserves/balances";
 import { emergencyTarget } from "../../domain/reserves/essential";
@@ -16,7 +15,7 @@ import { Icon } from "../icons/icon";
 import { LABEL } from "../ui/field";
 import { HoldToDelete } from "../ui/hold-button";
 import { SheetHeader } from "../ui/modal";
-import { compactBRL } from "../ui/money";
+import { brl, compactBRL } from "../ui/money";
 import { monthName } from "./format";
 import { MonthsMeter } from "./months-meter";
 import { AmountField, SheetSubtitle } from "./sheet-parts";
@@ -137,7 +136,7 @@ export function WithdrawSheet({
       <div class="mt-4 rounded-lg bg-bg p-3.5">
         <div class="hf-num flex justify-between text-[13px]">
           <span>Depois da retirada</span>
-          <span class="font-medium">{formatBRL(after)}</span>
+          <span class="font-medium">{brl(after)}</span>
         </div>
         {goal !== null && (
           <div class="mt-2.5">
@@ -179,7 +178,7 @@ export function WithdrawSheet({
           text-expense-fg hover:bg-expense/[0.16] disabled:pointer-events-none disabled:opacity-45"
         >
           <Icon name="arrow-up" size={18} />
-          <span class="truncate">Retirar {formatBRL(amount)}</span>
+          <span class="truncate">Retirar {brl(amount)}</span>
         </button>
       </div>
     </div>

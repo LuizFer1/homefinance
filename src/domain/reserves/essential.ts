@@ -4,6 +4,7 @@ import { isAlive } from "../model/base";
 import { ESSENTIAL_CATEGORY_NAMES, type Reserve } from "../model/reserve";
 import { lastMonths, monthOf } from "../projections/periods";
 import { listTransactions } from "../projections/selectors";
+import { countsInTotals } from "../transactions/counts-in-totals";
 
 function normalizeName(text: string): string {
   return text
@@ -50,6 +51,7 @@ export function essentialCost(state: AppState, ids: readonly Ulid[], today: stri
   const chosen = new Set(ids);
   let sum = 0;
   for (const t of items) {
+    if (!countsInTotals(t)) continue;
     if (t.kind !== "expense" || t.categoryId === null || !chosen.has(t.categoryId)) continue;
     if (months.has(monthOf(t.occurredOn))) sum += t.amountMinor;
   }

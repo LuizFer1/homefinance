@@ -11,12 +11,14 @@ import {
   SCHEDULE_TYPES,
   type ScheduleType,
 } from "../../domain/model/recurrence";
-import type {
-  Transaction,
-  TransactionDraft,
-  TransactionKind,
+import {
+  REPORT_STATES,
+  type ReportState,
+  type Transaction,
+  type TransactionDraft,
+  type TransactionKind,
 } from "../../domain/model/transaction";
-import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
+import { digitsOf, maskDigits, minorOf } from "../../domain/money/mask";
 import { dayMonth } from "../../domain/projections/periods";
 import { nextOccurrences } from "../../domain/recurrence/upcoming";
 import { offersCashback } from "../../domain/transactions/cashback";
@@ -33,6 +35,7 @@ import { Segmented } from "../ui/segmented";
 import { SummaryChip } from "../ui/summary-chip";
 import { IconTile } from "../ui/tile";
 import { Toggle } from "../ui/toggle";
+import { CategoryTile, MethodRow } from "./choice-tiles";
 
 export interface TransactionWizardProps {
   /** Registro em edição, ou null para criação. Montado com `key` pelo App. */
@@ -69,6 +72,21 @@ const KINDS = [
   { value: "expense", label: "Despesa", tone: "expense" },
   { value: "income", label: "Receita", tone: "income" },
 ] as const;
+
+/** Como o lançamento entra nas contas; `counts` é a ausência de `reportState`. */
+type CountMode = "counts" | ReportState;
+
+const COUNT_OPTIONS: readonly { value: CountMode; label: string }[] = [
+  { value: "counts", label: "Conta" },
+  { value: "transfer", label: "Transferência" },
+  { value: "hidden", label: "Oculto" },
+];
+
+const COUNT_HINTS: Record<CountMode, string> = {
+  counts: "Entra no saldo, na receita ou na despesa e nos gráficos.",
+  transfer: "Movimento entre contas suas, como pagar a fatura. Não é receita nem despesa.",
+  hidden: "Continua na lista, mas fica fora de saldo, gráficos e relatórios.",
+};
 
 /** Rótulo curto da tag do cashback: de onde ele foi liberado. */
 const CASHBACK_SOURCE: Record<string, string> = {
@@ -123,6 +141,14 @@ export function TransactionWizard({
   const [variable, setVariable] = useState(false);
   const [hasEnd, setHasEnd] = useState(false);
   const [endOn, setEndOn] = useState(today);
+  // Valor que esta versão não conhece (vindo do sync) aparece como "Conta", que é
+  // como ele é tratado; e só é regravado se o usuário escolher outra opção.
+  const initialCount: CountMode = (REPORT_STATES as readonly string[]).includes(
+    editing?.reportState ?? "",
+  )
+    ? (editing?.reportState as ReportState)
+    : "counts";
+  const [countMode, setCountMode] = useState<CountMode>(initialCount);
   const [problem, setProblem] = useState<string | null>(null);
 
   const selectedMethod = paymentMethods.find((method) => method.id === paymentMethodId) ?? null;
@@ -224,6 +250,11 @@ export function TransactionWizard({
         // o valor: abrir e salvar é um ato deliberado, e deixá-la estimada
         // depois de mexer na data seria um limbo sem explicação.
         ...(editing?.estimated === true ? { estimated: false } : {}),
+        // Só quando mudou: criar sem escolher não grava a coluna, e abrir e salvar
+        // uma linha com valor futuro não o apaga.
+        ...(countMode !== initialCount
+          ? { reportState: countMode === "counts" ? null : countMode }
+          : {}),
       },
       canConfigureRecurrence && repeats ? recurrenceInput() : null,
     );
@@ -321,7 +352,7 @@ export function TransactionWizard({
                     autocomplete="off"
                     placeholder="0,00"
                     value={maskDigits(amount)}
-                    onInput={(event) => setAmount(onlyDigits(event.currentTarget.value))}
+                    onInput={(event) => setAmount(digitsOf(event.currentTarget))}
                     class={`hf-num w-full min-w-0 bg-transparent font-medium tracking-[-0.02em]
                       outline-none placeholder:text-fg/30 focus-visible:outline-none ${amountTone} ${
                         calendarOpen ? "text-2xl" : "text-[40px] leading-tight"
@@ -712,6 +743,20 @@ export function TransactionWizard({
               )}
             </fieldset>
 
+            <fieldset class="mt-5">
+              <legend class={LABEL}>Nas contas</legend>
+              <Segmented
+                name="count-mode"
+                legend="Nas contas"
+                dense
+                class="mt-2"
+                options={COUNT_OPTIONS}
+                value={countMode}
+                onChange={setCountMode}
+              />
+              <p class={HINT}>{COUNT_HINTS[countMode]}</p>
+            </fieldset>
+
             {showsCashback && (
               <div class="hf-disclose mt-5">
                 <div class="flex items-center gap-2">
@@ -738,7 +783,7 @@ export function TransactionWizard({
                     placeholder="0,00"
                     class={`${FIELD_SHEET} hf-num pl-10`}
                     value={maskDigits(cashback)}
-                    onInput={(event) => setCashback(onlyDigits(event.currentTarget.value))}
+                    onInput={(event) => setCashback(digitsOf(event.currentTarget))}
                   />
                 </div>
                 <p class={HINT}>Quanto voltou. Não entra no saldo — fica registrado na despesa.</p>
@@ -790,88 +835,5 @@ export function TransactionWizard({
         )}
       </div>
     </form>
-  );
-}
-
-interface ChoiceProps {
-  name: string;
-  icon: string;
-  /** `null` = opção neutra ("Sem categoria"). */
-  color: string | null;
-  checked: boolean;
-  onSelect: () => void;
-}
-
-/**
- * Tile da grade de categoria (3 colunas, 80px): ícone em cima, nome embaixo.
- *
- * Rádio nativo escondido: o nome acessível é o texto do próprio `<label>`, então
- * nada de `aria-label` — ele venceria o texto e obrigaria a manter dois nomes.
- */
-function CategoryTile({ name, icon, color, checked, onSelect }: ChoiceProps) {
-  return (
-    <label
-      class={`hf-press flex h-20 cursor-pointer flex-col justify-between rounded-lg p-2.5
-        has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent ${
-          checked ? "hf-selected" : "bg-bg hover:bg-fg/[0.04]"
-        }`}
-    >
-      <input
-        type="radio"
-        name="categoryId"
-        value={name}
-        checked={checked}
-        onChange={onSelect}
-        class="sr-only"
-      />
-      <IconTile icon={icon} color={color} size={30} iconSize={17} />
-      <span
-        class={`truncate text-[12.5px] font-medium ${checked ? "text-accent-200" : "text-fg/85"}`}
-      >
-        {name}
-      </span>
-    </label>
-  );
-}
-
-/** Linha de 52px da lista de pagamento: tile, nome e rádio à direita. */
-function MethodRow({
-  name,
-  icon,
-  color,
-  checked,
-  onSelect,
-  first,
-}: ChoiceProps & { first?: boolean }) {
-  return (
-    <label
-      class="relative flex h-[52px] cursor-pointer items-center gap-3 px-3
-        has-[:focus-visible]:outline-2 has-[:focus-visible]:-outline-offset-2
-        has-[:focus-visible]:outline-accent hover:bg-fg/[0.03]"
-    >
-      {/* Régua recuada até o texto, que esmaece antes da borda. */}
-      {!first && <span aria-hidden="true" class="hf-rule absolute top-0 right-0 left-[54px]" />}
-      <input
-        type="radio"
-        name="paymentMethodId"
-        value={name}
-        checked={checked}
-        onChange={onSelect}
-        class="sr-only"
-      />
-      <IconTile icon={icon} color={color} size={30} iconSize={17} />
-      <span class={`min-w-0 flex-1 truncate text-[15px] ${color === null ? "text-fg/60" : ""}`}>
-        {name}
-      </span>
-      <span
-        aria-hidden="true"
-        class="size-5 shrink-0 rounded-full"
-        style={{
-          boxShadow: checked
-            ? "inset 0 0 0 1.5px var(--color-accent), inset 0 0 0 5px var(--color-bg), inset 0 0 0 10px var(--color-accent)"
-            : "inset 0 0 0 1.5px var(--color-neutral-700)",
-        }}
-      />
-    </label>
   );
 }

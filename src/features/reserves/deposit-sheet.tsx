@@ -4,7 +4,6 @@ import { shiftMonth } from "../../domain/dates/calendar";
 import type { AppState } from "../../domain/model/app-state";
 import type { Reserve, ReserveMovement } from "../../domain/model/reserve";
 import { MAX_MINOR, minorOf, onlyDigits } from "../../domain/money/mask";
-import { formatBRL } from "../../domain/money/money";
 import { monthOf } from "../../domain/projections/periods";
 import { actsAsEmergency, monthBalance, reserveBalance } from "../../domain/reserves/balances";
 import { depositId } from "../../domain/reserves/deposits";
@@ -15,6 +14,7 @@ import { Button } from "../ui/button";
 import { LABEL } from "../ui/field";
 import { HoldToDelete } from "../ui/hold-button";
 import { SheetHeader } from "../ui/modal";
+import { brl } from "../ui/money";
 import { IconTile } from "../ui/tile";
 import { Toggle } from "../ui/toggle";
 import { dayOfDate, monthName, movementDateLabel } from "./format";
@@ -146,7 +146,7 @@ export function DepositSheet({
         <div class="min-w-0 flex-1">
           <div class="text-sm">Saldo de {monthName(month)}</div>
           <div class="hf-num text-xs text-fg/55">
-            {formatBRL(monthAvailable)} → fica {formatBRL(monthAvailable - amount)}
+            {brl(monthAvailable)} → fica {brl(monthAvailable - amount)}
           </div>
           {over && (
             <div id="deposit-warning" class="mt-0.5 text-xs text-tag-amber">
@@ -180,7 +180,7 @@ export function DepositSheet({
 
       <div class="sticky bottom-0 -mx-5 mt-5 bg-surface px-5 pt-2">
         <p class="hf-num mb-2.5 text-center text-[13px] text-fg/65">
-          Depois: {formatBRL(after)}
+          Depois: {brl(after)}
           {goal !== null && (
             <>
               {" · cobre "}
@@ -204,7 +204,7 @@ export function DepositSheet({
             )
           }
         >
-          Guardar {formatBRL(amount)}
+          Guardar {brl(amount)}
         </Button>
       </div>
     </div>

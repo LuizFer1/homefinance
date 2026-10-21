@@ -1,6 +1,7 @@
 import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
 import type { Transaction } from "../model/transaction";
+import { countsInTotals } from "../transactions/counts-in-totals";
 
 export interface EstimatedTotals {
   incomeMinor: number;
@@ -16,7 +17,7 @@ export function estimatedTotals(records: readonly Transaction[]): EstimatedTotal
   let incomeMinor = 0;
   let expenseMinor = 0;
   for (const record of records) {
-    if (record.estimated !== true) continue;
+    if (record.estimated !== true || !countsInTotals(record)) continue;
     if (record.kind === "income") incomeMinor += record.amountMinor;
     else expenseMinor += record.amountMinor;
   }

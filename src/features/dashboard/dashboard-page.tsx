@@ -3,7 +3,6 @@ import { useState } from "preact/hooks";
 import { shiftMonth } from "../../domain/dates/calendar";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
-import { formatBRL } from "../../domain/money/money";
 import { filterByMonth, monthlyTotals } from "../../domain/projections/breakdown";
 import {
   averageSurplus,
@@ -25,7 +24,7 @@ import { upcomingRecurrences } from "../../domain/recurrence/upcoming";
 import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 import { Button } from "../ui/button";
-import { Money, signedBRL, wholeBRL } from "../ui/money";
+import { brl, Money, signedBRL, wholeBRL } from "../ui/money";
 import { PageHeader } from "../ui/page-header";
 import { IconTile } from "../ui/tile";
 import { BarChart } from "./bar-chart";
@@ -221,7 +220,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
               <Icon name={up ? "trend-up" : "trend-down"} size={16} />
               {comparison.deltaMinor === 0
                 ? `Igual a ${monthWord(previous)}`
-                : `${formatBRL(Math.abs(comparison.deltaMinor))} a ${up ? "mais" : "menos"} que ${monthWord(previous)}`}
+                : `${brl(Math.abs(comparison.deltaMinor))} a ${up ? "mais" : "menos"} que ${monthWord(previous)}`}
             </p>
           )}
           <div
@@ -242,7 +241,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
                 Receitas
               </p>
               <p data-testid="total-income" class="hf-num mt-1 text-[15px] font-medium">
-                {formatBRL(summary.incomeMinor)}
+                {brl(summary.incomeMinor)}
               </p>
             </div>
             <div>
@@ -251,7 +250,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
                 Despesas
               </p>
               <p data-testid="total-expense" class="hf-num mt-1 text-[15px] font-medium">
-                {formatBRL(summary.expenseMinor)}
+                {brl(summary.expenseMinor)}
               </p>
             </div>
           </div>
@@ -280,7 +279,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
             }
           >
             <p class="mt-2 text-[13px] leading-normal text-fg/70 text-pretty">
-              {formatBRL(pace.spentMinor)} até o dia {pace.cutoff}
+              {brl(pace.spentMinor)} até o dia {pace.cutoff}
               {pace.change !== null && (
                 <>
                   {" — "}
@@ -320,7 +319,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
                   <div class="flex items-center gap-2.5">
                     <IconTile icon={row.icon} color={row.color} size={28} iconSize={15} />
                     <span class="min-w-0 flex-1 truncate text-sm">{row.name}</span>
-                    <span class="hf-num text-sm font-medium">{formatBRL(row.amountMinor)}</span>
+                    <span class="hf-num text-sm font-medium">{brl(row.amountMinor)}</span>
                     <span class="hf-num w-9 text-right text-xs text-fg/50">
                       {Math.round(row.share * 100)}%
                     </span>
@@ -425,7 +424,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
             </span>
             <span class="min-w-0">
               <span class="block text-[15px] font-medium">
-                {formatBRL(cashback.totalMinor)} de cashback
+                {brl(cashback.totalMinor)} de cashback
               </span>
               <span class="mt-0.5 block text-xs text-fg/55">
                 Em {monthWord(month)} · {cashback.purchases}{" "}

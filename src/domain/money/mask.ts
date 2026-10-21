@@ -58,3 +58,14 @@ export function maskDigits(digits: string): string {
   const padded = digits.padStart(3, "0");
   return `${GROUPS.format(Number(padded.slice(0, -2)))},${padded.slice(-2)}`;
 }
+
+/**
+ * Lê o campo de dinheiro e devolve os dígitos, **regravando** o texto mascarado no
+ * próprio input. Digitar uma letra não muda os dígitos, então o estado não muda e
+ * o Preact não re-renderiza: sem regravar, a letra ficaria visível no campo.
+ */
+export function digitsOf(field: HTMLInputElement): string {
+  const digits = onlyDigits(field.value);
+  field.value = maskDigits(digits);
+  return digits;
+}

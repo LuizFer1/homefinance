@@ -11,7 +11,6 @@ import {
 } from "../../domain/import/plan";
 import { buildCategoryIndex, suggestCategory } from "../../domain/import/suggest-category";
 import type { AppState } from "../../domain/model/app-state";
-import { formatBRL } from "../../domain/money/money";
 import { pendingEstimates } from "../../domain/projections/estimates";
 import { listCategoriesFor, listPaymentMethods } from "../../domain/projections/selectors";
 import { Icon } from "../icons/icon";
@@ -20,7 +19,7 @@ import { describeError } from "../session/session";
 import { Button, SECONDARY } from "../ui/button";
 import { RadioChip } from "../ui/chip";
 import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
-import { signedBRL } from "../ui/money";
+import { brl, signedBRL } from "../ui/money";
 import { Segmented } from "../ui/segmented";
 import { PdfPasswordError, PdfReaderUnavailableError, type ReadPdf } from "./read-pdf";
 import type { ImportResult } from "./store";
@@ -381,7 +380,7 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
                         <option key={estimate.id} value={estimate.id}>
                           Confirma {estimate.description} ·{" "}
                           {periodLabel(estimate.occurredOn.slice(0, 7))} · ~
-                          {formatBRL(estimate.amountMinor)}
+                          {brl(estimate.amountMinor)}
                         </option>
                       ))}
                     </select>
