@@ -24,6 +24,8 @@ import { MigrationSheet } from "./features/cards/migration-sheet";
 import type { CardsStore } from "./features/cards/store";
 import { cssVarForToken } from "./features/colors/color-token";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
+import { pendingHelp } from "./features/help/deep-link";
+import { HelpPage } from "./features/help/help-page";
 import { HomePage } from "./features/home/home-page";
 import { Icon } from "./features/icons/icon";
 import { ImportSheet } from "./features/import/import-sheet";
@@ -260,6 +262,15 @@ export function App({
     setScreen("config");
     setSection("hub");
   }, [deepLink, canPair]);
+
+  // Link de uma pergunta da Ajuda (`#ajuda=<id>`): mesma espera do deep link
+  // do hub. A própria HelpPage lê o pedido e o zera.
+  const helpRequest = pendingHelp.value;
+  useEffect(() => {
+    if (helpRequest === null || !canPair) return;
+    setScreen("config");
+    setSection("help");
+  }, [helpRequest, canPair]);
 
   // Uma condição só para os dois casos: o modal está aberto para criar
   // (`editing` nulo) ou para editar. Dois estados independentes permitiriam
@@ -586,6 +597,8 @@ export function App({
               onFixCards={() => setFixingCards(true)}
               onOpenPayments={() => openSection("paymentMethod")}
             />
+          ) : section === "help" ? (
+            <HelpPage onBack={() => setSection(null)} />
           ) : section === "hub" ? (
             <HubPage
               sync={sync}
