@@ -15,7 +15,7 @@ import type { UpdateStore } from "../update/store";
 import { UpdateSection } from "../update/update-section";
 import { ResetSection } from "./reset-section";
 
-export type SettingsSection = "category" | "paymentMethod" | "budget" | "profile" | "hub";
+export type SettingsSection = "category" | "paymentMethod" | "budget" | "profile" | "hub" | "help";
 
 export interface SettingsPageProps {
   categoryCount: number;
@@ -203,7 +203,20 @@ export function SettingsPage({
       </Group>
 
       <Group label="Aplicativo">
-        <UpdateSection update={update} />
+        <button type="button" class={TAPPABLE} onClick={() => onOpen("help")}>
+          <IconTile icon="book-open" color={null} size={36} iconSize={18} />
+          <span class="min-w-0 flex-1">
+            <span class="block text-[15px]">Ajuda</span>
+            <span class="mt-0.5 block text-xs leading-snug text-fg/55">
+              Perguntas e respostas, com busca. Funciona sem internet.
+            </span>
+          </span>
+          <Chevron />
+        </button>
+        <div class="relative">
+          <Divider />
+          <UpdateSection update={update} />
+        </div>
       </Group>
 
       {/*

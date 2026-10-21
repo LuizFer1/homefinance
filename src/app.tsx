@@ -17,6 +17,8 @@ import { BudgetsPage } from "./features/budgets/budgets-page";
 import type { BudgetsStore } from "./features/budgets/store";
 import { cssVarForToken } from "./features/colors/color-token";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
+import { pendingHelp } from "./features/help/deep-link";
+import { HelpPage } from "./features/help/help-page";
 import { HomePage } from "./features/home/home-page";
 import { Icon } from "./features/icons/icon";
 import { ImportSheet } from "./features/import/import-sheet";
@@ -236,6 +238,15 @@ export function App({
     setScreen("config");
     setSection("hub");
   }, [deepLink, canPair]);
+
+  // Link de uma pergunta da Ajuda (`#ajuda=<id>`): mesma espera do deep link
+  // do hub. A própria HelpPage lê o pedido e o zera.
+  const helpRequest = pendingHelp.value;
+  useEffect(() => {
+    if (helpRequest === null || !canPair) return;
+    setScreen("config");
+    setSection("help");
+  }, [helpRequest, canPair]);
 
   // Uma condição só para os dois casos: o modal está aberto para criar
   // (`editing` nulo) ou para editar. Dois estados independentes permitiriam
@@ -503,6 +514,8 @@ export function App({
               store={budgets}
               onBack={() => setSection(null)}
             />
+          ) : section === "help" ? (
+            <HelpPage onBack={() => setSection(null)} />
           ) : section === "hub" ? (
             <HubPage
               sync={sync}

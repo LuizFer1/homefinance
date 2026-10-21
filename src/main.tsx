@@ -4,6 +4,7 @@ import { App } from "./app";
 import { HomeFinanceDb } from "./data/db";
 import { cryptoRandomChunk } from "./domain/ids/ulid";
 import { createBudgetsStore } from "./features/budgets/store";
+import { consumeHelpLink, pendingHelp } from "./features/help/deep-link";
 import { createReadPdf } from "./features/import/read-pdf";
 import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
@@ -134,6 +135,14 @@ const sync = createSyncStore({
 // Lê e limpa o fragmento antes do primeiro render: o token não fica na barra
 // de endereço nem no histórico. O App abre a sub-tela quando a sessão estiver pronta.
 sync.pendingDeepLink.value = consumeHubDeepLink(window.location, window.history);
+
+// Link de pergunta da Ajuda: no boot e com o app já aberto (o fragmento muda
+// sem recarregar a página).
+pendingHelp.value = consumeHelpLink(window.location, window.history);
+window.addEventListener("hashchange", () => {
+  const id = consumeHelpLink(window.location, window.history);
+  if (id !== null) pendingHelp.value = id;
+});
 
 // PWA instalado fica dias aberto sem navegar, e é na navegação que o navegador
 // procura `sw.js` novo. Voltar para o app é o momento natural de perguntar — e
