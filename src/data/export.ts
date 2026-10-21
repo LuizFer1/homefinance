@@ -1,3 +1,4 @@
+import { buildExport, exportFileName, serializeExport } from "../domain/export/export-data";
 import type { AppState } from "../domain/model/app-state";
 import { TABLE_NAMES } from "../domain/model/app-state";
 import type { HomeFinanceDb } from "./db";
@@ -52,4 +53,19 @@ export function downloadTextFile(
     // O clique já iniciou o download; soltar na mesma volta cancelaria em alguns navegadores.
     setTimeout(() => deps.url.revokeObjectURL(href), 10_000);
   }
+}
+
+/**
+ * Exporta tudo: lê o banco, monta o arquivo e o entrega ao navegador.
+ * `now` e `today` entram de fora (relógio injetado); `today` é a data local
+ * do nome, a mesma que a tela mostrou na prévia.
+ */
+export async function exportAll(
+  db: Pick<HomeFinanceDb, "table" | "transaction">,
+  now: number,
+  today: string,
+  deps: DownloadDeps,
+): Promise<void> {
+  const state = await readAllRows(db);
+  downloadTextFile(deps, exportFileName(today), serializeExport(buildExport(state, now)));
 }
