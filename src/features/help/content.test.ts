@@ -19,6 +19,7 @@ describe("conteúdo da ajuda", () => {
     const topicOf = new Map(HELP_STRUCTURE.map((entry) => [entry.id, entry.topic]));
     expect(PHASE_3_IDS.map((id) => topicOf.get(id))).toEqual([
       "privacy",
+      "privacy",
       "dashboard",
       "cards",
       "cards",
