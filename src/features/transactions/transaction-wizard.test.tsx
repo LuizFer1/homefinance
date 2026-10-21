@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/preact";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildCategoryIndex } from "../../domain/import/suggest-category";
@@ -775,5 +775,57 @@ describe("TransactionWizard: sugestão de categoria", () => {
       editing: { ...RECORD, description: "Padaria Pão Quente", categoryId: "outra-cat" },
     });
     expect(screen.queryByTestId("category-suggestion")).toBeNull();
+  });
+});
+
+describe("frequencia da recorrencia", () => {
+  function abrirRepetir() {
+    const handlers = montar({ today: "2026-08-11" });
+    preencherDados("Feira", "100,00");
+    continuar();
+    fireEvent.click(screen.getByRole("checkbox", { name: /repetir este lançamento/i }));
+    return handlers;
+  }
+
+  it("oferece Semanal, Quinzenal, Mensal e Anual, nessa ordem", () => {
+    abrirRepetir();
+    const group = screen.getByRole("group", { name: "Frequência" });
+    const values = within(group)
+      .getAllByRole("radio")
+      .map((radio) => radio.getAttribute("value"));
+
+    expect(values).toEqual(["weekly", "biweekly", "monthly", "annual"]);
+    expect(screen.queryByRole("radio", { name: "Bimestral" })).toBeNull();
+  });
+
+  it("semanal esconde Quando e Dia, e grava a regra sem eles", () => {
+    const { onSubmit } = abrirRepetir();
+    fireEvent.click(screen.getByRole("radio", { name: "Semanal" }));
+
+    expect(screen.queryByLabelText(/^quando$/i)).toBeNull();
+    expect(screen.queryByText(/usa o último dia/)).toBeNull();
+    expect(screen.getByText(/a cada 7 dias/)).toBeDefined();
+    avancarAteOFim();
+    enviar();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ frequency: "weekly", scheduleType: "dayOfMonth" }),
+    );
+  });
+
+  it("o texto do valor variavel acompanha a frequencia", () => {
+    abrirRepetir();
+    expect(screen.getByRole("checkbox", { name: /Valor varia todo mês/ })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Semanal" }));
+    expect(screen.getByRole("checkbox", { name: /Valor varia toda semana/ })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Quinzenal" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Valor varia a cada quinzena/ }));
+    expect(screen.getByText(/Cada quinzena nasce com a média/)).toBeDefined();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Anual" }));
+    expect(screen.getByRole("checkbox", { name: /Valor varia todo ano/ })).toBeDefined();
   });
 });

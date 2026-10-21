@@ -182,3 +182,35 @@ describe("nextOccurrences", () => {
     ).toEqual(["2026-12-24"]);
   });
 });
+
+describe("semanal e quinzenal", () => {
+  it("projeta as proximas semanas, sem as ja gravadas", () => {
+    const semanal = series({ frequency: "weekly", startOn: "2026-06-03" });
+    const gravada = {
+      ...ALIVE,
+      id: stableEntityId(occurrenceKey(SERIES, "2026-06-10")),
+    } as Transaction;
+    const found = upcomingRecurrences(stateWith([semanal], [gravada]), "2026-06-05", 21);
+
+    expect(found.map((row) => row.date)).toEqual(["2026-06-17", "2026-06-24"]);
+  });
+
+  it("nextOccurrences usa 7 e 14 dias e respeita endOn", () => {
+    const base = { startOn: "2026-12-20", scheduleType: "dayOfMonth", scheduleN: 20 } as const;
+
+    expect(nextOccurrences({ ...base, frequency: "weekly" }, 3)).toEqual([
+      "2026-12-27",
+      "2027-01-03",
+      "2027-01-10",
+    ]);
+    expect(nextOccurrences({ ...base, frequency: "biweekly", endOn: "2027-01-05" }, 4)).toEqual([
+      "2027-01-03",
+    ]);
+  });
+
+  it("ignora frequencia desconhecida", () => {
+    const futura = series({ frequency: "daily" as never });
+
+    expect(upcomingRecurrences(stateWith([futura]), "2026-06-05", 60)).toEqual([]);
+  });
+});

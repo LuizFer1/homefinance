@@ -211,3 +211,71 @@ describe("planOccurrences", () => {
     });
   });
 });
+
+describe("planOccurrences semanal e quinzenal", () => {
+  const SEMANAL: Recurrence = {
+    ...SALARIO,
+    id: "SERIE-SEM",
+    frequency: "weekly",
+    startOn: "2026-06-03",
+  };
+
+  it("semanal gera uma linha por semana, varias no mesmo mes", () => {
+    const plans = planOccurrences(stateWith(SEMANAL), "2026-06-30");
+
+    expect(plans.map((p) => p.draft.occurredOn)).toEqual([
+      "2026-06-03",
+      "2026-06-10",
+      "2026-06-17",
+      "2026-06-24",
+    ]);
+    expect(new Set(plans.map((p) => p.entityId)).size).toBe(4);
+    expect(plans[0]?.draft.occurrenceKey).toBe("SERIE-SEM:2026-06-03");
+  });
+
+  it("rematerializar nao duplica, e dois aparelhos chegam aos mesmos ids", () => {
+    const first = planOccurrences(stateWith(SEMANAL), "2026-06-30");
+    const existing = first.map((p) =>
+      occurrenceOf(SEMANAL, p.draft.occurredOn, p.draft.occurredOn),
+    );
+    expect(planOccurrences(stateWith(SEMANAL, existing), "2026-06-30")).toEqual([]);
+
+    const other = planOccurrences(stateWith(SEMANAL), "2026-06-30");
+    expect(other.map((p) => p.entityId)).toEqual(first.map((p) => p.entityId));
+  });
+
+  it("quinzenal respeita endOn e ignora scheduleType", () => {
+    const quinzenal: Recurrence = {
+      ...SEMANAL,
+      id: "SERIE-QUI",
+      frequency: "biweekly",
+      scheduleType: "nthBusinessDay",
+      scheduleN: 9,
+      endOn: "2026-07-01",
+    };
+    const plans = planOccurrences(stateWith(quinzenal), "2026-08-30");
+
+    expect(plans.map((p) => p.draft.occurredOn)).toEqual([
+      "2026-06-03",
+      "2026-06-17",
+      "2026-07-01",
+    ]);
+  });
+
+  it("serie bimestral antiga segue gerando", () => {
+    const antiga: Recurrence = { ...SALARIO, id: "SERIE-BI", frequency: "bimonthly" };
+    const plans = planOccurrences(stateWith(antiga), "2026-10-30");
+
+    expect(plans.map((p) => p.draft.occurrenceKey)).toEqual([
+      "SERIE-BI:2026-06",
+      "SERIE-BI:2026-08",
+      "SERIE-BI:2026-10",
+    ]);
+  });
+
+  it("frequencia desconhecida de versao futura e ignorada sem lancar", () => {
+    const futura = { ...SALARIO, id: "SERIE-F", frequency: "daily" } as unknown as Recurrence;
+
+    expect(planOccurrences(stateWith(futura), "2026-10-30")).toEqual([]);
+  });
+});

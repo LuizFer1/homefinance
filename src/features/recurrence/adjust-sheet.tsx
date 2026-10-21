@@ -1,5 +1,4 @@
 import { useState } from "preact/hooks";
-import { shiftMonth } from "../../domain/dates/calendar";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import { isAlive } from "../../domain/model/base";
@@ -17,6 +16,7 @@ import {
   planAdjustment,
 } from "../../domain/recurrence/adjust-plan";
 import { adjustmentsOf, amountFor } from "../../domain/recurrence/adjustments";
+import { periodOf, previousPeriod } from "../../domain/recurrence/schedule";
 import { Button } from "../ui/button";
 import { RadioChip } from "../ui/chip";
 import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
@@ -41,9 +41,10 @@ const MODES = [
   { value: "percent", label: "Percentual" },
 ] as const;
 
-/** 'YYYY-MM' vira "jan/2027". */
+/** 'YYYY-MM' vira "jan/2027"; 'YYYY-MM-DD' (semanal/quinzenal) vira "05 jan/2027". */
 export function periodLabel(period: string): string {
-  return `${monthLabelShort(period)}/${period.slice(0, 4)}`;
+  const month = `${monthLabelShort(period.slice(0, 7))}/${period.slice(0, 4)}`;
+  return period.length === 10 ? `${period.slice(8, 10)} ${month}` : month;
 }
 
 function updatesLabel(count: number): string {
@@ -87,10 +88,10 @@ export function AdjustSheet({
   }
 
   const adjustments = adjustmentsOf(state, series.id);
-  const currentMinor = amountFor(series, adjustments, today.slice(0, 7));
+  const currentMinor = amountFor(series, adjustments, periodOf(series.frequency, today));
   // A base é o valor vigente logo antes da competência escolhida: o segundo
   // aumento é calculado sobre o primeiro, não sobre o valor original.
-  const baseMinor = amountFor(series, adjustments, shiftMonth(fromPeriod, -1));
+  const baseMinor = amountFor(series, adjustments, previousPeriod(fromPeriod));
   const parsedPercent = parsePercent(percent);
   const nextMinor =
     mode === "amount"
