@@ -1,8 +1,10 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import type { PrepareResult } from "./data/import";
 import { listBudgets } from "./domain/budgets/list";
 import { isCompleteCard, listCreditCards } from "./domain/cards/card";
 import { listPickableMethods, pendingCardGroups } from "./domain/cards/migration";
+import type { ImportPlan } from "./domain/export/import-data";
 import type { Ulid } from "./domain/ids/ulid";
 import { buildCategoryIndex } from "./domain/import/suggest-category";
 import { isAlive } from "./domain/model/base";
@@ -91,6 +93,10 @@ export interface AppProps {
   onReset: () => Promise<void>;
   /** Lê o banco e baixa o JSON de exportação; rejeita se falhar. */
   onExport: () => Promise<void>;
+  /** Lê, valida e planeja o arquivo de importação; não grava. */
+  onImportPrepare: (file: File) => Promise<PrepareResult>;
+  /** Grava o plano da importação num lote atômico; rejeita sem gravar se falhar. */
+  onImportApply: (plan: ImportPlan) => Promise<void>;
   /** Data de hoje em 'YYYY-MM-DD'. Vem de fora para o teste não depender do relógio. */
   today: string;
   /** Hora local 0..23, injetada pelo mesmo motivo que `today`. */
@@ -173,6 +179,8 @@ export function App({
   processFile,
   onReset,
   onExport,
+  onImportPrepare,
+  onImportApply,
   today,
   hour,
   theme,
@@ -563,6 +571,8 @@ export function App({
               state={state}
               today={today}
               onExport={onExport}
+              onImportPrepare={onImportPrepare}
+              onImportApply={onImportApply}
               sync={sync}
             />
           ) : section === "profile" ? (

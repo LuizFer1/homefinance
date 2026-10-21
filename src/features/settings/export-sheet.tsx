@@ -13,7 +13,7 @@ const STEPS = ["Aviso", "Arquivo"] as const;
 type Step = (typeof STEPS)[number];
 
 /** `Record` e não array: tabela nova sem rótulo não compila. */
-const TABLE_LABELS: Record<TableName, string> = {
+export const TABLE_LABELS: Record<TableName, string> = {
   users: "Perfis",
   categories: "Categorias",
   paymentMethods: "Formas de pagamento",

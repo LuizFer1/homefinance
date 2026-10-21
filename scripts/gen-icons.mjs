@@ -106,6 +106,7 @@ const REGULAR = [
   "pencil-simple",
   // Exportação.
   "download-simple",
+  "upload-simple",
 ];
 
 /** Peso preenchido: aba ativa e "Escuro" selecionado. */

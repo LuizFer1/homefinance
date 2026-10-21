@@ -76,6 +76,7 @@ export const HELP_STRUCTURE: readonly HelpEntryShape[] = [
   { id: "privacy-local", topic: "privacy" },
   { id: "privacy-hide", topic: "privacy" },
   { id: "privacy-export", topic: "privacy" },
+  { id: "privacy-import", topic: "privacy" },
   { id: "privacy-reset", topic: "privacy" },
 ];
 
@@ -318,8 +319,16 @@ export const HELP_TEXT_PT: Record<string, HelpText> = {
     question: "Como exporto meus dados?",
     answer: [
       "Em Ajustes, no grupo Seus dados, toque em Exportar. O app avisa sobre o arquivo e, na etapa seguinte, mostra uma prévia do que entra, antes de Baixar arquivo. O arquivo se chama homefinance-AAAA-MM-DD.json e vai para a pasta de downloads.",
-      "Ele traz todas as tabelas (perfis, categorias, formas de pagamento, lançamentos, recorrências e reajustes, reservas e movimentos, metas), incluindo o que você apagou, para uma restauração futura. As credenciais do hub não entram. Funciona sem internet: o arquivo é montado no aparelho.",
-      "Atenção: o arquivo é texto simples, sem senha nem proteção, com todos os seus valores e descrições. Quem abrir lê tudo, então guarde-o onde só você acessa. Restaurar a partir do arquivo ainda não existe no app.",
+      "Ele traz todas as tabelas (perfis, categorias, formas de pagamento, lançamentos, recorrências e reajustes, reservas e movimentos, metas), incluindo o que você apagou, para que uma restauração não traga de volta o que já saiu. As credenciais do hub não entram. Funciona sem internet: o arquivo é montado no aparelho.",
+      "Atenção: o arquivo é texto simples, sem senha nem proteção, com todos os seus valores e descrições. Quem abrir lê tudo, então guarde-o onde só você acessa. Para restaurar um arquivo, veja Como importo um arquivo exportado.",
+    ],
+  },
+  "privacy-import": {
+    question: "Como importo um arquivo exportado?",
+    answer: [
+      "Em Ajustes, no grupo Seus dados, toque em Importar e escolha o arquivo homefinance-AAAA-MM-DD.json gerado em Exportar. O app confere o arquivo e, na etapa Prévia, mostra por tabela quantas linhas são novas, atualizadas, apagadas ou ignoradas. Nada é gravado até você tocar em Importar N linhas. Funciona sem internet.",
+      "Importar nunca apaga o que já está no aparelho. Uma linha do arquivo só substitui a daqui se for mais recente; se a linha daqui for mais nova, ela fica. Um item que você apagou depois de exportar continua apagado, e importar o mesmo arquivo duas vezes não muda nada na segunda.",
+      "Se o arquivo estiver quebrado, não for do HomeFinance ou vier de uma versão mais nova do app, ele é recusado inteiro e nada é gravado. Suas credenciais do hub e o perfil que é seu neste aparelho não mudam. Se você usa o hub, o que entrou é enviado na próxima sincronização.",
     ],
   },
   "privacy-reset": {

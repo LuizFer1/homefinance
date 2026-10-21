@@ -34,6 +34,8 @@ describe("searchHelp", () => {
 
   it("acha as respostas da Fase 3 pelo texto do corpo", () => {
     expect(ids("homefinance json")).toContain("privacy-export");
+    expect(ids("importar linhas previa")).toContain("privacy-import");
+    expect(ids("importar arquivo exportado")).toContain("privacy-import");
     expect(ids("quatro degraus")).toContain("dashboard-heatmap");
     expect(ids("outros cartoes")).toContain("cards-home-bar");
     expect(ids("novo cartao de credito")).toContain("cards-register");
