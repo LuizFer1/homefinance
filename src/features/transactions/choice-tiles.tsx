@@ -58,8 +58,9 @@ export function MethodRow({
   checked,
   onSelect,
   first,
+  detail,
   group = "paymentMethodId",
-}: ChoiceProps & { first?: boolean }) {
+}: ChoiceProps & { first?: boolean; detail?: string | null }) {
   return (
     <label
       class="relative flex h-[52px] cursor-pointer items-center gap-3 px-3
@@ -77,8 +78,11 @@ export function MethodRow({
         class="sr-only"
       />
       <IconTile icon={icon} color={color} size={30} iconSize={17} />
-      <span class={`min-w-0 flex-1 truncate text-[15px] ${color === null ? "text-fg/60" : ""}`}>
-        {name}
+      <span class="min-w-0 flex-1">
+        <span class={`block truncate text-[15px] ${color === null ? "text-fg/60" : ""}`}>
+          {name}
+        </span>
+        {detail != null && <span class="mt-px block truncate text-xs text-fg/55">{detail}</span>}
       </span>
       <span
         aria-hidden="true"

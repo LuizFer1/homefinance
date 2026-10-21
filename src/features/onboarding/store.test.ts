@@ -38,7 +38,7 @@ describe("createOnboardingStore", () => {
 
     expect(createOnboardingStore(reaberta).needsOnboarding.value).toBe(false);
     expect(Object.keys(reaberta.state.value.categories)).toHaveLength(12);
-    expect(Object.keys(reaberta.state.value.paymentMethods)).toHaveLength(4);
+    expect(Object.keys(reaberta.state.value.paymentMethods)).toHaveLength(3);
     expect(reaberta.state.value.users[reaberta.localUserId.value ?? ""]?.name).toBe("Luiz");
   });
 
@@ -61,7 +61,7 @@ describe("createOnboardingStore", () => {
 
     expect((await db.paymentMethods.get(pix.id))?.name).toBe("Pix Nubank");
     expect(session.state.value.paymentMethods[pix.id]?.name).toBe("Pix Nubank");
-    expect(await db.paymentMethods.count()).toBe(4);
+    expect(await db.paymentMethods.count()).toBe(3);
   });
 
   it("falha no meio não grava nada e continua pedindo onboarding", async () => {
@@ -90,7 +90,7 @@ describe("createOnboardingStore", () => {
     await Promise.all([store.complete(LUIZ), store.complete(LUIZ)]);
 
     expect(await db.users.count()).toBe(1);
-    expect(await db.paymentMethods.count()).toBe(4);
+    expect(await db.paymentMethods.count()).toBe(3);
     expect(await db.categories.count()).toBe(12);
   });
 

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "preact/hooks";
+import { cardDetail, listCreditCards } from "../../domain/cards/card";
 import type { Ulid } from "../../domain/ids/ulid";
 import { groupLines } from "../../domain/import/lines";
 import { confirmedImportKeys, suggestLinks } from "../../domain/import/link";
@@ -73,7 +74,9 @@ function readError(cause: unknown): string {
  */
 export function ImportSheet({ state, today, readPdf, onImport, onClose }: ImportSheetProps) {
   const methods = listPaymentMethods(state);
-  const cards = methods.filter((method) => method.kind === "credit");
+  // Cada cartão é um cadastro: completos primeiro, os por completar depois (ainda
+  // servem para importar, mas a fatura deles não tem ciclo).
+  const cards = listCreditCards(state);
 
   const [doc, setDoc] = useState<DocumentKind>("card");
   const [methodId, setMethodId] = useState<Ulid | null>(cards[0]?.id ?? null);
@@ -424,6 +427,7 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
   }
 
   const offered = doc === "card" ? cards : methods;
+  const selectedCard = cards.find((card) => card.id === methodId) ?? null;
   return (
     <div class="mt-2 space-y-5">
       <Segmented
@@ -460,11 +464,15 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
                 value={method.id}
                 checked={methodId === method.id}
                 onSelect={() => setMethodId(method.id)}
+                color={method.color}
               >
                 {method.name}
               </RadioChip>
             ))}
           </div>
+        )}
+        {doc === "card" && selectedCard !== null && cardDetail(selectedCard) !== null && (
+          <p class={HINT}>{cardDetail(selectedCard)}</p>
         )}
       </div>
 

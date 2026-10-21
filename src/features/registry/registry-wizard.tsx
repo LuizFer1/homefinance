@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { cardCycleText } from "../../domain/cards/card";
 import type { Category, CategoryDraft, CategoryKind } from "../../domain/model/category";
 import {
   PAYMENT_KINDS,
@@ -6,6 +7,13 @@ import {
   type PaymentMethod,
   type PaymentMethodDraft,
 } from "../../domain/model/payment-method";
+import {
+  CardFields,
+  type CardFieldsValue,
+  cardFieldsOf,
+  cardFieldsProblem,
+  parseCardDay,
+} from "../cards/card-fields";
 import { Icon } from "../icons/icon";
 import { PICKABLE_ICONS } from "../icons/icon-set";
 import { Button } from "../ui/button";
@@ -35,6 +43,8 @@ export interface RegistryWizardProps {
 }
 
 const STEPS = ["Nome", "Ícone", "Cor"] as const;
+/** Cartão de crédito ganha a etapa com os dados que definem a fatura. */
+const CREDIT_STEPS = ["Nome", "Cartão", "Ícone", "Cor"] as const;
 
 /** Nome do tipo na lista de Pagamentos (meta da linha). */
 export const PAYMENT_KIND_LABELS: Record<PaymentKind, string> = {
@@ -74,11 +84,16 @@ function normalize(name: string): string {
 }
 
 /**
- * Cadastro de entidade de referência em três etapas: Nome → Ícone → Cor.
+ * Cadastro de entidade de referência: Nome → Ícone → Cor, e uma etapa "Cartão"
+ * (banco, fechamento, vencimento) entre Nome e Ícone **só** quando a forma de
+ * pagamento é de crédito.
  *
  * Nome e tipo ficam juntos na primeira: são os dados de identidade — o que a
- * coisa é. Ícone e cor são aparência. Três etapas para as duas entidades, então
- * a barra de progresso não muda de tamanho conforme a tela.
+ * coisa é. Ícone e cor são aparência. Escolher "Crédito" na primeira etapa
+ * acrescenta a quarta; os outros tipos continuam com três.
+ *
+ * Em crédito o nome é opcional: em branco, vale o banco ("Nubank"). Por isso a
+ * validação do nome olha o nome **efetivo**, também na checagem de duplicata.
  */
 export function RegistryWizard({
   entity,
@@ -109,24 +124,35 @@ export function RegistryWizard({
       ? (editing?.kind as CategoryKind)
       : "both",
   );
+  const [card, setCard] = useState<CardFieldsValue>(() =>
+    cardFieldsOf(isPayment && editing !== null ? (editing as PaymentMethod) : {}),
+  );
   const [problem, setProblem] = useState<string | null>(null);
 
-  const trimmed = name.trim();
+  const isCredit = isPayment && kind === "credit";
+  const steps: readonly string[] = isCredit ? CREDIT_STEPS : STEPS;
+  const stepName = steps[step] ?? "Nome";
+  const typed = name.trim();
+  // Nome efetivo: o digitado, ou o banco quando é cartão e o nome ficou em branco.
+  const trimmed = typed !== "" ? typed : isCredit ? card.bank.trim() : "";
   const conflicts = existingNames.some((existing) => normalize(existing) === normalize(trimmed));
   const isOwnName = editing !== null && normalize(editing.name) === normalize(trimmed);
-  const nameValid = trimmed !== "" && (!conflicts || isOwnName);
+  const duplicate = trimmed !== "" && conflicts && !isOwnName;
+  // Crédito pode seguir sem nome: o banco, pedido na etapa seguinte, o supre.
+  const nameValid = isCredit ? !duplicate : trimmed !== "" && !duplicate;
+  const cardProblem = isCredit ? cardFieldsProblem(card) : null;
   // Ícone e cor já nascem com um padrão, então nunca bloqueiam.
-  const maxReachable = nameValid ? STEPS.length - 1 : 0;
+  const maxReachable = !nameValid ? 0 : cardProblem !== null ? 1 : steps.length - 1;
 
   function validateName(): boolean {
-    if (trimmed === "") {
+    if (trimmed === "" && !isCredit) {
       setProblem("Informe um nome.");
       return false;
     }
     // Duplicata é decisão de produto, validada aqui e não no domínio: depois do
     // sync duas pessoas podem criar "Mercado" ao mesmo tempo legitimamente, e o
     // banco aceita as duas. A tela avisa; o repositório não rejeita.
-    if (conflicts && !isOwnName) {
+    if (duplicate) {
       setProblem("Ja existe um item com esse nome.");
       return false;
     }
@@ -134,8 +160,18 @@ export function RegistryWizard({
     return true;
   }
 
+  function validateCard(): boolean {
+    if (cardProblem !== null) {
+      setProblem(cardProblem);
+      return false;
+    }
+    // O nome efetivo só fecha aqui: sem nome digitado, é o banco que pode duplicar.
+    return validateName();
+  }
+
   function goTo(index: number) {
-    if (step === 0 && index > 0 && !validateName()) return;
+    if (stepName === "Nome" && index > step && !validateName()) return;
+    if (stepName === "Cartão" && index > step && !validateCard()) return;
     setProblem(null);
     setDir(index < step ? "back" : "next");
     setStep(index);
@@ -147,15 +183,36 @@ export function RegistryWizard({
       setStep(0);
       return;
     }
+    if (isCredit && !validateCard()) {
+      setStep(1);
+      return;
+    }
+
+    // `sanitizeChanges` do repositório descarta `undefined`, então um cartão
+    // editado para outro tipo manteria dia e banco velhos: aí vão `null` de
+    // propósito. Só quando a linha tinha algum dado — num cadastro sem eles,
+    // `undefined` → `null` seria uma "mudança" que regrava a linha à toa.
+    const old = editing as PaymentMethod | null;
+    const hadCardData =
+      old !== null && (old.bank != null || old.closingDay != null || old.dueDay != null);
+    const cardData = isCredit
+      ? {
+          bank: card.bank.trim(),
+          closingDay: parseCardDay(card.closingDay),
+          dueDay: parseCardDay(card.dueDay),
+        }
+      : hadCardData
+        ? { bank: null, closingDay: null, dueDay: null }
+        : {};
 
     onSubmit(
       isPayment
-        ? ({ name: trimmed, icon, color, kind } as PaymentMethodDraft)
+        ? ({ name: trimmed, icon, color, kind, ...cardData } as PaymentMethodDraft)
         : ({ name: trimmed, icon, color, kind: categoryKind } as CategoryDraft),
     );
   }
 
-  const isLast = step === STEPS.length - 1;
+  const isLast = step === steps.length - 1;
   const noun = isPayment ? "forma de pagamento" : "categoria";
   const title = editing === null ? `Nova ${noun}` : `Editar ${noun}`;
   const context = isPayment ? PAYMENT_KIND_LABELS[kind] : WHERE_CONTEXT[categoryKind];
@@ -173,11 +230,11 @@ export function RegistryWizard({
       />
 
       <div class="mt-5">
-        <Progress steps={STEPS} current={step} maxReachable={maxReachable} onGo={goTo} />
+        <Progress steps={steps} current={step} maxReachable={maxReachable} onGo={goTo} />
       </div>
 
       <div key={step} data-dir={dir} class="hf-step mt-5">
-        {step === 0 && (
+        {stepName === "Nome" && (
           <>
             <label class={LABEL} for="registry-name">
               Nome
@@ -187,7 +244,13 @@ export function RegistryWizard({
               name="name"
               type="text"
               autocomplete="off"
-              placeholder={isPayment ? "Nubank, vale refeição…" : "Mercado, transporte…"}
+              placeholder={
+                isCredit
+                  ? "Opcional: sem nome, vale o banco"
+                  : isPayment
+                    ? "Nubank, vale refeição…"
+                    : "Mercado, transporte…"
+              }
               class={`${FIELD_SHEET} mt-2`}
               value={name}
               onInput={(event) => setName(event.currentTarget.value)}
@@ -216,6 +279,12 @@ export function RegistryWizard({
                   <Icon name="coins" size={16} class="mt-px text-accent-300" />
                   Crédito e débito liberam o campo de cashback no lançamento.
                 </p>
+                {isCredit && (
+                  <p class={`${HINT} flex items-start gap-2`}>
+                    <Icon name="receipt" size={16} class="mt-px text-accent-300" />
+                    Cartão de crédito pede banco, fechamento e vencimento na próxima etapa.
+                  </p>
+                )}
               </div>
             ) : (
               <div class="mt-5">
@@ -237,7 +306,9 @@ export function RegistryWizard({
           </>
         )}
 
-        {step === 1 && (
+        {stepName === "Cartão" && <CardFields value={card} onChange={setCard} />}
+
+        {stepName === "Ícone" && (
           <fieldset>
             <SummaryChip title={trimmed} context={context} />
             <legend class="sr-only">Ícone</legend>
@@ -269,7 +340,7 @@ export function RegistryWizard({
           </fieldset>
         )}
 
-        {step === 2 && (
+        {stepName === "Cor" && (
           <>
             <Swatches
               name="color"
@@ -293,6 +364,17 @@ export function RegistryWizard({
               </span>
               <span class="hf-num text-[15px] font-medium">{MINUS}R$ 42,90</span>
             </div>
+            {isCredit && (
+              <p data-testid="card-preview" class="mt-2 text-xs text-fg/55">
+                {trimmed} ·{" "}
+                {cardCycleText({
+                  kind: "credit",
+                  bank: card.bank.trim(),
+                  closingDay: parseCardDay(card.closingDay),
+                  dueDay: parseCardDay(card.dueDay),
+                } as PaymentMethod) ?? ""}
+              </p>
+            )}
           </>
         )}
       </div>

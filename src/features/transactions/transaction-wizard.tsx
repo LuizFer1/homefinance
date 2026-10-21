@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { cardDetail } from "../../domain/cards/card";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { Category } from "../../domain/model/category";
 import type { PaymentMethod } from "../../domain/model/payment-method";
@@ -735,6 +736,7 @@ export function TransactionWizard({
                       name={method.name}
                       icon={method.icon}
                       color={method.color}
+                      detail={cardDetail(method)}
                       checked={paymentMethodId === method.id}
                       onSelect={() => setPaymentMethodId(method.id)}
                     />

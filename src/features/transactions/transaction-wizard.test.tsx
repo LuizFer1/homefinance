@@ -265,10 +265,10 @@ describe("cashback condicionado", () => {
     montar();
     ateOPagamento();
 
-    escolher("Cartao credito");
+    escolher(/^Cartao credito/);
     expect(screen.getByLabelText(/cashback/i)).toBeDefined();
 
-    escolher("Cartao debito");
+    escolher(/^Cartao debito/);
     expect(screen.getByLabelText(/cashback/i)).toBeDefined();
   });
 
@@ -293,7 +293,7 @@ describe("cashback condicionado", () => {
     // So despesa pode gerar retorno.
     montar();
     ateOPagamento();
-    escolher("Cartao credito");
+    escolher(/^Cartao credito/);
     expect(screen.getByLabelText(/cashback/i)).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: /Dados/ }));
