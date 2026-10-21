@@ -161,7 +161,7 @@ export function FilterSheet({ state, filters, onChange, onClose }: FilterSheetPr
         data-swiping={swipe["data-swiping"]}
         style={swipe.style}
       >
-        <div key={step} data-dir={dir} class="hf-step mt-2 min-h-[14rem]">
+        <div key={step} data-dir={dir} class="hf-step mt-2">
           {step === "Tipo" && (
             <>
               <fieldset>
