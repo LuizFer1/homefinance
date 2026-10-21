@@ -47,6 +47,18 @@ describe("resolveMerged", () => {
     expect(resolveMerged(state)).toBe(state);
   });
 
+  it("a meta da categoria fundida passa a apontar para a que a substituiu", () => {
+    const state = {
+      ...EMPTY_APP_STATE,
+      categories: byId([
+        category("velha", { deletedAt: DELETED_AT, mergedInto: "estavel" }),
+        category("estavel"),
+      ]),
+      budgets: { B1: { ...ALIVE, id: "B1", categoryId: "velha", limitMinor: 5_000 } },
+    };
+    expect(resolveMerged(state).budgets.B1?.categoryId).toBe("estavel");
+  });
+
   it("segue o redirecionamento em lançamentos, séries e reservas", () => {
     const state = {
       ...EMPTY_APP_STATE,

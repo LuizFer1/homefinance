@@ -77,12 +77,20 @@ export function resolveMerged(state: AppState): AppState {
     return { ...row, essentialCategoryIds: resolved };
   });
 
+  // A meta segue a categoria fundida. Pode sobrar mais de uma por categoria (a da
+  // cópia e a da estável); `listBudgets` escolhe uma.
+  const budgets = mapRows(state.budgets, (row) => {
+    const categoryId = follow(categories, row.categoryId);
+    return categoryId === row.categoryId || categoryId === null ? row : { ...row, categoryId };
+  });
+
   if (
     transactions === state.transactions &&
     recurrences === state.recurrences &&
-    reserves === state.reserves
+    reserves === state.reserves &&
+    budgets === state.budgets
   ) {
     return state;
   }
-  return { ...state, transactions, recurrences, reserves };
+  return { ...state, transactions, recurrences, reserves, budgets };
 }

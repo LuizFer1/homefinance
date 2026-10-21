@@ -15,11 +15,13 @@ import type { UpdateStore } from "../update/store";
 import { UpdateSection } from "../update/update-section";
 import { ResetSection } from "./reset-section";
 
-export type SettingsSection = "category" | "paymentMethod" | "profile" | "hub";
+export type SettingsSection = "category" | "paymentMethod" | "budget" | "profile" | "hub";
 
 export interface SettingsPageProps {
   categoryCount: number;
   paymentMethodCount: number;
+  /** Metas mensais por categoria definidas. */
+  budgetCount: number;
   /** Perfil local, ou null enquanto ele não existe. */
   profile: User | null;
   theme: ThemeToggleProps;
@@ -78,6 +80,7 @@ function Chevron() {
 export function SettingsPage({
   categoryCount,
   paymentMethodCount,
+  budgetCount,
   profile,
   theme,
   update,
@@ -135,6 +138,13 @@ export function SettingsPage({
           <IconTile icon="wallet" color={null} size={36} iconSize={18} />
           <span class="min-w-0 flex-1 text-[15px]">Formas de pagamento</span>
           <span class="hf-num text-sm text-fg/50">{paymentMethodCount}</span>
+          <Chevron />
+        </button>
+        <button type="button" class={TAPPABLE} onClick={() => onOpen("budget")}>
+          <Divider />
+          <IconTile icon="target" color={null} size={36} iconSize={18} />
+          <span class="min-w-0 flex-1 text-[15px]">Orçamento por categoria</span>
+          <span class="hf-num text-sm text-fg/50">{budgetCount}</span>
           <Chevron />
         </button>
       </Group>

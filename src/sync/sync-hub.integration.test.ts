@@ -2,10 +2,13 @@ import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import type { HomeFinanceDb } from "../data/db";
 import { openTestDb } from "../data/test-db.fake";
+import { budgetIdFor } from "../domain/budgets/budget-id";
+import { listBudgets } from "../domain/budgets/list";
 import { compareHlc } from "../domain/clock/hlc";
 import { buildDefaultRows, DEFAULT_CATEGORIES, DEFAULT_METHODS } from "../domain/defaults/defaults";
 import type { RandomChunk } from "../domain/ids/ulid";
 import { movement, reserve } from "../domain/reserves/fixtures.fake";
+import { createBudgetsStore } from "../features/budgets/store";
 import { createRegistryStore, type RegistryStore } from "../features/registry/store";
 import { createSession, type Session } from "../features/session/session";
 import { createSyncStore, type SyncStore } from "../features/sync/store";
@@ -206,6 +209,44 @@ describe("dois aparelhos, um hub", () => {
     // O aparelho de origem também fica limpo depois do push.
     expect(a.session.state.value.reserves[RESERVA]?.dirty).toBe(0);
     expect(a.session.state.value.reserveMovements[GUARDADO]?.dirty).toBe(0);
+  });
+
+  it("a meta da mesma categoria definida nos dois aparelhos vira uma linha só", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+
+    const cat = await a.registry.addCategory(MERCADO);
+    await a.sync.sync();
+    await b.sync.sync();
+
+    // Offline nos dois: cada um define a meta da mesma categoria.
+    await createBudgetsStore(a.session).set(cat.id, 40_000);
+    await createBudgetsStore(b.session).set(cat.id, 55_000);
+    await a.sync.sync();
+    await b.sync.sync();
+    await a.sync.sync();
+
+    const rowsA = Object.values(a.session.state.value.budgets);
+    const rowsB = Object.values(b.session.state.value.budgets);
+    expect(rowsA).toHaveLength(1);
+    expect(rowsB).toHaveLength(1);
+    // B escreveu depois (relógio adiantado): vence nos dois.
+    expect(rowsA[0]?.limitMinor).toBe(55_000);
+    expect(rowsB[0]).toMatchObject({ limitMinor: 55_000, dirty: 0 });
+    expect(rowsA[0]?.id).toBe(budgetIdFor(cat.id));
+
+    // Apagar em um e refazer no outro converge sem duplicar.
+    await createBudgetsStore(a.session).remove(cat.id);
+    await a.sync.sync();
+    await b.sync.sync();
+    expect(listBudgets(b.session.state.value)).toEqual([]);
+
+    await createBudgetsStore(b.session).set(cat.id, 30_000);
+    await b.sync.sync();
+    await a.sync.sync();
+    expect(listBudgets(a.session.state.value).map((r) => r.limitMinor)).toEqual([30_000]);
+    expect(Object.keys(a.session.state.value.budgets)).toHaveLength(1);
   });
 
   it("revogado: fica desconectado e volta a sincronizar ao parear de novo", async () => {

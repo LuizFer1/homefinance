@@ -9,6 +9,7 @@ import { createRowClock } from "./domain/clock/row-clock";
 import type { Reserve } from "./domain/model/reserve";
 import type { Transaction } from "./domain/model/transaction";
 import type { User } from "./domain/model/user";
+import { createBudgetsStore } from "./features/budgets/store";
 import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
 import { createProfileStore } from "./features/profile/store";
@@ -78,6 +79,7 @@ function buildStores(db: HomeFinanceDb) {
     onboarding: createOnboardingStore(session),
     importer: createImportStore(session, recurrence),
     reserves: createReservesStore(session),
+    budgets: createBudgetsStore(session),
     // Sem service worker: nenhum aviso de versão nova, como no primeiro acesso.
     update: createUpdateStore({ reload: () => {}, now: () => 0 }),
     // Nunca chega à rede nos testes do App: o `fetch` rejeita como um hub fora
