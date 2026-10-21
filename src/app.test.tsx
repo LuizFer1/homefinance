@@ -1219,6 +1219,10 @@ describe("migração de cartões no boot", () => {
     const [gasto] = await db.transactions.toArray();
     expect(gasto?.paymentMethodId).toBe(NUBANK);
     expect((await db.paymentMethods.get(GENERICO))?.mergedInto).toBe(NUBANK);
+    // Fechar por ter migrado não é "Depois": a chave local não é gravada.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await readCardMigrationDeferral(db)).toBeNull();
+    expect(stores.cards.deferred.value).toBe(false);
   });
 
   it("'Depois' fecha, grava só a chave local e não reabre na mesma sessão", async () => {

@@ -340,6 +340,13 @@ export function App({
   const migrationOpen =
     booted && hasPendingCards && !otherSheetOpen && (fixingCards || !cards.deferred.value);
 
+  // O `<dialog>` dispara `close` também quando fecha por ter migrado: só adia se
+  // ainda há pendência, senão um grupo que o sync trouxer depois nunca avisaria.
+  function closeMigration() {
+    setFixingCards(false);
+    if (hasPendingCards) void cards.defer();
+  }
+
   function closeModal() {
     setComposing(null);
     setEditing(null);
@@ -703,23 +710,13 @@ export function App({
         )}
       </Modal>
 
-      <Modal
-        open={migrationOpen}
-        title="Ajustar cartões"
-        onClose={() => {
-          setFixingCards(false);
-          void cards.defer();
-        }}
-      >
+      <Modal open={migrationOpen} title="Ajustar cartões" onClose={closeMigration}>
         {/* Montada só enquanto aberta: fechar descarta as escolhas pela metade. */}
         {migrationOpen && (
           <MigrationSheet
             state={state}
             onMigrate={(choices) => cards.migrate(choices)}
-            onDefer={() => {
-              setFixingCards(false);
-              void cards.defer();
-            }}
+            onDefer={closeMigration}
             onExport={onExport}
             onReload={() => session.reload()}
             onDone={() => setFixingCards(false)}
