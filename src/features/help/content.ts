@@ -110,7 +110,7 @@ export const HELP_TEXT_PT: Record<string, HelpText> = {
   "recurrence-create": {
     question: "Como faço um lançamento se repetir todo mês?",
     answer: [
-      "Ao lançar, ligue Repetir este lançamento. Escolha a frequência (mensal, bimestral, trimestral, semestral ou anual) e o dia: um dia fixo do mês ou o enésimo dia útil. Dia útil considera segunda a sexta, sem feriados. Dá para definir uma data final.",
+      "Ao lançar, ligue Repetir este lançamento. Escolha a frequência (semanal, quinzenal, mensal ou anual). Em mensal e anual, escolha o dia: um dia fixo do mês ou o enésimo dia útil. Dia útil considera segunda a sexta, sem feriados. Dá para definir uma data final.",
       "O app gera as ocorrências sozinho a cada mês, inclusive as que ficaram para trás se você passou um tempo sem abrir.",
     ],
   },
