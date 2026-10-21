@@ -485,6 +485,8 @@ export function App({
             today={today}
             onGoHome={() => goToScreen("inicio")}
             onOpenBudgets={() => openSection("budget")}
+            currentUserId={profile?.id ?? null}
+            onEdit={setEditing}
           />
         )}
 
