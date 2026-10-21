@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { cardDetail } from "../../domain/cards/card";
 import type { Ulid } from "../../domain/ids/ulid";
+import { type CategoryIndex, suggestCategory } from "../../domain/import/suggest-category";
 import type { Category } from "../../domain/model/category";
 import type { PaymentMethod } from "../../domain/model/payment-method";
 import {
@@ -59,6 +60,11 @@ export interface TransactionWizardProps {
   onAdjustSeries?: () => void;
   /** Só em ocorrência de série fixa: passa a série a ter valor variável. */
   onMakeVariable?: () => void;
+  /**
+   * Índice descrição → categoria do histórico (o mesmo da importação de PDF).
+   * Sem ele não há sugestão: o formulário funciona igual.
+   */
+  categoryIndex?: CategoryIndex;
 }
 
 /**
@@ -117,6 +123,7 @@ export function TransactionWizard({
   onManageCategories,
   onAdjustSeries,
   onMakeVariable,
+  categoryIndex,
 }: TransactionWizardProps) {
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"next" | "back">("next");
@@ -151,6 +158,9 @@ export function TransactionWizard({
     : "counts";
   const [countMode, setCountMode] = useState<CountMode>(initialCount);
   const [problem, setProblem] = useState<string | null>(null);
+  // Sugestão dispensada, por categoria: mudar a descrição para outra loja pode
+  // sugerir outra categoria, e essa o usuário ainda não viu.
+  const [dismissedSuggestion, setDismissedSuggestion] = useState<Ulid | null>(null);
 
   const selectedMethod = paymentMethods.find((method) => method.id === paymentMethodId) ?? null;
   const showsCashback = offersCashback(selectedMethod?.kind ?? null, kind);
@@ -179,6 +189,52 @@ export function TransactionWizard({
     chosenCategory !== null && !offered.some((category) => category.id === chosenCategory.id)
       ? [...offered, chosenCategory]
       : offered;
+  /*
+    Só aparece enquanto não há categoria escolhida e nunca é gravada sozinha:
+    quem decide é o toque em "Usar". Escolha já feita (inclusive a de uma edição)
+    não é substituída. Precisa servir ao tipo atual: a grade oferecida é quem
+    sabe se a categoria serve a ele.
+  */
+  const suggestedId =
+    categoryIndex === undefined || categoryId !== null
+      ? null
+      : suggestCategory(categoryIndex, description, kind);
+  const suggestedCategory =
+    suggestedId === null || suggestedId === dismissedSuggestion
+      ? null
+      : (offered.find((category) => category.id === suggestedId) ?? null);
+  const suggestionChip =
+    suggestedCategory === null ? null : (
+      <div
+        class="mt-4 flex items-center gap-2.5 rounded-lg bg-bg px-3 py-2"
+        data-testid="category-suggestion"
+      >
+        <IconTile
+          icon={suggestedCategory.icon}
+          color={suggestedCategory.color}
+          size={26}
+          iconSize={15}
+        />
+        <p class="min-w-0 flex-1 truncate text-[13px] text-fg/70">
+          Sugestão: <span class="font-medium text-fg">{suggestedCategory.name}</span>
+        </p>
+        <button
+          type="button"
+          onClick={() => setCategoryId(suggestedCategory.id)}
+          class="hf-press rounded-md px-2 py-1 text-[13px] font-medium text-accent-300"
+        >
+          Usar
+        </button>
+        <button
+          type="button"
+          aria-label="Dispensar sugestão"
+          onClick={() => setDismissedSuggestion(suggestedCategory.id)}
+          class="hf-press grid size-7 place-items-center rounded-md text-fg/55"
+        >
+          <Icon name="x" size={14} />
+        </button>
+      </div>
+    );
   const categoryIsDead = categoryId !== null && chosenCategory === null;
   const methodIsDead = paymentMethodId !== null && selectedMethod === null;
 
@@ -382,6 +438,8 @@ export function TransactionWizard({
                 />
               </div>
             </div>
+
+            {!calendarOpen && suggestionChip}
 
             <div class="mt-5">
               <DateChips
@@ -636,6 +694,8 @@ export function TransactionWizard({
                 </button>
               )}
             </div>
+
+            {suggestionChip}
 
             {categories.length === 0 && !categoryIsDead ? (
               <p class="mt-2 rounded-lg bg-bg px-3.5 py-3 text-sm text-fg/60">

@@ -4,6 +4,7 @@ import { listBudgets } from "./domain/budgets/list";
 import { isCompleteCard, listCreditCards } from "./domain/cards/card";
 import { listPickableMethods, pendingCardGroups } from "./domain/cards/migration";
 import type { Ulid } from "./domain/ids/ulid";
+import { buildCategoryIndex } from "./domain/import/suggest-category";
 import { isAlive } from "./domain/model/base";
 import type { RecurrenceRule } from "./domain/model/recurrence";
 import type { ReserveKind, ReserveMovement } from "./domain/model/reserve";
@@ -14,6 +15,7 @@ import {
   listPaymentMethods,
   listTransactions,
 } from "./domain/projections/selectors";
+import { findSimilar, type SimilarQuery } from "./domain/transactions/similar";
 import { BrandMark } from "./features/brand/brand-mark";
 import { BudgetsPage } from "./features/budgets/budgets-page";
 import type { BudgetsStore } from "./features/budgets/store";
@@ -48,6 +50,7 @@ import { SettingsPage, type SettingsSection } from "./features/settings/settings
 import { HubPage } from "./features/sync/hub-page";
 import type { SyncStore } from "./features/sync/store";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
+import { SimilarSheet } from "./features/transactions/similar-sheet";
 import type { TransactionsStore } from "./features/transactions/store";
 import { TransactionWizard } from "./features/transactions/transaction-wizard";
 import { UncategorizedSheet } from "./features/transactions/uncategorized-sheet";
@@ -190,6 +193,8 @@ export function App({
   // espera por ele: as cópias antigas do genérico ainda estão para ser fundidas, e
   // abrir antes mostraria grupos que o boot está prestes a desfazer.
   const [booted, setBooted] = useState(false);
+  // Reclassificação que oferece "aplicar às semelhantes", ou null.
+  const [similar, setSimilar] = useState<SimilarQuery | null>(null);
   // Cor do brilho do topo enquanto o Perfil está aberto: acompanha a cor que a
   // pessoa está escolhendo, antes mesmo de salvar.
   const [glow, setGlow] = useState<string | null>(null);
@@ -366,7 +371,29 @@ export function App({
     }
 
     // O draft vai inteiro: o repositório não grava quando nada mudou.
-    void store.edit(editing.id, draft).catch(ignoreHandled);
+    const reclassified =
+      draft.categoryId !== null && draft.categoryId !== editing.categoryId
+        ? draft.categoryId
+        : null;
+    const editedId = editing.id;
+    const edited = store.edit(editedId, draft);
+    if (reclassified === null) {
+      void edited.catch(ignoreHandled);
+    } else {
+      // Só oferece depois de gravar, e só se sobrou alguém para mudar: a lista
+      // vem do estado vivo, então o próprio lançamento já gravado não entra.
+      void edited
+        .then(() => {
+          const query = {
+            sourceId: editedId,
+            description: draft.description,
+            kind: draft.kind,
+            categoryId: reclassified,
+          };
+          if (findSimilar(session.state.value, query).length > 0) setSimilar(query);
+        })
+        .catch(ignoreHandled);
+    }
     closeModal();
   }
 
@@ -644,6 +671,7 @@ export function App({
             editing={editing}
             onSubmit={handleSubmit}
             onCancel={closeModal}
+            categoryIndex={buildCategoryIndex(state)}
             today={today}
             initialKind={composing ?? undefined}
             categories={categories}
@@ -698,6 +726,21 @@ export function App({
               void recurrence.removeAdjustment(id).catch(ignoreHandled);
             }}
             onClose={() => setAdjusting(null)}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={similar !== null}
+        title="Aplicar às semelhantes"
+        onClose={() => setSimilar(null)}
+      >
+        {similar !== null && (
+          <SimilarSheet
+            state={state}
+            query={similar}
+            onApply={(ids, categoryId) => store.setCategory(ids, categoryId)}
+            onClose={() => setSimilar(null)}
           />
         )}
       </Modal>
