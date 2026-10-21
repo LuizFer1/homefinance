@@ -4,12 +4,13 @@ import type { Category } from "../../domain/model/category";
 import type { PaymentMethod } from "../../domain/model/payment-method";
 import {
   FREQUENCY_LABELS,
-  RECURRENCE_FREQUENCIES,
+  OFFERED_FREQUENCIES,
   type RecurrenceFrequency,
   type RecurrenceRule,
   SCHEDULE_TYPE_LABELS,
   SCHEDULE_TYPES,
   type ScheduleType,
+  VARIABLE_COPY,
 } from "../../domain/model/recurrence";
 import {
   REPORT_STATES,
@@ -20,6 +21,7 @@ import {
 } from "../../domain/model/transaction";
 import { digitsOf, maskDigits, minorOf } from "../../domain/money/mask";
 import { dayMonth } from "../../domain/projections/periods";
+import { isDayStep } from "../../domain/recurrence/schedule";
 import { nextOccurrences } from "../../domain/recurrence/upcoming";
 import { offersCashback } from "../../domain/transactions/cashback";
 import { Icon } from "../icons/icon";
@@ -212,10 +214,13 @@ export function TransactionWizard({
   }
 
   function recurrenceInput(): RecurrenceRule {
+    // Semanal/quinzenal ignoram "Quando"/"Dia": grava o padrão, não o que sobrou
+    // de uma escolha feita antes de trocar a frequência.
+    const byDays = isDayStep(frequency);
     return {
       frequency,
-      scheduleType,
-      scheduleN: clampedN,
+      scheduleType: byDays ? "dayOfMonth" : scheduleType,
+      scheduleN: byDays ? Number(occurredOn.slice(8, 10)) || 1 : clampedN,
       endOn: hasEnd ? endOn : null,
       variable,
     };
@@ -474,7 +479,7 @@ export function TransactionWizard({
                     legend="Frequência"
                     dense
                     class="mt-2"
-                    options={RECURRENCE_FREQUENCIES.map((value) => ({
+                    options={OFFERED_FREQUENCIES.map((value) => ({
                       value,
                       label: FREQUENCY_LABELS[value],
                     }))}
@@ -483,88 +488,96 @@ export function TransactionWizard({
                   />
                 </div>
 
-                <div>
-                  <div class="grid grid-cols-[1.4fr_1fr] gap-3">
-                    <div>
-                      <label class={LABEL} for="recurrence-schedule-type">
-                        Quando
-                      </label>
-                      <div class="relative mt-2">
-                        <select
-                          id="recurrence-schedule-type"
-                          class={`${FIELD_SHEET} appearance-none pr-9 text-[15px]`}
-                          value={scheduleType}
-                          onChange={(event) =>
-                            setScheduleType(event.currentTarget.value as ScheduleType)
-                          }
-                        >
-                          {SCHEDULE_TYPES.map((value) => (
-                            <option key={value} value={value}>
-                              {SCHEDULE_TYPE_LABELS[value]}
-                            </option>
-                          ))}
-                        </select>
-                        <Icon
-                          name="caret-down"
-                          size={16}
-                          class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-fg/55"
-                        />
+                {isDayStep(frequency) ? (
+                  <p class={HINT}>
+                    {frequency === "weekly"
+                      ? "Repete a cada 7 dias, a partir da data do lançamento."
+                      : "Repete a cada 14 dias, a partir da data do lançamento."}
+                  </p>
+                ) : (
+                  <div>
+                    <div class="grid grid-cols-[1.4fr_1fr] gap-3">
+                      <div>
+                        <label class={LABEL} for="recurrence-schedule-type">
+                          Quando
+                        </label>
+                        <div class="relative mt-2">
+                          <select
+                            id="recurrence-schedule-type"
+                            class={`${FIELD_SHEET} appearance-none pr-9 text-[15px]`}
+                            value={scheduleType}
+                            onChange={(event) =>
+                              setScheduleType(event.currentTarget.value as ScheduleType)
+                            }
+                          >
+                            {SCHEDULE_TYPES.map((value) => (
+                              <option key={value} value={value}>
+                                {SCHEDULE_TYPE_LABELS[value]}
+                              </option>
+                            ))}
+                          </select>
+                          <Icon
+                            name="caret-down"
+                            size={16}
+                            class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-fg/55"
+                          />
+                        </div>
                       </div>
-                    </div>
 
-                    <div>
-                      <label class={LABEL} for="recurrence-schedule-n">
-                        {scheduleType === "nthBusinessDay" ? "Nº do dia útil" : "Dia"}
-                      </label>
-                      {/*
+                      <div>
+                        <label class={LABEL} for="recurrence-schedule-n">
+                          {scheduleType === "nthBusinessDay" ? "Nº do dia útil" : "Dia"}
+                        </label>
+                        {/*
                       Stepper em vez do teclado: o valor quase sempre anda um ou
                       dois dias a partir da data do lançamento.
                     */}
-                      <div class="mt-2 flex h-12 items-center rounded-lg border border-divider bg-bg">
-                        <button
-                          type="button"
-                          aria-label="Diminuir dia"
-                          onClick={() => setScheduleN(Math.max(1, clampedN - 1))}
-                          class="hf-press grid h-full w-10 place-items-center text-fg/70"
-                        >
-                          <Icon name="minus" size={16} />
-                        </button>
-                        <input
-                          id="recurrence-schedule-n"
-                          type="number"
-                          min={1}
-                          max={31}
-                          inputMode="numeric"
-                          class="hf-num w-full min-w-0 appearance-none bg-transparent text-center text-base
+                        <div class="mt-2 flex h-12 items-center rounded-lg border border-divider bg-bg">
+                          <button
+                            type="button"
+                            aria-label="Diminuir dia"
+                            onClick={() => setScheduleN(Math.max(1, clampedN - 1))}
+                            class="hf-press grid h-full w-10 place-items-center text-fg/70"
+                          >
+                            <Icon name="minus" size={16} />
+                          </button>
+                          <input
+                            id="recurrence-schedule-n"
+                            type="number"
+                            min={1}
+                            max={31}
+                            inputMode="numeric"
+                            class="hf-num w-full min-w-0 appearance-none bg-transparent text-center text-base
                           outline-none [&::-webkit-inner-spin-button]:appearance-none"
-                          value={scheduleN}
-                          onInput={(event) => setScheduleN(Number(event.currentTarget.value) || 1)}
-                        />
-                        <button
-                          type="button"
-                          aria-label="Aumentar dia"
-                          onClick={() => setScheduleN(Math.min(31, clampedN + 1))}
-                          class="hf-press grid h-full w-10 place-items-center text-fg/70"
-                        >
-                          <Icon name="plus" size={16} />
-                        </button>
+                            value={scheduleN}
+                            onInput={(event) =>
+                              setScheduleN(Number(event.currentTarget.value) || 1)
+                            }
+                          />
+                          <button
+                            type="button"
+                            aria-label="Aumentar dia"
+                            onClick={() => setScheduleN(Math.min(31, clampedN + 1))}
+                            class="hf-press grid h-full w-10 place-items-center text-fg/70"
+                          >
+                            <Icon name="plus" size={16} />
+                          </button>
+                        </div>
                       </div>
                     </div>
+                    <p class={HINT}>
+                      {scheduleType === "nthBusinessDay"
+                        ? "Dia útil = segunda a sexta (sem feriados nesta versão)."
+                        : "Se o mês for mais curto, usa o último dia."}
+                    </p>
                   </div>
-                  <p class={HINT}>
-                    {scheduleType === "nthBusinessDay"
-                      ? "Dia útil = segunda a sexta (sem feriados nesta versão)."
-                      : "Se o mês for mais curto, usa o último dia."}
-                  </p>
-                </div>
+                )}
 
                 <div class="rounded-lg bg-bg px-4 py-3">
                   <Toggle
-                    label="Valor varia todo mês"
+                    label={VARIABLE_COPY[frequency].label}
                     hint={
-                      variable
-                        ? "Cada mês nasce com a média dos últimos 6 confirmados. Este valor é o palpite até lá."
-                        : "Luz, água: o valor só existe quando a conta chega."
+                      variable ? VARIABLE_COPY[frequency].hintOn : VARIABLE_COPY[frequency].hintOff
                     }
                     checked={variable}
                     onChange={setVariable}
