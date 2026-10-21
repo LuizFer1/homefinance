@@ -17,11 +17,19 @@ import { UpdateSection } from "../update/update-section";
 import { ExportSheet } from "./export-sheet";
 import { ResetSection } from "./reset-section";
 
-export type SettingsSection = "category" | "paymentMethod" | "budget" | "profile" | "hub";
+export type SettingsSection =
+  | "category"
+  | "paymentMethod"
+  | "budget"
+  | "invoices"
+  | "profile"
+  | "hub";
 
 export interface SettingsPageProps {
   categoryCount: number;
   paymentMethodCount: number;
+  /** Cartões de crédito completos (os que têm fatura). */
+  cardCount?: number;
   /** Metas mensais por categoria definidas. */
   budgetCount: number;
   /** Perfil local, ou null enquanto ele não existe. */
@@ -88,6 +96,7 @@ function Chevron() {
 export function SettingsPage({
   categoryCount,
   paymentMethodCount,
+  cardCount = 0,
   budgetCount,
   profile,
   theme,
@@ -150,6 +159,13 @@ export function SettingsPage({
           <IconTile icon="wallet" color={null} size={36} iconSize={18} />
           <span class="min-w-0 flex-1 text-[15px]">Formas de pagamento</span>
           <span class="hf-num text-sm text-fg/50">{paymentMethodCount}</span>
+          <Chevron />
+        </button>
+        <button type="button" class={TAPPABLE} onClick={() => onOpen("invoices")}>
+          <Divider />
+          <IconTile icon="credit-card" color={null} size={36} iconSize={18} />
+          <span class="min-w-0 flex-1 text-[15px]">Faturas dos cartões</span>
+          <span class="hf-num text-sm text-fg/50">{cardCount}</span>
           <Chevron />
         </button>
         <button type="button" class={TAPPABLE} onClick={() => onOpen("budget")}>
