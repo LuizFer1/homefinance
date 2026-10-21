@@ -21,6 +21,17 @@ export interface PaymentMethod extends BaseRow {
    * linhas gravadas antes da fusão não têm a coluna.
    */
   mergedInto?: Ulid | null;
+  /**
+   * Dados de cartão de crédito, todos anuláveis e opcionais: linhas gravadas
+   * antes deles (e as de outro aparelho ainda na versão velha) seguem válidas, e
+   * um `credit` sem os três é o "cartão por completar". Só têm sentido em
+   * `kind === "credit"`; nos outros tipos ficam `null`.
+   */
+  bank?: string | null;
+  /** Dia do mês (1–31) em que a fatura fecha. Mês curto usa o último dia. */
+  closingDay?: number | null;
+  /** Dia do mês (1–31) do vencimento da fatura. */
+  dueDay?: number | null;
 }
 
 export type PaymentMethodDraft = Draft<PaymentMethod>;
