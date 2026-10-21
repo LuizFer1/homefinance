@@ -4,6 +4,7 @@ import { App } from "./app";
 import { HomeFinanceDb } from "./data/db";
 import { cryptoRandomChunk } from "./domain/ids/ulid";
 import { createBudgetsStore } from "./features/budgets/store";
+import { createCardsStore } from "./features/cards/store";
 import { createReadPdf } from "./features/import/read-pdf";
 import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
@@ -83,6 +84,7 @@ const onboarding = createOnboardingStore(session);
 const importer = createImportStore(session, recurrence);
 const reserves = createReservesStore(session);
 const budgets = createBudgetsStore(session);
+const cards = createCardsStore(session, db);
 
 // Só referenciar `navigator.serviceWorker` já lança em contexto sandbox.
 function serviceWorkerContainer(): SwContainer | undefined {
@@ -161,6 +163,7 @@ render(
     recurrence={recurrence}
     reserves={reserves}
     budgets={budgets}
+    cards={cards}
     onboarding={onboarding}
     importer={importer}
     update={update}

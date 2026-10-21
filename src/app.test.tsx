@@ -2,14 +2,18 @@ import { signal } from "@preact/signals";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app";
+import { deferCardMigration, readCardMigrationDeferral } from "./data/card-migration";
 import type { HomeFinanceDb } from "./data/db";
 import { buildRow } from "./data/repository";
 import { openTestDb, TEST_DEVICE_ID, testSessionDeps } from "./data/test-db.fake";
 import { createRowClock } from "./domain/clock/row-clock";
+import { LEGACY_CREDIT_METHOD_ID } from "./domain/defaults/defaults";
+import type { PaymentMethod } from "./domain/model/payment-method";
 import type { Reserve } from "./domain/model/reserve";
 import type { Transaction } from "./domain/model/transaction";
 import type { User } from "./domain/model/user";
 import { createBudgetsStore } from "./features/budgets/store";
+import { createCardsStore } from "./features/cards/store";
 import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
 import { createProfileStore } from "./features/profile/store";
@@ -80,6 +84,7 @@ function buildStores(db: HomeFinanceDb) {
     importer: createImportStore(session, recurrence),
     reserves: createReservesStore(session),
     budgets: createBudgetsStore(session),
+    cards: createCardsStore(session, db),
     // Sem service worker: nenhum aviso de versão nova, como no primeiro acesso.
     update: createUpdateStore({ reload: () => {}, now: () => 0 }),
     // Nunca chega à rede nos testes do App: o `fetch` rejeita como um hub fora
@@ -848,10 +853,10 @@ describe("primeiro uso", () => {
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
     );
     expect(screen.getByRole("heading", { name: /bom dia, luiz/i })).toBeDefined();
-    // Perfil, as quatro formas padrao e as categorias padrao, numa escrita so.
+    // Perfil, as três formas padrao e as categorias padrao, numa escrita so.
     const [perfil] = await db.users.toArray();
     expect(perfil?.name).toBe("Luiz");
-    expect(await db.paymentMethods.count()).toBe(4);
+    expect(await db.paymentMethods.count()).toBe(3);
     expect(await db.categories.count()).toBeGreaterThan(0);
     expect((await db.meta.get(LOCAL_USER_ID_KEY))?.value).toBe(perfil?.id);
   });
@@ -1158,5 +1163,105 @@ describe("reservas", () => {
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Reservas" })).toBeDefined());
     expect(screen.queryByRole("heading", { name: "Viagem" })).toBeNull();
+  });
+});
+
+describe("migração de cartões no boot", () => {
+  const GENERICO = LEGACY_CREDIT_METHOD_ID;
+  const NUBANK = "01J9F3K2M7QX8YB4TVWZ0DCEA2";
+
+  /** Aparelho de uma versão anterior: o genérico com gasto e um cartão já completo. */
+  async function comGastoNoGenerico(): Promise<HomeFinanceDb> {
+    const db = await cadastrado();
+    const clock = seedClock();
+    const cartao = (id: string, name: string, extra: object = {}) =>
+      buildRow<PaymentMethod>(
+        clock,
+        { name, icon: "credit-card", color: "violet", kind: "credit", ...extra },
+        id,
+      );
+    await db.paymentMethods.bulkPut([
+      cartao(GENERICO, "Cartão de crédito"),
+      cartao(NUBANK, "Nubank", { bank: "Nubank", closingDay: 5, dueDay: 12 }),
+    ]);
+    await db.transactions.put(
+      buildRow<Transaction>(clock, {
+        kind: "expense",
+        description: "Mercado do mês",
+        amountMinor: 12_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: GENERICO,
+        cashbackMinor: null,
+        occurredOn: "2026-08-02",
+        userId: null,
+        recurrenceId: null,
+        occurrenceKey: null,
+      }),
+    );
+    return db;
+  }
+
+  it("abre o ajuste de cartões sozinho e move os gastos para o cartão escolhido", async () => {
+    const db = await comGastoNoGenerico();
+    const stores = buildStores(db);
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    const sheet = await screen.findByRole("dialog", { name: "Ajustar cartões" });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Continuar" }));
+    fireEvent.click(within(sheet).getByRole("radio", { name: /^Nubank/ }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Continuar" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Mover 1 lançamento" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Ajustar cartões" })).toBeNull(),
+    );
+    const [gasto] = await db.transactions.toArray();
+    expect(gasto?.paymentMethodId).toBe(NUBANK);
+    expect((await db.paymentMethods.get(GENERICO))?.mergedInto).toBe(NUBANK);
+  });
+
+  it("'Depois' fecha, grava só a chave local e não reabre na mesma sessão", async () => {
+    const db = await comGastoNoGenerico();
+    const stores = buildStores(db);
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    const sheet = await screen.findByRole("dialog", { name: "Ajustar cartões" });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Depois" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Ajustar cartões" })).toBeNull(),
+    );
+    expect((await db.transactions.toArray())[0]?.paymentMethodId).toBe(GENERICO);
+    expect(await readCardMigrationDeferral(db)).not.toBeNull();
+  });
+
+  it("no próximo boot o aviso volta", async () => {
+    const db = await comGastoNoGenerico();
+    await deferCardMigration(db, "2026-08-07T10:00:00.000Z");
+    render(<App {...buildStores(db)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    expect(await screen.findByRole("dialog", { name: "Ajustar cartões" })).toBeDefined();
+  });
+
+  it("sem cartão por completar com gasto, nenhum aviso", async () => {
+    render(
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
+    await waitFor(() => expect(screen.getByTestId("total-balance")).toBeDefined());
+
+    expect(screen.queryByRole("dialog", { name: "Ajustar cartões" })).toBeNull();
+  });
+
+  it("Ajustes → Faturas dos cartões abre a tela de faturas", async () => {
+    render(
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
+    await waitFor(() => expect(screen.getByTestId("total-balance")).toBeDefined());
+
+    irParaCadastro(/Faturas dos cartões/);
+
+    expect(await screen.findByRole("heading", { name: "Faturas" })).toBeDefined();
+    expect(screen.getByText("Nenhum cartão cadastrado")).toBeDefined();
   });
 });
