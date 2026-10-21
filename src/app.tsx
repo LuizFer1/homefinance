@@ -42,6 +42,7 @@ import type { SyncStore } from "./features/sync/store";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
 import type { TransactionsStore } from "./features/transactions/store";
 import { TransactionWizard } from "./features/transactions/transaction-wizard";
+import { UncategorizedSheet } from "./features/transactions/uncategorized-sheet";
 import { Modal } from "./features/ui/modal";
 import { useSwipeNav } from "./features/ui/use-swipe-nav";
 import type { UpdateStore } from "./features/update/store";
@@ -166,6 +167,7 @@ export function App({
   const [adjusting, setAdjusting] = useState<Ulid | null>(null);
   // Estimativa em confirmação, ou null. Aberta pelo bloco "A confirmar".
   const [confirming, setConfirming] = useState<Transaction | null>(null);
+  const [classifying, setClassifying] = useState(false);
   // Cor do brilho do topo enquanto o Perfil está aberto: acompanha a cor que a
   // pessoa está escolhendo, antes mesmo de salvar.
   const [glow, setGlow] = useState<string | null>(null);
@@ -450,6 +452,7 @@ export function App({
             onImport={() => setImporting(true)}
             onEdit={setEditing}
             onConfirm={setConfirming}
+            onClassify={() => setClassifying(true)}
             onOpenProfile={() => openSection("profile")}
           />
         )}
@@ -623,6 +626,16 @@ export function App({
               void recurrence.removeAdjustment(id).catch(ignoreHandled);
             }}
             onClose={() => setAdjusting(null)}
+          />
+        )}
+      </Modal>
+
+      <Modal open={classifying} title="Sem categoria" onClose={() => setClassifying(false)}>
+        {classifying && (
+          <UncategorizedSheet
+            state={state}
+            onApply={(ids, categoryId) => store.setCategory(ids, categoryId)}
+            onClose={() => setClassifying(false)}
           />
         )}
       </Modal>

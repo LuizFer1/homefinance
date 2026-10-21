@@ -7,6 +7,7 @@ import { estimatedTotals, pendingEstimates } from "../../domain/projections/esti
 import { filterTransactions, hasFilters, NO_FILTERS } from "../../domain/projections/filter";
 import { monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { totals } from "../../domain/projections/selectors";
+import { uncategorized } from "../../domain/projections/uncategorized";
 import { availableBalance, savedInMonth } from "../../domain/reserves/balances";
 import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
@@ -29,6 +30,8 @@ export interface HomePageProps {
   /** Abre a confirmação de valor de uma estimativa. */
   onConfirm: (record: Transaction) => void;
   onOpenProfile: () => void;
+  /** Abre a fila de lançamentos sem categoria. Sem ele, o contador não aparece. */
+  onClassify?: () => void;
 }
 
 /** "Setembro" — nome do mês, sem o ano, com inicial maiúscula. */
@@ -173,6 +176,7 @@ export function HomePage({
   onEdit,
   onConfirm,
   onOpenProfile,
+  onClassify,
 }: HomePageProps) {
   // O que está nas reservas não é para gastar: contá-lo aqui de novo mostraria
   // o mesmo dinheiro em dois lugares (saldo e reserva) e o saldo pareceria maior
@@ -184,6 +188,7 @@ export function HomePage({
   // desmonta a página e zera.
   const [filters, setFilters] = useState(NO_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const pendingCategory = uncategorized(items, state).length;
   const filtering = hasFilters(filters);
   const shown = filtering ? filterTransactions(items, filters, state) : items;
 
@@ -229,6 +234,21 @@ export function HomePage({
         <Icon name="file-pdf" size={16} />
         Importar fatura ou extrato
       </button>
+
+      {onClassify !== undefined && pendingCategory > 0 && (
+        <button
+          type="button"
+          onClick={onClassify}
+          data-testid="uncategorized-counter"
+          class="hf-press mt-3 flex h-10 w-full items-center justify-between gap-2 rounded-lg px-3.5 text-[13px] text-fg/70 hover:bg-fg/[0.05]"
+        >
+          <span>
+            <span class="hf-num font-medium text-fg">{pendingCategory}</span>{" "}
+            {pendingCategory === 1 ? "lançamento sem categoria" : "lançamentos sem categoria"}
+          </span>
+          <span class="font-medium text-accent-300">Classificar</span>
+        </button>
+      )}
 
       {items.length > 0 && (
         <FilterBar
