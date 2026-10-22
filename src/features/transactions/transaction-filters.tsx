@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { isCreditCard } from "../../domain/cards/card";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
 import {
@@ -262,6 +263,7 @@ export function FilterSheet({ state, filters, onChange, onClose }: FilterSheetPr
                     name={method.name}
                     icon={method.icon}
                     color={method.color}
+                    credit={isCreditCard(method)}
                     checked={draft.paymentMethodId === method.id}
                     onSelect={() => setDraft({ ...draft, paymentMethodId: method.id })}
                   />

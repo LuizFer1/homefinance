@@ -109,3 +109,17 @@ export function Money({ minor, signed = "auto", size, class: className = "", tes
     </span>
   );
 }
+
+const SHORT = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+
+/**
+ * Valor sem símbolo e sem centavos, curto para caber numa célula: "850",
+ * "1,3 mil", "2 mi". Arredonda: serve para ler a escala, não para somar.
+ */
+export function shortBRL(minor: number): string {
+  if (hideValues.value) return "•••";
+  const reais = Math.round(Math.abs(minor) / 100);
+  if (reais < 1000) return String(reais);
+  if (reais < 1_000_000) return `${SHORT.format(reais / 1000)} mil`;
+  return `${SHORT.format(reais / 1_000_000)} mi`;
+}

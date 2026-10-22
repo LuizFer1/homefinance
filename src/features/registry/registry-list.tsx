@@ -1,5 +1,6 @@
 import type { Category } from "../../domain/model/category";
 import type { PaymentMethod } from "../../domain/model/payment-method";
+import { CardMark } from "../cards/card-mark";
 import { Icon } from "../icons/icon";
 import { IconTile } from "../ui/tile";
 
@@ -48,7 +49,11 @@ export function RegistryList({ items, emptyHint, onEdit, meta, tag }: RegistryLi
               onClick={() => onEdit(item)}
               class="hf-press flex h-[60px] w-full items-center gap-3 px-4 text-left hover:bg-fg/[0.04]"
             >
-              <IconTile icon={item.icon} color={item.color} size={36} iconSize={18} />
+              {item.kind === "credit" ? (
+                <CardMark color={item.color} size={36} />
+              ) : (
+                <IconTile icon={item.icon} color={item.color} size={36} iconSize={18} />
+              )}
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-[15px]">{item.name}</span>
                 {(detail !== "" || label !== null) && (

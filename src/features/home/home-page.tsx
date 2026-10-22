@@ -4,12 +4,14 @@ import type { AppState } from "../../domain/model/app-state";
 import type { Transaction, TransactionKind } from "../../domain/model/transaction";
 import type { User } from "../../domain/model/user";
 import { filterByMonth } from "../../domain/projections/breakdown";
+import { cardSpend } from "../../domain/projections/card-bar";
 import { estimatedTotals, pendingEstimates } from "../../domain/projections/estimates";
 import { filterTransactions, hasFilters, NO_FILTERS } from "../../domain/projections/filter";
 import { monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { totals } from "../../domain/projections/selectors";
 import { uncategorized } from "../../domain/projections/uncategorized";
 import { availableBalance, savedInMonth } from "../../domain/reserves/balances";
+import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
 import { periodLabel } from "../recurrence/adjust-sheet";
@@ -37,6 +39,8 @@ export interface HomePageProps {
   onClassify?: () => void;
   /** Abre o Orçamento. Sem ele, o aviso de meta em risco não aparece. */
   onOpenBudgets?: () => void;
+  /** Abre as faturas dos cartões. Sem ele, a legenda da barra não leva a lugar nenhum. */
+  onOpenInvoices?: () => void;
 }
 
 /** "Setembro" — nome do mês, sem o ano, com inicial maiúscula. */
@@ -56,10 +60,12 @@ function MonthCard({
   items,
   state,
   today,
+  onOpenInvoices,
 }: {
   items: Transaction[];
   state: AppState;
   today: string;
+  onOpenInvoices?: () => void;
 }) {
   const month = monthOf(today);
   const monthItems = filterByMonth(items, month);
@@ -68,6 +74,10 @@ function MonthCard({
   const estimated = estimatedTotals(monthItems);
   const estimatedMinor = estimated.incomeMinor + estimated.expenseMinor;
   const saved = savedInMonth(state, month);
+  // O gasto no cartão é uma parte da despesa que já está no total (a barra
+  // subtrai na compra, como o resto do app), nunca uma soma por fora.
+  const spend = cardSpend(monthItems, state);
+  const otherExpenseMinor = Math.max(0, summary.expenseMinor - spend.cardMinor);
 
   return (
     <section aria-label={`Resumo de ${monthName(month)}`} class="mt-6 rounded-lg bg-surface p-4">
@@ -88,18 +98,88 @@ function MonthCard({
           </span>
         </p>
       </div>
-      {/* Barra dividida proporcional; sem movimento, fica só o trilho. */}
+      {/*
+        Barra dividida proporcional; sem movimento, fica só o trilho. Com gasto
+        em cartão, a despesa se parte: o que não foi no cartão segue na cor de
+        despesa e cada cartão ganha um segmento na cor que a pessoa escolheu.
+        Sem cartão com gasto, é a barra de sempre.
+      */}
       <div
         aria-hidden="true"
-        class="mt-3 flex h-1 gap-[3px] overflow-hidden rounded-full bg-neutral-800"
+        data-testid="month-bar"
+        class={`mt-3 flex gap-[3px] overflow-hidden rounded-full ${
+          // Com cartões não há trilho cinza: as cores se apoiam no próprio card, onde
+          // têm 3:1 nos dois temas (ver `card-colors.contrast.test.ts`).
+          spend.segments.length > 0 ? "h-1.5" : "h-1 bg-neutral-800"
+        }`}
       >
         {moved > 0 && (
           <>
             <span class="rounded-full bg-income" style={{ flexGrow: summary.incomeMinor }} />
-            <span class="rounded-full bg-expense" style={{ flexGrow: summary.expenseMinor }} />
+            {spend.segments.length === 0 ? (
+              <span class="rounded-full bg-expense" style={{ flexGrow: summary.expenseMinor }} />
+            ) : (
+              <>
+                {otherExpenseMinor > 0 && (
+                  <span class="rounded-full bg-expense" style={{ flexGrow: otherExpenseMinor }} />
+                )}
+                {spend.segments.map((segment) => (
+                  <span
+                    key={segment.key}
+                    data-testid="card-segment"
+                    data-segment={segment.key}
+                    class="rounded-full"
+                    style={{
+                      flexGrow: segment.minor,
+                      // Piso de largura: um cartão com gasto pequeno ainda aparece.
+                      minWidth: "4px",
+                      backgroundColor: cssVarForToken(segment.color),
+                    }}
+                  />
+                ))}
+              </>
+            )}
           </>
         )}
       </div>
+      {/*
+        A cor sozinha não identifica o cartão (daltonismo, cores parecidas entre
+        cinco cartões): a legenda traz nome e valor em texto. Valor passa por
+        `compactBRL`, que respeita "Ocultar valores".
+      */}
+      {spend.segments.length > 0 && (
+        <div class="mt-2.5 flex items-end justify-between gap-3">
+          <ul
+            aria-label="Despesa por cartão"
+            data-testid="card-legend"
+            class="flex min-w-0 flex-1 flex-wrap gap-x-3.5 gap-y-1.5"
+          >
+            {spend.segments.map((segment) => (
+              <li
+                key={segment.key}
+                class="flex min-w-0 max-w-full items-center gap-1.5 text-xs text-fg/70"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: cssVarForToken(segment.color) }}
+                />
+                <span class="max-w-[7.5rem] truncate">{segment.name}</span>
+                <span class="hf-num shrink-0 text-fg/55">{compactBRL(segment.minor)}</span>
+              </li>
+            ))}
+          </ul>
+          {onOpenInvoices !== undefined && (
+            <button
+              type="button"
+              onClick={onOpenInvoices}
+              class="hf-press shrink-0 text-xs font-medium text-accent-300"
+            >
+              Faturas
+            </button>
+          )}
+        </div>
+      )}
       {/*
         Os números acima já contam as estimativas — o mês "fecha" com elas. A
         linha só diz quanto disso ainda é palpite.
@@ -240,6 +320,7 @@ export function HomePage({
   onOpenProfile,
   onClassify,
   onOpenBudgets,
+  onOpenInvoices,
 }: HomePageProps) {
   // O que está nas reservas não é para gastar: contá-lo aqui de novo mostraria
   // o mesmo dinheiro em dois lugares (saldo e reserva) e o saldo pareceria maior
@@ -278,7 +359,7 @@ export function HomePage({
       </p>
 
       {!filtering && (items.length > 0 || savedThisMonth) && (
-        <MonthCard items={items} state={state} today={today} />
+        <MonthCard items={items} state={state} today={today} onOpenInvoices={onOpenInvoices} />
       )}
 
       <PendingEstimates state={state} onConfirm={onConfirm} />

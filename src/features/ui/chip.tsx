@@ -1,4 +1,5 @@
 import type { ComponentChildren } from "preact";
+import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 
 /**
@@ -22,11 +23,21 @@ export interface RadioChipProps {
   checked: boolean;
   onSelect: () => void;
   icon?: string;
+  /** Token de cor: desenha a bolinha da cor (um cartão se reconhece por ela). */
+  color?: string;
   children: ComponentChildren;
 }
 
 /** Chip que é um rádio nativo — ver o porquê em `segmented.tsx`. */
-export function RadioChip({ name, value, checked, onSelect, icon, children }: RadioChipProps) {
+export function RadioChip({
+  name,
+  value,
+  checked,
+  onSelect,
+  icon,
+  color,
+  children,
+}: RadioChipProps) {
   return (
     <label class={chipClass(checked)}>
       <input
@@ -37,6 +48,13 @@ export function RadioChip({ name, value, checked, onSelect, icon, children }: Ra
         onChange={onSelect}
         class="sr-only"
       />
+      {color !== undefined && (
+        <span
+          aria-hidden="true"
+          class="size-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: cssVarForToken(color) }}
+        />
+      )}
       {icon !== undefined && <Icon name={icon} size={16} />}
       <span class="truncate">{children}</span>
     </label>

@@ -29,7 +29,7 @@ describe("detectReferenceMonth", () => {
 });
 
 describe("parseStatement — fatura", () => {
-  const card = (lines: string[]) => parseStatement(lines, "card", "2026-10");
+  const card = (lines: string[]) => parseStatement(lines, "card", "2026-10").entries;
 
   it("lê data, descrição e valor de uma compra à vista", () => {
     const [entry] = card(["12/09 IFOOD *RESTAURANTE R$ 45,90"]);
@@ -90,6 +90,40 @@ describe("parseStatement — fatura", () => {
     ).toEqual([]);
   });
 
+  it("devolve as linhas descartadas com o motivo", () => {
+    const { entries, skipped } = parseStatement(
+      [
+        "Total da fatura R$ 2.000,00",
+        "12/09 IFOOD 45,90",
+        "12/09 SEM VALOR",
+        "12/09 0,00",
+        "12/09 10,00",
+        "99/99 X 1,00",
+        "31/02 LOJA 5,00",
+      ],
+      "card",
+      "2026-10",
+    );
+    expect(entries).toHaveLength(1);
+    expect(skipped).toEqual([
+      { text: "12/09 SEM VALOR", reason: "no-amount" },
+      { text: "12/09 0,00", reason: "no-amount" },
+      { text: "12/09 10,00", reason: "unknown-format" },
+      { text: "99/99 X 1,00", reason: "invalid-date" },
+      { text: "31/02 LOJA 5,00", reason: "invalid-date" },
+    ]);
+  });
+
+  it("não lista como descartada a linha de saldo do extrato nem texto sem data", () => {
+    const { entries, skipped } = parseStatement(
+      ["Saldo anterior 100,00", "05/09 SALDO DO DIA 1.000,00"],
+      "account",
+      "2026-09",
+    );
+    expect(entries).toEqual([]);
+    expect(skipped).toEqual([]);
+  });
+
   it("tira o final mascarado do cartão e o hífen da parcela (Nubank)", () => {
     const [a, b] = card([
       "31 JUL •••• 9998 Mercadolivre*Mercadol - Parcela 2/3 R$ 92,51",
@@ -123,7 +157,7 @@ describe("parseStatement — fatura", () => {
 });
 
 describe("parseStatement — extrato", () => {
-  const account = (lines: string[]) => parseStatement(lines, "account", "2026-09");
+  const account = (lines: string[]) => parseStatement(lines, "account", "2026-09").entries;
 
   it("usa o primeiro valor (o segundo é o saldo) e a data completa", () => {
     const [entry] = account(["10/08/2026 PIX ENVIADO FULANO -120,00 1.500,00"]);

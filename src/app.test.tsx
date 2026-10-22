@@ -2,14 +2,19 @@ import { signal } from "@preact/signals";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app";
+import { deferCardMigration, readCardMigrationDeferral } from "./data/card-migration";
 import type { HomeFinanceDb } from "./data/db";
 import { buildRow } from "./data/repository";
 import { openTestDb, TEST_DEVICE_ID, testSessionDeps } from "./data/test-db.fake";
 import { createRowClock } from "./domain/clock/row-clock";
+import { LEGACY_CREDIT_METHOD_ID } from "./domain/defaults/defaults";
+import type { Category } from "./domain/model/category";
+import type { PaymentMethod } from "./domain/model/payment-method";
 import type { Reserve } from "./domain/model/reserve";
 import type { Transaction } from "./domain/model/transaction";
 import type { User } from "./domain/model/user";
 import { createBudgetsStore } from "./features/budgets/store";
+import { createCardsStore } from "./features/cards/store";
 import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
 import { createProfileStore } from "./features/profile/store";
@@ -80,6 +85,7 @@ function buildStores(db: HomeFinanceDb) {
     importer: createImportStore(session, recurrence),
     reserves: createReservesStore(session),
     budgets: createBudgetsStore(session),
+    cards: createCardsStore(session, db),
     // Sem service worker: nenhum aviso de versão nova, como no primeiro acesso.
     update: createUpdateStore({ reload: () => {}, now: () => 0 }),
     // Nunca chega à rede nos testes do App: o `fetch` rejeita como um hub fora
@@ -96,6 +102,9 @@ function buildStores(db: HomeFinanceDb) {
     readPdf: () => Promise.resolve([]),
     processFile: () => Promise.resolve("data:image/webp;base64,AAAA"),
     onReset: async () => {},
+    onExport: async () => {},
+    onImportPrepare: async () => ({ ok: false as const, message: "sem arquivo" }),
+    onImportApply: async () => {},
   };
 }
 
@@ -215,6 +224,66 @@ describe("App", () => {
     await edit.mock.results[0]?.value;
     const [linha] = await db.transactions.toArray();
     expect(linha).toMatchObject({ description: "Mercado", amountMinor: 500, dirty: 1 });
+  });
+
+  it("reclassificar oferece aplicar às semelhantes e grava só o confirmado", async () => {
+    const db = await cadastrado();
+    const clock = seedClock();
+    const CAT = "01J9F3K2M7QX8YB4TVWZ0DCCAT";
+    await db.categories.put(
+      buildRow<Category>(
+        clock,
+        { name: "Padarias", icon: "tag", color: "amber", kind: "expense" },
+        CAT,
+      ),
+    );
+    const base = {
+      kind: "expense" as const,
+      amountMinor: 1_000,
+      currency: "BRL" as const,
+      categoryId: null,
+      paymentMethodId: null,
+      cashbackMinor: null,
+      occurredOn: "2026-08-01",
+      userId: null,
+      recurrenceId: null,
+      occurrenceKey: null,
+    };
+    await db.transactions.bulkPut([
+      buildRow<Transaction>(
+        clock,
+        { ...base, description: "Padaria" },
+        "01J9F3K2M7QX8YB4TVWZ0DCT01",
+      ),
+      buildRow<Transaction>(
+        clock,
+        { ...base, description: "PADARIA 12" },
+        "01J9F3K2M7QX8YB4TVWZ0DCT02",
+      ),
+      buildRow<Transaction>(
+        clock,
+        { ...base, description: "Cinema" },
+        "01J9F3K2M7QX8YB4TVWZ0DCT03",
+      ),
+    ]);
+    const stores = buildStores(db);
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await waitFor(() => expect(screen.getByText("Padaria")).toBeDefined());
+
+    await abrirEdicao("Padaria");
+    fireEvent.click(screen.getByRole("button", { name: "Categoria" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Padarias" }));
+    concluirWizard();
+
+    await waitFor(() => expect(screen.getByText(/Outros 1 lançamento/)).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: /Continuar/, hidden: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar a 1", hidden: true }));
+
+    await waitFor(async () => {
+      const rows = await db.transactions.toArray();
+      const byId = Object.fromEntries(rows.map((row) => [row.description, row.categoryId]));
+      expect(byId).toEqual({ Padaria: CAT, "PADARIA 12": CAT, Cinema: null });
+    });
   });
 
   it("não regrava a linha quando nada mudou na edição", async () => {
@@ -847,10 +916,10 @@ describe("primeiro uso", () => {
       expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
     );
     expect(screen.getByRole("heading", { name: /bom dia, luiz/i })).toBeDefined();
-    // Perfil, as quatro formas padrao e as categorias padrao, numa escrita so.
+    // Perfil, as três formas padrao e as categorias padrao, numa escrita so.
     const [perfil] = await db.users.toArray();
     expect(perfil?.name).toBe("Luiz");
-    expect(await db.paymentMethods.count()).toBe(4);
+    expect(await db.paymentMethods.count()).toBe(3);
     expect(await db.categories.count()).toBeGreaterThan(0);
     expect((await db.meta.get(LOCAL_USER_ID_KEY))?.value).toBe(perfil?.id);
   });
@@ -880,12 +949,16 @@ describe("primeiro uso", () => {
 });
 
 describe("perfil e reset nas configuracoes", () => {
-  async function emAjustes(onReset: () => Promise<void> = async () => {}) {
+  async function emAjustes(
+    onReset: () => Promise<void> = async () => {},
+    onExport: () => Promise<void> = async () => {},
+  ) {
     const db = await cadastrado();
     render(
       <App
         {...buildStores(db)}
         onReset={onReset}
+        onExport={onExport}
         today="2026-08-08"
         hour={9}
         theme={fakeTheme()}
@@ -897,6 +970,32 @@ describe("perfil e reset nas configuracoes", () => {
     fireEvent.click(naBarra().getByRole("button", { name: "Ajustes" }));
     return db;
   }
+
+  it("exporta os dados em duas etapas: aviso e depois o download", async () => {
+    const onExport = vi.fn(async () => {});
+    await emAjustes(async () => {}, onExport);
+
+    fireEvent.click(screen.getByRole("button", { name: /^exportar/i }));
+    const sheet = screen.getByRole("dialog", { name: "Exportar dados" });
+    expect(onExport).not.toHaveBeenCalled();
+
+    fireEvent.click(within(sheet).getByRole("button", { name: /entendi, continuar/i }));
+    expect(within(sheet).getByText("homefinance-2026-08-08.json")).toBeDefined();
+    fireEvent.click(within(sheet).getByRole("button", { name: /baixar arquivo/i }));
+
+    await waitFor(() => expect(onExport).toHaveBeenCalledTimes(1));
+  });
+
+  it("abre a importacao em Seus dados, em duas etapas, sem gravar nada", async () => {
+    await emAjustes();
+
+    fireEvent.click(screen.getByRole("button", { name: /^importar/i }));
+    const sheet = screen.getByRole("dialog", { name: "Importar dados" });
+
+    expect(within(sheet).getByLabelText("Escolher arquivo")).toBeDefined();
+    expect(within(sheet).getByRole("list", { name: "Etapas" }).children).toHaveLength(2);
+    expect(within(sheet).queryByRole("button", { name: /^importar \d+/i })).toBeNull();
+  });
 
   it("oferece resetar a conta atras da digitacao exata", async () => {
     const onReset = vi.fn();
@@ -1138,5 +1237,109 @@ describe("reservas", () => {
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Reservas" })).toBeDefined());
     expect(screen.queryByRole("heading", { name: "Viagem" })).toBeNull();
+  });
+});
+
+describe("migração de cartões no boot", () => {
+  const GENERICO = LEGACY_CREDIT_METHOD_ID;
+  const NUBANK = "01J9F3K2M7QX8YB4TVWZ0DCEA2";
+
+  /** Aparelho de uma versão anterior: o genérico com gasto e um cartão já completo. */
+  async function comGastoNoGenerico(): Promise<HomeFinanceDb> {
+    const db = await cadastrado();
+    const clock = seedClock();
+    const cartao = (id: string, name: string, extra: object = {}) =>
+      buildRow<PaymentMethod>(
+        clock,
+        { name, icon: "credit-card", color: "violet", kind: "credit", ...extra },
+        id,
+      );
+    await db.paymentMethods.bulkPut([
+      cartao(GENERICO, "Cartão de crédito"),
+      cartao(NUBANK, "Nubank", { bank: "Nubank", closingDay: 5, dueDay: 12 }),
+    ]);
+    await db.transactions.put(
+      buildRow<Transaction>(clock, {
+        kind: "expense",
+        description: "Mercado do mês",
+        amountMinor: 12_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: GENERICO,
+        cashbackMinor: null,
+        occurredOn: "2026-08-02",
+        userId: null,
+        recurrenceId: null,
+        occurrenceKey: null,
+      }),
+    );
+    return db;
+  }
+
+  it("abre o ajuste de cartões sozinho e move os gastos para o cartão escolhido", async () => {
+    const db = await comGastoNoGenerico();
+    const stores = buildStores(db);
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    const sheet = await screen.findByRole("dialog", { name: "Ajustar cartões" });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Continuar" }));
+    fireEvent.click(within(sheet).getByRole("radio", { name: /^Nubank/ }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Continuar" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Mover 1 lançamento" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Ajustar cartões" })).toBeNull(),
+    );
+    const [gasto] = await db.transactions.toArray();
+    expect(gasto?.paymentMethodId).toBe(NUBANK);
+    expect((await db.paymentMethods.get(GENERICO))?.mergedInto).toBe(NUBANK);
+    // Fechar por ter migrado não é "Depois": a chave local não é gravada.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(await readCardMigrationDeferral(db)).toBeNull();
+    expect(stores.cards.deferred.value).toBe(false);
+  });
+
+  it("'Depois' fecha, grava só a chave local e não reabre na mesma sessão", async () => {
+    const db = await comGastoNoGenerico();
+    const stores = buildStores(db);
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    const sheet = await screen.findByRole("dialog", { name: "Ajustar cartões" });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Depois" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Ajustar cartões" })).toBeNull(),
+    );
+    expect((await db.transactions.toArray())[0]?.paymentMethodId).toBe(GENERICO);
+    expect(await readCardMigrationDeferral(db)).not.toBeNull();
+  });
+
+  it("no próximo boot o aviso volta", async () => {
+    const db = await comGastoNoGenerico();
+    await deferCardMigration(db, "2026-08-07T10:00:00.000Z");
+    render(<App {...buildStores(db)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    expect(await screen.findByRole("dialog", { name: "Ajustar cartões" })).toBeDefined();
+  });
+
+  it("sem cartão por completar com gasto, nenhum aviso", async () => {
+    render(
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
+    await waitFor(() => expect(screen.getByTestId("total-balance")).toBeDefined());
+
+    expect(screen.queryByRole("dialog", { name: "Ajustar cartões" })).toBeNull();
+  });
+
+  it("Ajustes → Faturas dos cartões abre a tela de faturas", async () => {
+    render(
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
+    await waitFor(() => expect(screen.getByTestId("total-balance")).toBeDefined());
+
+    irParaCadastro(/Faturas dos cartões/);
+
+    expect(await screen.findByRole("heading", { name: "Faturas" })).toBeDefined();
+    expect(screen.getByText("Nenhum cartão cadastrado")).toBeDefined();
   });
 });

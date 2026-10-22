@@ -64,6 +64,23 @@ export const DEFAULT_METHODS: readonly DefaultEntry<PaymentMethodDraft>[] = [
 ];
 
 /**
+ * Padrões que a semente **não** cria mais, mas que o planejador de fusão ainda
+ * precisa conhecer. O "Cartão de crédito" genérico juntava o gasto de todo
+ * cartão num só; cada cartão agora é um cadastro com banco e fechamento. A
+ * linha continua na lista acima porque aparelhos na versão velha ainda
+ * semeiam cópias dela com id aleatório, e sem ela a fusão deixaria de levá-las
+ * para o id estável (e o gatilho da migração de cartões veria cópias soltas).
+ */
+const UNSEEDED_METHOD_KEYS: readonly string[] = ["credit"];
+
+const UNSEEDED_METHOD_IDS: ReadonlySet<string> = new Set(
+  UNSEEDED_METHOD_KEYS.map((key) => stableEntityId(`default:paymentMethods:${key}`)),
+);
+
+/** O id estável do genérico antigo, para a migração reconhecer a linha. */
+export const LEGACY_CREDIT_METHOD_ID: Ulid = stableEntityId("default:paymentMethods:credit");
+
+/**
  * Categorias padrão, pelo mesmo argumento dos métodos: cadastros comuns, não
  * constantes. São renomeáveis, recoloríveis e apagáveis.
  *
@@ -157,6 +174,8 @@ function genesisRow<T>(item: DefaultEntry<object>): T {
 export function buildDefaultRows(): { categories: Category[]; paymentMethods: PaymentMethod[] } {
   return {
     categories: DEFAULT_CATEGORIES.map((c) => genesisRow<Category>(c)),
-    paymentMethods: DEFAULT_METHODS.map((m) => genesisRow<PaymentMethod>(m)),
+    paymentMethods: DEFAULT_METHODS.filter((m) => !UNSEEDED_METHOD_IDS.has(m.id)).map((m) =>
+      genesisRow<PaymentMethod>(m),
+    ),
   };
 }

@@ -1,4 +1,3 @@
-import { shiftMonth } from "../dates/calendar";
 import { stableEntityId } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
@@ -6,11 +5,18 @@ import { isAlive } from "../model/base";
 import type { Recurrence } from "../model/recurrence";
 import type { Transaction } from "../model/transaction";
 import { type AdjustmentLike, adjustmentId, adjustmentsOf, amountFor } from "./adjustments";
-import { FREQUENCY_MONTHS, occurrenceKey, periodOfKey } from "./schedule";
+import {
+  isKnownFrequency,
+  occurrenceKey,
+  periodOf,
+  periodOfKey,
+  previousPeriod,
+  stepPeriod,
+} from "./schedule";
 
 export interface AdjustmentInput {
   recurrenceId: Ulid;
-  /** 'YYYY-MM'. */
+  /** 'YYYY-MM' (ou 'YYYY-MM-DD' em série semanal/quinzenal). */
   fromPeriod: string;
   amountMinor: number;
 }
@@ -91,14 +97,14 @@ export function planAdjustment(state: AppState, input: AdjustmentInput): Adjustm
 
   return {
     adjustmentId: id,
-    baseMinor: amountFor(series, current, shiftMonth(input.fromPeriod, -1)),
+    baseMinor: amountFor(series, current, previousPeriod(input.fromPeriod)),
     updates,
     kept,
   };
 }
 
 export interface PeriodChoices {
-  /** 'YYYY-MM', em ordem, no passo da frequência. */
+  /** Competências em ordem, no passo da frequência (datas se semanal/quinzenal). */
   periods: string[];
   initial: string;
 }
@@ -117,11 +123,15 @@ const AFTER = 12;
  * a última competência.
  */
 export function periodChoices(state: AppState, series: Recurrence): PeriodChoices {
-  const step = FREQUENCY_MONTHS[series.frequency];
-  const lastMonth = series.endOn === null ? null : series.endOn.slice(0, 7);
+  // Frequência de versão futura: sem passo conhecido o laço abaixo não andaria.
+  if (!isKnownFrequency(series.frequency)) {
+    const only = periodOf("monthly", series.startOn);
+    return { periods: [only], initial: only };
+  }
+  const lastMonth = series.endOn === null ? null : periodOf(series.frequency, series.endOn);
   const all: string[] = [];
   let initialIndex = -1;
-  let cursor = series.startOn.slice(0, 7);
+  let cursor = periodOf(series.frequency, series.startOn);
 
   while (lastMonth === null || cursor <= lastMonth) {
     const exists = state.transactions[stableEntityId(occurrenceKey(series.id, cursor))];
@@ -130,10 +140,10 @@ export function periodChoices(state: AppState, series: Recurrence): PeriodChoice
     // Sem `endOn` o laço só termina aqui; a padrão sempre aparece, porque o
     // banco tem um número finito de ocorrências.
     if (initialIndex !== -1 && all.length - 1 - initialIndex >= AFTER) break;
-    cursor = shiftMonth(cursor, step);
+    cursor = stepPeriod(series.frequency, cursor);
   }
 
-  if (all.length === 0) all.push(series.startOn.slice(0, 7));
+  if (all.length === 0) all.push(periodOf(series.frequency, series.startOn));
   if (initialIndex === -1) initialIndex = all.length - 1;
 
   return {

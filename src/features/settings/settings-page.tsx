@@ -1,5 +1,8 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
+import type { PrepareResult } from "../../data/import";
+import type { ImportPlan } from "../../domain/export/import-data";
+import type { AppState } from "../../domain/model/app-state";
 import type { User } from "../../domain/model/user";
 import { colorName, cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
@@ -13,13 +16,24 @@ import { PageHeader } from "../ui/page-header";
 import { IconTile } from "../ui/tile";
 import type { UpdateStore } from "../update/store";
 import { UpdateSection } from "../update/update-section";
+import { ExportSheet } from "./export-sheet";
+import { ImportSheet } from "./import-sheet";
 import { ResetSection } from "./reset-section";
 
-export type SettingsSection = "category" | "paymentMethod" | "budget" | "profile" | "hub";
+export type SettingsSection =
+  | "category"
+  | "paymentMethod"
+  | "budget"
+  | "invoices"
+  | "profile"
+  | "hub"
+  | "help";
 
 export interface SettingsPageProps {
   categoryCount: number;
   paymentMethodCount: number;
+  /** Cartões de crédito completos (os que têm fatura). */
+  cardCount?: number;
   /** Metas mensais por categoria definidas. */
   budgetCount: number;
   /** Perfil local, ou null enquanto ele não existe. */
@@ -28,6 +42,14 @@ export interface SettingsPageProps {
   update: UpdateStore;
   onOpen: (section: SettingsSection) => void;
   onReset: () => Promise<void>;
+  /** Estado para a prévia da exportação (contagens). */
+  state: AppState;
+  /** Data de hoje em 'YYYY-MM-DD'; nome do arquivo exportado. */
+  today: string;
+  /** Lê o banco e baixa o arquivo JSON; rejeita se falhar. */
+  onExport: () => Promise<void>;
+  onImportPrepare: (file: File) => Promise<PrepareResult>;
+  onImportApply: (plan: ImportPlan) => Promise<void>;
   sync: SyncStore;
 }
 
@@ -80,15 +102,23 @@ function Chevron() {
 export function SettingsPage({
   categoryCount,
   paymentMethodCount,
+  cardCount = 0,
   budgetCount,
   profile,
   theme,
   update,
   onOpen,
   onReset,
+  state,
+  today,
+  onExport,
+  onImportPrepare,
+  onImportApply,
   sync,
 }: SettingsPageProps) {
   const [resetting, setResetting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const hubStatus = describeHubStatus({
     link: sync.link.value,
     status: sync.status.value,
@@ -138,6 +168,13 @@ export function SettingsPage({
           <IconTile icon="wallet" color={null} size={36} iconSize={18} />
           <span class="min-w-0 flex-1 text-[15px]">Formas de pagamento</span>
           <span class="hf-num text-sm text-fg/50">{paymentMethodCount}</span>
+          <Chevron />
+        </button>
+        <button type="button" class={TAPPABLE} onClick={() => onOpen("invoices")}>
+          <Divider />
+          <IconTile icon="credit-card" color={null} size={36} iconSize={18} />
+          <span class="min-w-0 flex-1 text-[15px]">Faturas dos cartões</span>
+          <span class="hf-num text-sm text-fg/50">{cardCount}</span>
           <Chevron />
         </button>
         <button type="button" class={TAPPABLE} onClick={() => onOpen("budget")}>
@@ -200,10 +237,45 @@ export function SettingsPage({
             </button>
           )}
         </div>
+        <button type="button" class={TAPPABLE} onClick={() => setExporting(true)}>
+          <Divider />
+          <IconTile icon="download-simple" color={null} size={36} iconSize={18} />
+          <span class="min-w-0 flex-1">
+            <span class="block text-[15px]">Exportar</span>
+            <span class="mt-0.5 block text-xs leading-snug text-fg/55">
+              Baixa uma cópia dos seus dados em arquivo, sem internet.
+            </span>
+          </span>
+          <Chevron />
+        </button>
+        <button type="button" class={TAPPABLE} onClick={() => setImporting(true)}>
+          <Divider />
+          <IconTile icon="upload-simple" color={null} size={36} iconSize={18} />
+          <span class="min-w-0 flex-1">
+            <span class="block text-[15px]">Importar</span>
+            <span class="mt-0.5 block text-xs leading-snug text-fg/55">
+              Restaura um arquivo exportado, sem apagar o que já está aqui.
+            </span>
+          </span>
+          <Chevron />
+        </button>
       </Group>
 
       <Group label="Aplicativo">
-        <UpdateSection update={update} />
+        <button type="button" class={TAPPABLE} onClick={() => onOpen("help")}>
+          <IconTile icon="book-open" color={null} size={36} iconSize={18} />
+          <span class="min-w-0 flex-1">
+            <span class="block text-[15px]">Ajuda</span>
+            <span class="mt-0.5 block text-xs leading-snug text-fg/55">
+              Perguntas e respostas, com busca. Funciona sem internet.
+            </span>
+          </span>
+          <Chevron />
+        </button>
+        <div class="relative">
+          <Divider />
+          <UpdateSection update={update} />
+        </div>
       </Group>
 
       {/*
@@ -228,6 +300,27 @@ export function SettingsPage({
           <Chevron />
         </button>
       </Group>
+
+      <Modal open={exporting} title="Exportar dados" onClose={() => setExporting(false)}>
+        {exporting && (
+          <ExportSheet
+            state={state}
+            today={today}
+            onExport={onExport}
+            onClose={() => setExporting(false)}
+          />
+        )}
+      </Modal>
+
+      <Modal open={importing} title="Importar dados" onClose={() => setImporting(false)}>
+        {importing && (
+          <ImportSheet
+            onPrepare={onImportPrepare}
+            onApply={onImportApply}
+            onClose={() => setImporting(false)}
+          />
+        )}
+      </Modal>
 
       <Modal open={resetting} title="Resetar conta" onClose={() => setResetting(false)}>
         {resetting && (

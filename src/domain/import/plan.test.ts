@@ -5,7 +5,7 @@ import { identify, installmentAnchor, planImport, type ReviewedEntry } from "./p
 const CARD = "CARTAO-1";
 
 function reviewed(lines: string[], ref: string): ReviewedEntry[] {
-  return parseStatement(lines, "card", ref).map((e) => ({ ...e, categoryId: null }));
+  return parseStatement(lines, "card", ref).entries.map((e) => ({ ...e, categoryId: null }));
 }
 
 describe("installmentAnchor", () => {

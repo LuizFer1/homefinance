@@ -104,6 +104,9 @@ const REGULAR = [
   "arrow-up",
   "sparkle",
   "pencil-simple",
+  // Exportação.
+  "download-simple",
+  "upload-simple",
 ];
 
 /** Peso preenchido: aba ativa e "Escuro" selecionado. */

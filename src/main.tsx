@@ -4,6 +4,8 @@ import { App } from "./app";
 import { HomeFinanceDb } from "./data/db";
 import { cryptoRandomChunk } from "./domain/ids/ulid";
 import { createBudgetsStore } from "./features/budgets/store";
+import { createCardsStore } from "./features/cards/store";
+import { consumeHelpLink, pendingHelp } from "./features/help/deep-link";
 import { createReadPdf } from "./features/import/read-pdf";
 import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
@@ -83,6 +85,7 @@ const onboarding = createOnboardingStore(session);
 const importer = createImportStore(session, recurrence);
 const reserves = createReservesStore(session);
 const budgets = createBudgetsStore(session);
+const cards = createCardsStore(session, db);
 
 // Só referenciar `navigator.serviceWorker` já lança em contexto sandbox.
 function serviceWorkerContainer(): SwContainer | undefined {
@@ -135,6 +138,14 @@ const sync = createSyncStore({
 // de endereço nem no histórico. O App abre a sub-tela quando a sessão estiver pronta.
 sync.pendingDeepLink.value = consumeHubDeepLink(window.location, window.history);
 
+// Link de pergunta da Ajuda: no boot e com o app já aberto (o fragmento muda
+// sem recarregar a página).
+pendingHelp.value = consumeHelpLink(window.location, window.history);
+window.addEventListener("hashchange", () => {
+  const id = consumeHelpLink(window.location, window.history);
+  if (id !== null) pendingHelp.value = id;
+});
+
 // PWA instalado fica dias aberto sem navegar, e é na navegação que o navegador
 // procura `sw.js` novo. Voltar para o app é o momento natural de perguntar — e
 // de buscar o que o outro celular mandou para o hub.
@@ -161,6 +172,7 @@ render(
     recurrence={recurrence}
     reserves={reserves}
     budgets={budgets}
+    cards={cards}
     onboarding={onboarding}
     importer={importer}
     update={update}
@@ -168,6 +180,20 @@ render(
     deviceNameGuess={guessDeviceName(navigator.userAgent)}
     readPdf={readPdf}
     processFile={(file) => processAvatar(file, browserAvatarDeps)}
+    onExport={async () => {
+      // Sob demanda: quem nunca exporta não baixa este código.
+      const { exportAll } = await import("./data/export");
+      await exportAll(db, Date.now(), todayISO(), { doc: document, url: URL });
+    }}
+    onImportPrepare={async (file) => {
+      // Sob demanda, como a exportação: quem nunca importa não baixa este código.
+      const { prepareImport } = await import("./data/import");
+      return prepareImport(db, file);
+    }}
+    onImportApply={async (plan) => {
+      const { applyImport } = await import("./data/import");
+      await applyImport(session, plan);
+    }}
     onReset={() =>
       resetDevice({
         db,

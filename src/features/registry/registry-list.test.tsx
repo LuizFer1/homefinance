@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Category } from "../../domain/model/category";
+import type { PaymentMethod } from "../../domain/model/payment-method";
 import { ALIVE } from "../../domain/model/row.fake";
 import type { ColorToken } from "../../domain/model/tokens";
 import { RegistryList } from "./registry-list";
@@ -62,5 +63,39 @@ describe("RegistryList", () => {
 
     expect(onEdit).toHaveBeenCalledWith(itens[1]);
     expect(screen.queryByRole("button", { name: /excluir/i })).toBeNull();
+  });
+});
+
+describe("RegistryList: cartão de crédito", () => {
+  const forma = (over: Partial<PaymentMethod> & { id: string }): PaymentMethod => ({
+    name: "Nubank",
+    icon: "credit-card",
+    color: "violet",
+    kind: "credit",
+    ...ALIVE,
+    ...over,
+  });
+
+  it("cartão aparece só pela cor; as outras formas mantêm o tile de ícone", () => {
+    render(
+      <RegistryList
+        {...NOOP}
+        items={[forma({ id: "a" }), forma({ id: "b", name: "Pix", kind: "pix", icon: "zap" })]}
+      />,
+    );
+
+    const [cartao, pix] = screen.getAllByRole("listitem") as HTMLElement[];
+    expect(within(cartao as HTMLElement).getByTestId("card-mark")).toBeDefined();
+    expect(within(cartao as HTMLElement).queryByTestId("icon-credit-card")).toBeNull();
+    expect((cartao as HTMLElement).innerHTML).toContain("--color-tag-violet");
+    expect(within(pix as HTMLElement).getByTestId("icon-zap")).toBeDefined();
+  });
+
+  it("cor desconhecida degrada para o cinza neutro", () => {
+    render(
+      <RegistryList {...NOOP} items={[forma({ id: "a", color: "chartreuse" as ColorToken })]} />,
+    );
+
+    expect(screen.getByRole("listitem").innerHTML).toContain("--color-tag-slate");
   });
 });

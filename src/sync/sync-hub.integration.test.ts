@@ -4,11 +4,20 @@ import type { HomeFinanceDb } from "../data/db";
 import { openTestDb } from "../data/test-db.fake";
 import { budgetIdFor } from "../domain/budgets/budget-id";
 import { listBudgets } from "../domain/budgets/list";
+import { pendingCardGroups } from "../domain/cards/migration";
 import { compareHlc } from "../domain/clock/hlc";
-import { buildDefaultRows, DEFAULT_CATEGORIES, DEFAULT_METHODS } from "../domain/defaults/defaults";
+import {
+  buildDefaultRows,
+  DEFAULT_CATEGORIES,
+  DEFAULT_METHODS,
+  GENESIS_HLC,
+  LEGACY_CREDIT_METHOD_ID,
+} from "../domain/defaults/defaults";
 import type { RandomChunk } from "../domain/ids/ulid";
+import type { PaymentMethod } from "../domain/model/payment-method";
 import { movement, reserve } from "../domain/reserves/fixtures.fake";
 import { createBudgetsStore } from "../features/budgets/store";
+import { createCardsStore } from "../features/cards/store";
 import { createRegistryStore, type RegistryStore } from "../features/registry/store";
 import { createSession, type Session } from "../features/session/session";
 import { createSyncStore, type SyncStore } from "../features/sync/store";
@@ -297,7 +306,7 @@ describe("categorias e formas padrão", () => {
 
     for (const d of [a, b]) {
       expect(alive(d)).toHaveLength(12);
-      expect(Object.values(d.session.state.value.paymentMethods)).toHaveLength(4);
+      expect(Object.values(d.session.state.value.paymentMethods)).toHaveLength(3);
       expect(d.session.state.value.paymentMethods[pix.id]?.name).toBe("Pix Nubank");
     }
   });
@@ -352,6 +361,88 @@ describe("categorias e formas padrão", () => {
     const seq = hub.maxSeq();
     await a.registry.mergeLegacyDefaults();
     await b.registry.mergeLegacyDefaults();
+    await a.sync.sync();
+    await b.sync.sync();
+    expect(hub.maxSeq()).toBe(seq);
+  });
+});
+
+describe("migração de cartões entre dois aparelhos", () => {
+  const nubank = {
+    name: "Nubank",
+    icon: "credit-card",
+    color: "violet",
+    kind: "credit",
+    bank: "Nubank",
+    closingDay: 5,
+    dueDay: 12,
+  } as const;
+  const purchase = (paymentMethodId: string, description: string) => ({
+    kind: "expense" as const,
+    description,
+    amountMinor: 5_000,
+    currency: "BRL" as const,
+    categoryId: null,
+    paymentMethodId,
+    cashbackMinor: null,
+    occurredOn: "2026-10-02",
+    userId: null,
+    recurrenceId: null,
+    occurrenceKey: null,
+  });
+
+  it("migra num aparelho, o outro converge sem pendência, e a compra tardia segue o cartão", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+    const cardsA = createCardsStore(a.session, a.db);
+    const generic = LEGACY_CREDIT_METHOD_ID;
+
+    // O genérico antigo (gênese) com uma compra, e um cartão completo, ambos no aparelho A.
+    await a.session.putRows({
+      paymentMethods: [
+        {
+          ...DEFAULT_METHODS.find((m) => m.id === generic)?.draft,
+          id: generic,
+          createdAt: "2026-10-01T00:00:00.000Z",
+          updatedAt: GENESIS_HLC,
+          deletedAt: null,
+          dirty: 1,
+        } as PaymentMethod,
+      ],
+    });
+    const nu = await a.registry.addPaymentMethod(nubank);
+    const first = await a.session.mutate("transactions", (repo) =>
+      repo.create(purchase(generic, "Mercado")),
+    );
+    await a.sync.sync();
+    await b.sync.sync();
+    expect(pendingCardGroups(b.session.state.value)).toHaveLength(1);
+
+    // A migra e sobe.
+    await cardsA.migrate({ [generic]: { kind: "existing", cardId: nu.id } });
+    await a.sync.sync();
+    await b.sync.sync();
+
+    // B converge: nada pendente, a compra está no cartão, o genérico é lápide com mergedInto.
+    expect(pendingCardGroups(b.session.state.value)).toEqual([]);
+    expect(b.session.state.value.transactions[first.id]?.paymentMethodId).toBe(nu.id);
+    expect(b.session.state.value.paymentMethods[generic]).toMatchObject({ mergedInto: nu.id });
+    expect(b.session.state.value.paymentMethods[generic]?.deletedAt).not.toBeNull();
+
+    // Um aparelho ainda na versão velha lança no genérico depois: segue para o cartão.
+    const late = await b.session.mutate("transactions", (repo) =>
+      repo.create(purchase(generic, "Compra tardia")),
+    );
+    await b.sync.sync();
+    await a.sync.sync();
+    for (const d of [a, b]) {
+      expect(d.session.state.value.transactions[late.id]?.paymentMethodId).toBe(nu.id);
+      expect(pendingCardGroups(d.session.state.value)).toEqual([]);
+    }
+
+    // Converge e para.
+    const seq = hub.maxSeq();
     await a.sync.sync();
     await b.sync.sync();
     expect(hub.maxSeq()).toBe(seq);
