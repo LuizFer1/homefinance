@@ -65,6 +65,11 @@ const REGULAR = [
   "caret-right",
   "chart-pie-slice",
   "check",
+  "eye",
+  "eye-slash",
+  "funnel",
+  "magnifying-glass",
+  "sliders-horizontal",
   "circle-dashed",
   "circle-half",
   "coins",
@@ -83,6 +88,7 @@ const REGULAR = [
   "trend-down",
   "trend-up",
   "warning",
+  "warning-circle",
   "wave-sine",
   "x",
   // Reservas.
@@ -98,6 +104,9 @@ const REGULAR = [
   "arrow-up",
   "sparkle",
   "pencil-simple",
+  // Exportação.
+  "download-simple",
+  "upload-simple",
 ];
 
 /** Peso preenchido: aba ativa e "Escuro" selecionado. */

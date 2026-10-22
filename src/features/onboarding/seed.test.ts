@@ -18,11 +18,11 @@ function clock() {
 }
 
 describe("buildOnboardingRows", () => {
-  it("monta perfil, 4 formas, 12 categorias e aponta localUserId", () => {
+  it("monta perfil, 3 formas, 12 categorias e aponta localUserId", () => {
     const { rows, meta } = buildOnboardingRows(LUIZ, clock());
 
     expect(rows.users).toHaveLength(1);
-    expect(rows.paymentMethods?.map((m) => m.kind)).toEqual(["cash", "pix", "credit", "debit"]);
+    expect(rows.paymentMethods?.map((m) => m.kind)).toEqual(["cash", "pix", "debit"]);
     expect(rows.categories).toHaveLength(12);
     expect(meta[LOCAL_USER_ID_KEY]).toBe(rows.users?.[0]?.id);
   });

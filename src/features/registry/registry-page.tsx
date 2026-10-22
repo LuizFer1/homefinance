@@ -7,8 +7,10 @@ import { categoryUsage } from "../../domain/projections/insights";
 import { monthOf } from "../../domain/projections/periods";
 import { listCategoriesFor, listPaymentMethods } from "../../domain/projections/selectors";
 import { offersCashback } from "../../domain/transactions/cashback";
+import { NewCardButton, QuickCardSheet } from "../cards/quick-card-sheet";
 import { Icon } from "../icons/icon";
 import { ignoreHandled } from "../session/session";
+import { Modal } from "../ui/modal";
 import { PageHeader } from "../ui/page-header";
 import { Segmented } from "../ui/segmented";
 import { REGISTRY_COPY, RegistryFormModal, type RegistryRecord } from "./registry-form-modal";
@@ -49,6 +51,8 @@ function usageLabel(count: number): string {
 export function RegistryPage({ entity, state, items, today, store, onBack }: RegistryPageProps) {
   const [editing, setEditing] = useState<RegistryRecord | null>(null);
   const [composing, setComposing] = useState(false);
+  // Cadastro rápido de cartão: sheet à parte, sem tocar no estado do cadastro completo.
+  const [quickCard, setQuickCard] = useState(false);
   // Despesa é o lado mais usado no dia a dia; a aba de receita existe para
   // achar Salário sem rolar a lista misturada.
   const [categoryTab, setCategoryTab] = useState<TransactionKind>("expense");
@@ -118,6 +122,8 @@ export function RegistryPage({ entity, state, items, today, store, onBack }: Reg
         />
       )}
 
+      {isPayment && <NewCardButton class="mt-4" onClick={() => setQuickCard(true)} />}
+
       <RegistryList
         items={list}
         emptyHint={emptyHint}
@@ -143,6 +149,20 @@ export function RegistryPage({ entity, state, items, today, store, onBack }: Reg
         onClose={closeModal}
         onDelete={handleDelete}
       />
+
+      {isPayment && (
+        <Modal open={quickCard} title="Novo cartão de crédito" onClose={() => setQuickCard(false)}>
+          {/* Montado só enquanto aberto: fechar descarta o que foi digitado. */}
+          {quickCard && (
+            <QuickCardSheet
+              existingNames={list.map((item) => item.name)}
+              onCreate={store.addPaymentMethod}
+              onCreated={() => setQuickCard(false)}
+              onCancel={() => setQuickCard(false)}
+            />
+          )}
+        </Modal>
+      )}
     </section>
   );
 }

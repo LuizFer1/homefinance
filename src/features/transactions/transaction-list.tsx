@@ -2,9 +2,8 @@ import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import { FREQUENCY_LABELS, type RecurrenceFrequency } from "../../domain/model/recurrence";
 import { NEUTRAL_TOKEN } from "../../domain/model/tokens";
-import type { Transaction } from "../../domain/model/transaction";
+import { REPORT_STATE_LABELS, type Transaction } from "../../domain/model/transaction";
 import type { User } from "../../domain/model/user";
-import { formatBRL } from "../../domain/money/money";
 import { dayHeading } from "../../domain/projections/periods";
 import {
   type DayGroup,
@@ -17,7 +16,7 @@ import {
 import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 import { AuthorAvatar } from "../profile/avatar-view";
-import { signedBRL } from "../ui/money";
+import { brl, signedBRL } from "../ui/money";
 
 export interface TransactionListProps {
   /** Já filtrados e ordenados por `listTransactions`. */
@@ -45,7 +44,7 @@ function metadata(state: AppState, item: Transaction): string {
   return [
     item.categoryId !== null ? resolveCategoryName(state, item.categoryId) : null,
     item.paymentMethodId !== null ? resolvePaymentMethodName(state, item.paymentMethodId) : null,
-    item.cashbackMinor !== null ? `${formatBRL(item.cashbackMinor)} de volta` : null,
+    item.cashbackMinor !== null ? `${brl(item.cashbackMinor)} de volta` : null,
   ]
     .filter((part) => part !== null)
     .join(" · ");
@@ -111,6 +110,8 @@ function Row({
   const author = findUser(state, item.userId);
   const detail = metadata(state, item);
   const income = item.kind === "income";
+  const reportState =
+    item.reportState === "transfer" || item.reportState === "hidden" ? item.reportState : null;
 
   return (
     /*
@@ -158,6 +159,14 @@ function Row({
                 Estimado
               </span>
             )}
+            {reportState !== null && (
+              <span
+                data-testid="report-state"
+                class="shrink-0 rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] font-medium text-fg/70"
+              >
+                {REPORT_STATE_LABELS[reportState]}
+              </span>
+            )}
           </span>
           {/*
             Categoria apagada não empresta ícone nem cor: cai no ícone do tipo.
@@ -177,7 +186,11 @@ function Row({
 
         <span class="flex shrink-0 flex-col items-end gap-0.5">
           {/* Verde só na receita: num diário de gastos a despesa é a regra. */}
-          <span class={`hf-num text-[15px] font-medium ${income ? "text-income-fg" : "text-fg"}`}>
+          <span
+            class={`hf-num text-[15px] font-medium ${
+              reportState !== null ? "text-fg/45" : income ? "text-income-fg" : "text-fg"
+            }`}
+          >
             {/* "~" na estimativa: o número está no saldo, mas ainda é palpite. */}
             {item.estimated === true && (
               <>

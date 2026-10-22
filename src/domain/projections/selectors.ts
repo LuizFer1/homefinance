@@ -6,6 +6,7 @@ import type { PaymentMethod } from "../model/payment-method";
 import { NEUTRAL_TOKEN } from "../model/tokens";
 import type { Transaction, TransactionKind } from "../model/transaction";
 import type { User } from "../model/user";
+import { countsInTotals } from "../transactions/counts-in-totals";
 
 export interface Totals {
   incomeMinor: number;
@@ -37,6 +38,7 @@ export function totals(records: Transaction[]): Totals {
   let expenseMinor = 0;
 
   for (const record of records) {
+    if (!countsInTotals(record)) continue;
     if (record.kind === "income") incomeMinor += record.amountMinor;
     else expenseMinor += record.amountMinor;
   }

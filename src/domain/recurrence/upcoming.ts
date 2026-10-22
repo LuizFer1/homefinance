@@ -6,7 +6,15 @@ import { isAlive } from "../model/base";
 import type { RecurrenceFrequency, ScheduleType } from "../model/recurrence";
 import { amountFor } from "./adjustments";
 import { estimateFor } from "./estimate";
-import { eachPeriod, FREQUENCY_MONTHS, occurrenceKey, occurrenceOn } from "./schedule";
+import {
+  eachPeriod,
+  FREQUENCY_DAYS,
+  FREQUENCY_MONTHS,
+  isDayStep,
+  isKnownFrequency,
+  occurrenceKey,
+  occurrenceOn,
+} from "./schedule";
 
 export interface UpcomingOccurrence {
   recurrenceId: Ulid;
@@ -21,7 +29,7 @@ export interface UpcomingOccurrence {
 }
 
 function isFrequency(value: string): value is RecurrenceFrequency {
-  return Object.hasOwn(FREQUENCY_MONTHS, value);
+  return isKnownFrequency(value);
 }
 
 function isScheduleType(value: string): value is ScheduleType {
@@ -94,9 +102,10 @@ export interface RuleDraft {
  * que a tela promete é exatamente o que o app vai gravar.
  */
 export function nextOccurrences(rule: RuleDraft, count: number): string[] {
-  const step = FREQUENCY_MONTHS[rule.frequency];
   // Horizonte folgado: `count + 1` passos cobrem a primeira mais as pedidas.
-  const horizon = `${Number(rule.startOn.slice(0, 4)) + Math.ceil(((count + 1) * step) / 12) + 1}-12-31`;
+  const horizon = isDayStep(rule.frequency)
+    ? shiftDay(rule.startOn, (count + 1) * FREQUENCY_DAYS[rule.frequency])
+    : `${Number(rule.startOn.slice(0, 4)) + Math.ceil(((count + 1) * FREQUENCY_MONTHS[rule.frequency]) / 12) + 1}-12-31`;
 
   return eachPeriod(rule.startOn, horizon, rule.frequency)
     .slice(1, count + 1)

@@ -1,5 +1,4 @@
 import { useState } from "preact/hooks";
-import { shiftMonth } from "../../domain/dates/calendar";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import { isAlive } from "../../domain/model/base";
@@ -9,8 +8,7 @@ import {
   parsePercent,
   percentChange,
 } from "../../domain/money/adjust";
-import { MAX_MINOR, maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
-import { formatBRL } from "../../domain/money/money";
+import { digitsOf, MAX_MINOR, maskDigits, minorOf } from "../../domain/money/mask";
 import { monthLabelShort } from "../../domain/projections/periods";
 import {
   type AdjustmentInput,
@@ -18,11 +16,13 @@ import {
   planAdjustment,
 } from "../../domain/recurrence/adjust-plan";
 import { adjustmentsOf, amountFor } from "../../domain/recurrence/adjustments";
+import { periodOf, previousPeriod } from "../../domain/recurrence/schedule";
 import { Button } from "../ui/button";
 import { RadioChip } from "../ui/chip";
 import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
 import { HoldToDelete } from "../ui/hold-button";
 import { SheetHeader } from "../ui/modal";
+import { brl } from "../ui/money";
 import { Segmented } from "../ui/segmented";
 
 export interface AdjustSheetProps {
@@ -41,9 +41,10 @@ const MODES = [
   { value: "percent", label: "Percentual" },
 ] as const;
 
-/** 'YYYY-MM' vira "jan/2027". */
+/** 'YYYY-MM' vira "jan/2027"; 'YYYY-MM-DD' (semanal/quinzenal) vira "05 jan/2027". */
 export function periodLabel(period: string): string {
-  return `${monthLabelShort(period)}/${period.slice(0, 4)}`;
+  const month = `${monthLabelShort(period.slice(0, 7))}/${period.slice(0, 4)}`;
+  return period.length === 10 ? `${period.slice(8, 10)} ${month}` : month;
 }
 
 function updatesLabel(count: number): string {
@@ -87,10 +88,10 @@ export function AdjustSheet({
   }
 
   const adjustments = adjustmentsOf(state, series.id);
-  const currentMinor = amountFor(series, adjustments, today.slice(0, 7));
+  const currentMinor = amountFor(series, adjustments, periodOf(series.frequency, today));
   // A base é o valor vigente logo antes da competência escolhida: o segundo
   // aumento é calculado sobre o primeiro, não sobre o valor original.
-  const baseMinor = amountFor(series, adjustments, shiftMonth(fromPeriod, -1));
+  const baseMinor = amountFor(series, adjustments, previousPeriod(fromPeriod));
   const parsedPercent = parsePercent(percent);
   const nextMinor =
     mode === "amount"
@@ -109,7 +110,7 @@ export function AdjustSheet({
       <SheetHeader title="Reajustar série" onClose={onClose} />
 
       <p class="mt-4 text-sm text-fg/70">
-        {series.description} · hoje <span class="hf-num text-fg">{formatBRL(currentMinor)}</span>
+        {series.description} · hoje <span class="hf-num text-fg">{brl(currentMinor)}</span>
       </p>
 
       {/* Fieldset tem min-width: min-content por padrão; sem `min-w-0` a fileira de
@@ -158,7 +159,7 @@ export function AdjustSheet({
             autocomplete="off"
             placeholder="0,00"
             value={maskDigits(amount)}
-            onInput={(event) => setAmount(onlyDigits(event.currentTarget.value))}
+            onInput={(event) => setAmount(digitsOf(event.currentTarget))}
             class={`${FIELD_SHEET} hf-num mt-2`}
           />
         </div>
@@ -189,9 +190,9 @@ export function AdjustSheet({
         {plan !== null ? (
           <>
             <p>
-              <span class="hf-num">{formatBRL(baseMinor)}</span>
+              <span class="hf-num">{brl(baseMinor)}</span>
               {" → "}
-              <span class="hf-num font-medium">{formatBRL(nextMinor)}</span>{" "}
+              <span class="hf-num font-medium">{brl(nextMinor)}</span>{" "}
               <span class="text-fg/60">({formatPercent(percentChange(baseMinor, nextMinor))})</span>
             </p>
             <p class="mt-1 text-fg/60">a partir de {periodLabel(fromPeriod)}</p>
@@ -226,7 +227,7 @@ export function AdjustSheet({
               <li key={row.id} class="flex items-center gap-3 py-2.5 text-sm">
                 <span class="min-w-0 flex-1">
                   desde {periodLabel(row.fromPeriod)} ·{" "}
-                  <span class="hf-num">{formatBRL(row.amountMinor)}</span>
+                  <span class="hf-num">{brl(row.amountMinor)}</span>
                 </span>
                 <HoldToDelete
                   label={`Excluir reajuste de ${periodLabel(row.fromPeriod)}`}

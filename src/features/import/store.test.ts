@@ -14,7 +14,10 @@ let store: ImportStore;
 
 function planFor(lines: string[], ref: string) {
   const ctx: ImportContext = { paymentMethodId: "CARTAO-1", referenceMonth: ref };
-  const entries = parseStatement(lines, "card", ref).map((e) => ({ ...e, categoryId: null }));
+  const entries = parseStatement(lines, "card", ref).entries.map((e) => ({
+    ...e,
+    categoryId: null,
+  }));
   return planImport(entries, ctx);
 }
 
@@ -102,7 +105,7 @@ describe("createImportStore", () => {
       }),
     );
     const ctx: ImportContext = { paymentMethodId: "CARTAO-1", referenceMonth: "2026-10" };
-    const entries = parseStatement(["12/09 ENEL 320,00"], "card", "2026-10").map((e) => ({
+    const entries = parseStatement(["12/09 ENEL 320,00"], "card", "2026-10").entries.map((e) => ({
       ...e,
       categoryId: "CASA",
       linkTo: estimada.id,
@@ -153,7 +156,7 @@ describe("createImportStore", () => {
       }),
     );
     const ctx: ImportContext = { paymentMethodId: "CARTAO-1", referenceMonth: "2026-10" };
-    const entries = parseStatement(["12/09 ENEL 320,00"], "card", "2026-10").map((e) => ({
+    const entries = parseStatement(["12/09 ENEL 320,00"], "card", "2026-10").entries.map((e) => ({
       ...e,
       categoryId: "CASA",
       linkTo: confirmada.id,

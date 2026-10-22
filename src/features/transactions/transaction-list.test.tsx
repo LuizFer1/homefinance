@@ -162,6 +162,27 @@ describe("TransactionList", () => {
     expect(linhas[1]?.textContent).not.toContain("Estimado");
     expect(linhas[1]?.textContent).not.toContain("~");
   });
+
+  it("transferência e oculto ficam na lista com selo; valor desconhecido não ganha selo", () => {
+    render(
+      <TransactionList
+        items={[
+          record({ id: "t", reportState: "transfer" }),
+          record({ id: "o", reportState: "hidden" }),
+          record({ id: "f", reportState: "archived" as never }),
+          record({ id: "n" }),
+        ]}
+        state={STATE}
+        today="2026-08-08"
+        currentUserId={null}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    const selos = screen.getAllByTestId("report-state").map((selo) => selo.textContent);
+    expect(selos).toEqual(["Transferência", "Oculto"]);
+    expect(screen.getAllByRole("listitem")).toHaveLength(4);
+  });
 });
 
 describe("rotulos de categoria, forma de pagamento e cashback", () => {

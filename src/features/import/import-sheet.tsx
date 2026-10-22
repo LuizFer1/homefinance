@@ -1,8 +1,15 @@
 import { useMemo, useState } from "preact/hooks";
+import { cardDetail, listCreditCards } from "../../domain/cards/card";
 import type { Ulid } from "../../domain/ids/ulid";
 import { groupLines } from "../../domain/import/lines";
 import { confirmedImportKeys, suggestLinks } from "../../domain/import/link";
-import { type DocumentKind, detectReferenceMonth, parseStatement } from "../../domain/import/parse";
+import {
+  type DocumentKind,
+  detectReferenceMonth,
+  parseStatement,
+  SKIP_REASON_LABEL,
+  type SkippedLine,
+} from "../../domain/import/parse";
 import {
   type ImportContext,
   identify,
@@ -11,16 +18,17 @@ import {
 } from "../../domain/import/plan";
 import { buildCategoryIndex, suggestCategory } from "../../domain/import/suggest-category";
 import type { AppState } from "../../domain/model/app-state";
-import { formatBRL } from "../../domain/money/money";
+import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
 import { pendingEstimates } from "../../domain/projections/estimates";
 import { listCategoriesFor, listPaymentMethods } from "../../domain/projections/selectors";
+import { NewCardButton, QuickCardSheet } from "../cards/quick-card-sheet";
 import { Icon } from "../icons/icon";
 import { periodLabel } from "../recurrence/adjust-sheet";
 import { describeError } from "../session/session";
 import { Button, SECONDARY } from "../ui/button";
 import { RadioChip } from "../ui/chip";
 import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
-import { signedBRL } from "../ui/money";
+import { brl, signedBRL } from "../ui/money";
 import { Segmented } from "../ui/segmented";
 import { PdfPasswordError, PdfReaderUnavailableError, type ReadPdf } from "./read-pdf";
 import type { ImportResult } from "./store";
@@ -30,6 +38,8 @@ export interface ImportSheetProps {
   /** 'YYYY-MM-DD', injetado como no resto do app. */
   today: string;
   readPdf: ReadPdf;
+  /** Grava um cartão novo; presente, a escolha do cartão oferece "Novo cartão de crédito". */
+  onCreateCard?: (draft: PaymentMethodDraft) => Promise<PaymentMethod>;
   onImport: (plan: ReturnType<typeof planImport>) => Promise<ImportResult>;
   onClose: () => void;
 }
@@ -44,7 +54,15 @@ type Step =
   | { step: "reading" }
   | { step: "password"; file: Blob; wrong: boolean }
   | { step: "review" }
-  | { step: "done"; result: ImportResult };
+  | { step: "done"; result: ImportResult; summary: ImportSummary };
+
+/** As três contagens do resumo final; o que o usuário desmarcou não entra em nenhuma. */
+interface ImportSummary {
+  imported: number;
+  /** Linhas cujo id já estava no banco (reimportação, ou apagada depois). */
+  existing: number;
+  skipped: SkippedLine[];
+}
 
 const DOC_OPTIONS = [
   { value: "card", label: "Fatura de cartão", icon: "credit-card" },
@@ -53,6 +71,15 @@ const DOC_OPTIONS = [
 
 function shortDate(date: string): string {
   return `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(2, 4)}`;
+}
+
+function SummaryCount({ label, value }: { label: string; value: number }) {
+  return (
+    <div class="rounded-lg bg-bg p-3">
+      <dt class="text-xs text-fg/60">{label}</dt>
+      <dd class="hf-num mt-1 text-xl font-medium">{value}</dd>
+    </div>
+  );
 }
 
 /** O pdf.js desce sob demanda, e o `import()` falha por dois motivos distintos. */
@@ -72,9 +99,18 @@ function readError(cause: unknown): string {
  * A revisão não é opcional. O parser é genérico e erra; é a revisão que
  * transforma "o que o parser achou" em "o que o usuário confirmou".
  */
-export function ImportSheet({ state, today, readPdf, onImport, onClose }: ImportSheetProps) {
+export function ImportSheet({
+  state,
+  today,
+  readPdf,
+  onCreateCard,
+  onImport,
+  onClose,
+}: ImportSheetProps) {
   const methods = listPaymentMethods(state);
-  const cards = methods.filter((method) => method.kind === "credit");
+  // Cada cartão é um cadastro: completos primeiro, os por completar depois (ainda
+  // servem para importar, mas a fatura deles não tem ciclo).
+  const cards = listCreditCards(state);
 
   const [doc, setDoc] = useState<DocumentKind>("card");
   const [methodId, setMethodId] = useState<Ulid | null>(cards[0]?.id ?? null);
@@ -83,14 +119,17 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
   const [lines, setLines] = useState<string[]>([]);
   const [referenceMonth, setReferenceMonth] = useState(today.slice(0, 7));
   const [rows, setRows] = useState<Row[]>([]);
+  const [skipped, setSkipped] = useState<SkippedLine[]>([]);
   const [saving, setSaving] = useState(false);
+  // O sheet do cartão ocupa o lugar da escolha: o estado da importação fica intacto.
+  const [creatingCard, setCreatingCard] = useState(false);
 
   const categoryIndex = useMemo(() => buildCategoryIndex(state), [state]);
   const estimates = pendingEstimates(state);
   const needsCard = doc === "card" && methodId === null;
 
-  function buildRows(source: string[], month: string): Row[] {
-    const entries = parseStatement(source, doc, month);
+  function buildRows(source: string[], month: string): { rows: Row[]; skipped: SkippedLine[] } {
+    const { entries, skipped: dropped } = parseStatement(source, doc, month);
     const ctx: ImportContext = { paymentMethodId: methodId, referenceMonth: month };
     const ids = identify(entries, ctx);
     // Uma linha que confirmou uma estimativa não criou transação com o próprio
@@ -120,7 +159,10 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
         eligible: row.selected && !row.existing && row.installment === null,
       })),
     );
-    return built.map((row, index) => ({ ...row, linkTo: links[index] ?? null }));
+    return {
+      rows: built.map((row, index) => ({ ...row, linkTo: links[index] ?? null })),
+      skipped: dropped,
+    };
   }
 
   function chooseDoc(next: DocumentKind) {
@@ -142,14 +184,19 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
       const fallback = today.slice(0, 7);
       const month = doc === "card" ? detectReferenceMonth(found, fallback) : fallback;
       const built = buildRows(found, month);
-      if (built.length === 0) {
-        setError("Nenhum lançamento reconhecido neste PDF.");
+      if (built.rows.length === 0) {
+        setError(
+          built.skipped.length === 0
+            ? "Nenhum lançamento reconhecido neste PDF."
+            : `Nenhum lançamento reconhecido neste PDF (${built.skipped.length} ${built.skipped.length === 1 ? "linha" : "linhas"} com data não puderam ser lidas).`,
+        );
         setPhase({ step: "choose" });
         return;
       }
       setLines(found);
       setReferenceMonth(month);
-      setRows(built);
+      setRows(built.rows);
+      setSkipped(built.skipped);
       setPhase({ step: "review" });
     } catch (cause) {
       if (cause instanceof PdfPasswordError) {
@@ -165,7 +212,9 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
     if (!/^\d{4}-\d{2}$/.test(month)) return;
     setReferenceMonth(month);
     // O ano de cada linha e a âncora das parcelas dependem do mês: reparseia.
-    setRows(buildRows(lines, month));
+    const rebuilt = buildRows(lines, month);
+    setRows(rebuilt.rows);
+    setSkipped(rebuilt.skipped);
   }
 
   function patch(index: number, changes: Partial<Row>) {
@@ -188,7 +237,16 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
     try {
       const plan = planImport(rows, { paymentMethodId: methodId, referenceMonth });
       const result = await onImport(plan);
-      setPhase({ step: "done", result });
+      setPhase({
+        step: "done",
+        result,
+        // `existing` vem da revisão (o estado em memória já mudou com a gravação).
+        summary: {
+          imported: result.transactions + result.confirmed,
+          existing: rows.filter((row) => row.existing).length,
+          skipped,
+        },
+      });
     } catch (cause) {
       setError(`Não foi possível gravar: ${describeError(cause)}`);
     } finally {
@@ -247,15 +305,21 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
 
   if (phase.step === "done") {
     const { transactions, series, confirmed } = phase.result;
+    const { imported, existing, skipped: unread } = phase.summary;
     return (
-      <div class="py-6 text-center">
-        <p class="text-lg font-medium" role="status">
+      <div class="mt-2">
+        <p class="text-center text-lg font-medium" role="status">
           {transactions === 0 && confirmed === 0
             ? "Nada novo para importar"
             : transactions === 0
               ? `${confirmed} ${confirmed === 1 ? "estimativa confirmada" : "estimativas confirmadas"}`
               : `${transactions} ${transactions === 1 ? "lançamento importado" : "lançamentos importados"}`}
         </p>
+        <dl class="mt-4 grid grid-cols-3 gap-2 text-center" aria-label="Resumo da importação">
+          <SummaryCount label="Importadas" value={imported} />
+          <SummaryCount label="Já existiam" value={existing} />
+          <SummaryCount label="Não interpretadas" value={unread.length} />
+        </dl>
         {transactions > 0 && confirmed > 0 && (
           <p class={HINT}>
             {confirmed} {confirmed === 1 ? "estimativa confirmada" : "estimativas confirmadas"} com
@@ -268,6 +332,22 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
             as próximas parcelas aparecem nos meses seguintes.
           </p>
         )}
+        {unread.length > 0 && (
+          <div class="mt-4">
+            <p class={LABEL}>Linhas que o leitor não interpretou</p>
+            <ul class="mt-2 divide-y divide-divider" aria-label="Linhas não interpretadas">
+              {unread.map((line, index) => (
+                <li key={`${index}-${line.text}`} class="py-2">
+                  <p class="break-words text-[13px] text-fg">{line.text}</p>
+                  <p class="text-xs text-fg/55">{SKIP_REASON_LABEL[line.reason]}</p>
+                </li>
+              ))}
+            </ul>
+            <p class={HINT}>
+              Lance à mão o que faltar. O texto fica só aqui, no aparelho: nada é enviado.
+            </p>
+          </div>
+        )}
         <Button class="mt-6 w-full" icon="check" onClick={onClose}>
           Fechar
         </Button>
@@ -277,6 +357,9 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
 
   if (phase.step === "review") {
     const selected = rows.filter((row) => row.selected).length;
+    // Reimportar o mesmo arquivo deixa tudo travado: sem este caminho a pessoa
+    // nunca veria o resumo dizendo que tudo já existia.
+    const onlyExisting = selected === 0 && rows.some((row) => row.existing);
     return (
       <div class="mt-2">
         {doc === "card" && (
@@ -381,7 +464,7 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
                         <option key={estimate.id} value={estimate.id}>
                           Confirma {estimate.description} ·{" "}
                           {periodLabel(estimate.occurredOn.slice(0, 7))} · ~
-                          {formatBRL(estimate.amountMinor)}
+                          {brl(estimate.amountMinor)}
                         </option>
                       ))}
                     </select>
@@ -414,10 +497,10 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
           <Button
             icon="check"
             class="flex-1"
-            disabled={selected === 0 || saving}
+            disabled={(selected === 0 && !onlyExisting) || saving}
             onClick={() => void confirm()}
           >
-            {saving ? "Importando..." : `Importar ${selected}`}
+            {saving ? "Importando..." : onlyExisting ? "Ver resumo" : `Importar ${selected}`}
           </Button>
         </div>
       </div>
@@ -425,6 +508,20 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
   }
 
   const offered = doc === "card" ? cards : methods;
+  const selectedCard = cards.find((card) => card.id === methodId) ?? null;
+  if (creatingCard && onCreateCard !== undefined) {
+    return (
+      <QuickCardSheet
+        existingNames={methods.map((method) => method.name)}
+        onCreate={onCreateCard}
+        onCreated={(card) => {
+          setMethodId(card.id);
+          setCreatingCard(false);
+        }}
+        onCancel={() => setCreatingCard(false)}
+      />
+    );
+  }
   return (
     <div class="mt-2 space-y-5">
       <Segmented
@@ -461,11 +558,18 @@ export function ImportSheet({ state, today, readPdf, onImport, onClose }: Import
                 value={method.id}
                 checked={methodId === method.id}
                 onSelect={() => setMethodId(method.id)}
+                color={method.color}
               >
                 {method.name}
               </RadioChip>
             ))}
           </div>
+        )}
+        {doc === "card" && selectedCard !== null && cardDetail(selectedCard) !== null && (
+          <p class={HINT}>{cardDetail(selectedCard)}</p>
+        )}
+        {doc === "card" && onCreateCard !== undefined && (
+          <NewCardButton class="mt-3" onClick={() => setCreatingCard(true)} />
         )}
       </div>
 

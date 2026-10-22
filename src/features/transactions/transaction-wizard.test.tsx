@@ -1,10 +1,12 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/preact";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildCategoryIndex } from "../../domain/import/suggest-category";
 import type { Category } from "../../domain/model/category";
 import type { PaymentMethod } from "../../domain/model/payment-method";
 import { ALIVE } from "../../domain/model/row.fake";
 import type { Transaction } from "../../domain/model/transaction";
+import { stateOf, tx } from "../../domain/reserves/fixtures.fake";
 import { HOLD_MS } from "../ui/hold-button";
 import { TransactionWizard } from "./transaction-wizard";
 
@@ -265,10 +267,10 @@ describe("cashback condicionado", () => {
     montar();
     ateOPagamento();
 
-    escolher("Cartao credito");
+    escolher(/^Cartao credito/);
     expect(screen.getByLabelText(/cashback/i)).toBeDefined();
 
-    escolher("Cartao debito");
+    escolher(/^Cartao debito/);
     expect(screen.getByLabelText(/cashback/i)).toBeDefined();
   });
 
@@ -293,7 +295,7 @@ describe("cashback condicionado", () => {
     // So despesa pode gerar retorno.
     montar();
     ateOPagamento();
-    escolher("Cartao credito");
+    escolher(/^Cartao credito/);
     expect(screen.getByLabelText(/cashback/i)).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: /Dados/ }));
@@ -349,6 +351,50 @@ describe("limpeza do cashback", () => {
     enviar();
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ cashbackMinor: 750 }), null);
+  });
+});
+
+describe("estado nas contas", () => {
+  it("lançamento novo sem escolha não grava reportState", () => {
+    const { onSubmit } = montar();
+    ateOPagamento();
+    enviar();
+
+    expect(onSubmit.mock.calls[0]?.[0]).not.toHaveProperty("reportState");
+  });
+
+  it("marcar como transferência emite reportState transfer", () => {
+    const { onSubmit } = montar();
+    ateOPagamento();
+    escolher("Transferência");
+    enviar();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ reportState: "transfer" }),
+      null,
+    );
+  });
+
+  it("desmarcar na edição emite reportState null", () => {
+    const { onSubmit } = montar({ editing: { ...RECORD, reportState: "hidden" } });
+    fireEvent.click(screen.getByRole("button", { name: /Pagamento/ }));
+    expect((screen.getByRole("radio", { name: "Oculto" }) as HTMLInputElement).checked).toBe(true);
+
+    escolher("Conta");
+    enviar();
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ reportState: null }), null);
+  });
+
+  it("valor desconhecido de versão futura aparece como Conta e não é regravado", () => {
+    const futuro = { ...RECORD, reportState: "archived" } as unknown as Transaction;
+    const { onSubmit } = montar({ editing: futuro });
+    fireEvent.click(screen.getByRole("button", { name: /Pagamento/ }));
+    expect((screen.getByRole("radio", { name: "Conta" }) as HTMLInputElement).checked).toBe(true);
+
+    enviar();
+
+    expect(onSubmit.mock.calls[0]?.[0]).not.toHaveProperty("reportState");
   });
 });
 
@@ -674,5 +720,112 @@ describe("edição", () => {
     montar({ editing: RECORD, author: { name: "Luiz", color: "sky" } });
 
     expect(screen.getByText(/Criado por Luiz/)).toBeDefined();
+  });
+});
+
+describe("TransactionWizard: sugestão de categoria", () => {
+  const historico = {
+    ...stateOf({
+      transactions: [
+        tx("h1", "expense", 900, "2026-08-01", "cat-1", { description: "Padaria Pão Quente" }),
+      ],
+    }),
+    categories: { "cat-1": CATEGORIAS[0] as Category },
+  };
+  const categoryIndex = buildCategoryIndex(historico);
+
+  it("sugere a categoria do histórico mesmo com outra caixa, acento ou número de loja", () => {
+    montar({ categoryIndex });
+    expect(screen.queryByTestId("category-suggestion")).toBeNull();
+
+    fireEvent.input(screen.getByLabelText("Descrição"), {
+      target: { value: "PADARIA PAO QUENTE 042" },
+    });
+    expect(screen.getByTestId("category-suggestion").textContent).toMatch(/Alimentacao/);
+  });
+
+  it("não grava a sugestão sozinha: sem 'Usar' o lançamento sai sem categoria", () => {
+    const { onSubmit } = montar({ categoryIndex });
+    preencherDados("Padaria Pão Quente 7");
+    for (const _ of [1, 2, 3]) fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Adicionar despesa/ }));
+    expect(onSubmit.mock.calls[0]?.[0].categoryId).toBeNull();
+  });
+
+  it("'Usar' aplica a categoria sugerida", () => {
+    const { onSubmit } = montar({ categoryIndex });
+    preencherDados("padaria pao quente");
+    fireEvent.click(screen.getByRole("button", { name: "Usar" }));
+    expect(screen.queryByTestId("category-suggestion")).toBeNull();
+    for (const _ of [1, 2, 3]) fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Adicionar despesa/ }));
+    expect(onSubmit.mock.calls[0]?.[0].categoryId).toBe("cat-1");
+  });
+
+  it("pode ser dispensada", () => {
+    montar({ categoryIndex });
+    preencherDados("Padaria Pão Quente");
+    fireEvent.click(screen.getByRole("button", { name: "Dispensar sugestão" }));
+    expect(screen.queryByTestId("category-suggestion")).toBeNull();
+  });
+
+  it("nunca sobrescreve categoria já escolhida na edição", () => {
+    montar({
+      categoryIndex,
+      editing: { ...RECORD, description: "Padaria Pão Quente", categoryId: "outra-cat" },
+    });
+    expect(screen.queryByTestId("category-suggestion")).toBeNull();
+  });
+});
+
+describe("frequencia da recorrencia", () => {
+  function abrirRepetir() {
+    const handlers = montar({ today: "2026-08-11" });
+    preencherDados("Feira", "100,00");
+    continuar();
+    fireEvent.click(screen.getByRole("checkbox", { name: /repetir este lançamento/i }));
+    return handlers;
+  }
+
+  it("oferece Semanal, Quinzenal, Mensal e Anual, nessa ordem", () => {
+    abrirRepetir();
+    const group = screen.getByRole("group", { name: "Frequência" });
+    const values = within(group)
+      .getAllByRole("radio")
+      .map((radio) => radio.getAttribute("value"));
+
+    expect(values).toEqual(["weekly", "biweekly", "monthly", "annual"]);
+    expect(screen.queryByRole("radio", { name: "Bimestral" })).toBeNull();
+  });
+
+  it("semanal esconde Quando e Dia, e grava a regra sem eles", () => {
+    const { onSubmit } = abrirRepetir();
+    fireEvent.click(screen.getByRole("radio", { name: "Semanal" }));
+
+    expect(screen.queryByLabelText(/^quando$/i)).toBeNull();
+    expect(screen.queryByText(/usa o último dia/)).toBeNull();
+    expect(screen.getByText(/a cada 7 dias/)).toBeDefined();
+    avancarAteOFim();
+    enviar();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ frequency: "weekly", scheduleType: "dayOfMonth" }),
+    );
+  });
+
+  it("o texto do valor variavel acompanha a frequencia", () => {
+    abrirRepetir();
+    expect(screen.getByRole("checkbox", { name: /Valor varia todo mês/ })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Semanal" }));
+    expect(screen.getByRole("checkbox", { name: /Valor varia toda semana/ })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Quinzenal" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Valor varia a cada quinzena/ }));
+    expect(screen.getByText(/Cada quinzena nasce com a média/)).toBeDefined();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Anual" }));
+    expect(screen.getByRole("checkbox", { name: /Valor varia todo ano/ })).toBeDefined();
   });
 });

@@ -1,25 +1,32 @@
 import { useState } from "preact/hooks";
+import { cardDetail, isCreditCard } from "../../domain/cards/card";
 import type { Ulid } from "../../domain/ids/ulid";
+import { type CategoryIndex, suggestCategory } from "../../domain/import/suggest-category";
 import type { Category } from "../../domain/model/category";
-import type { PaymentMethod } from "../../domain/model/payment-method";
+import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
 import {
   FREQUENCY_LABELS,
-  RECURRENCE_FREQUENCIES,
+  OFFERED_FREQUENCIES,
   type RecurrenceFrequency,
   type RecurrenceRule,
   SCHEDULE_TYPE_LABELS,
   SCHEDULE_TYPES,
   type ScheduleType,
+  VARIABLE_COPY,
 } from "../../domain/model/recurrence";
-import type {
-  Transaction,
-  TransactionDraft,
-  TransactionKind,
+import {
+  REPORT_STATES,
+  type ReportState,
+  type Transaction,
+  type TransactionDraft,
+  type TransactionKind,
 } from "../../domain/model/transaction";
-import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
+import { digitsOf, maskDigits, minorOf } from "../../domain/money/mask";
 import { dayMonth } from "../../domain/projections/periods";
+import { isDayStep } from "../../domain/recurrence/schedule";
 import { nextOccurrences } from "../../domain/recurrence/upcoming";
 import { offersCashback } from "../../domain/transactions/cashback";
+import { NewCardButton, QuickCardSheet } from "../cards/quick-card-sheet";
 import { Icon } from "../icons/icon";
 import { MiniAvatar } from "../profile/avatar-view";
 import { Button } from "../ui/button";
@@ -33,6 +40,7 @@ import { Segmented } from "../ui/segmented";
 import { SummaryChip } from "../ui/summary-chip";
 import { IconTile } from "../ui/tile";
 import { Toggle } from "../ui/toggle";
+import { CategoryTile, MethodRow } from "./choice-tiles";
 
 export interface TransactionWizardProps {
   /** Registro em edição, ou null para criação. Montado com `key` pelo App. */
@@ -55,6 +63,16 @@ export interface TransactionWizardProps {
   onAdjustSeries?: () => void;
   /** Só em ocorrência de série fixa: passa a série a ter valor variável. */
   onMakeVariable?: () => void;
+  /**
+   * Índice descrição → categoria do histórico (o mesmo da importação de PDF).
+   * Sem ele não há sugestão: o formulário funciona igual.
+   */
+  categoryIndex?: CategoryIndex;
+  /**
+   * Grava um cartão de crédito novo (a escrita do cadastro). Presente, o passo de
+   * pagamento oferece "Novo cartão de crédito" e seleciona o cartão salvo.
+   */
+  onCreateCard?: (draft: PaymentMethodDraft) => Promise<PaymentMethod>;
 }
 
 /**
@@ -69,6 +87,21 @@ const KINDS = [
   { value: "expense", label: "Despesa", tone: "expense" },
   { value: "income", label: "Receita", tone: "income" },
 ] as const;
+
+/** Como o lançamento entra nas contas; `counts` é a ausência de `reportState`. */
+type CountMode = "counts" | ReportState;
+
+const COUNT_OPTIONS: readonly { value: CountMode; label: string }[] = [
+  { value: "counts", label: "Conta" },
+  { value: "transfer", label: "Transferência" },
+  { value: "hidden", label: "Oculto" },
+];
+
+const COUNT_HINTS: Record<CountMode, string> = {
+  counts: "Entra no saldo, na receita ou na despesa e nos gráficos.",
+  transfer: "Movimento entre contas suas, como pagar a fatura. Não é receita nem despesa.",
+  hidden: "Continua na lista, mas fica fora de saldo, gráficos e relatórios.",
+};
 
 /** Rótulo curto da tag do cashback: de onde ele foi liberado. */
 const CASHBACK_SOURCE: Record<string, string> = {
@@ -98,8 +131,13 @@ export function TransactionWizard({
   onManageCategories,
   onAdjustSeries,
   onMakeVariable,
+  categoryIndex,
+  onCreateCard,
 }: TransactionWizardProps) {
   const [step, setStep] = useState(0);
+  // Sheet do cartão no lugar do formulário (não por cima): o rascunho do lançamento
+  // vive nos estados deste componente e sobrevive a abrir e fechar o cadastro.
+  const [creatingCard, setCreatingCard] = useState(false);
   const [dir, setDir] = useState<"next" | "back">("next");
   const [description, setDescription] = useState(editing?.description ?? "");
   // Dígitos, não texto formatado: a máscara é quem decide como o número aparece.
@@ -123,7 +161,18 @@ export function TransactionWizard({
   const [variable, setVariable] = useState(false);
   const [hasEnd, setHasEnd] = useState(false);
   const [endOn, setEndOn] = useState(today);
+  // Valor que esta versão não conhece (vindo do sync) aparece como "Conta", que é
+  // como ele é tratado; e só é regravado se o usuário escolher outra opção.
+  const initialCount: CountMode = (REPORT_STATES as readonly string[]).includes(
+    editing?.reportState ?? "",
+  )
+    ? (editing?.reportState as ReportState)
+    : "counts";
+  const [countMode, setCountMode] = useState<CountMode>(initialCount);
   const [problem, setProblem] = useState<string | null>(null);
+  // Sugestão dispensada, por categoria: mudar a descrição para outra loja pode
+  // sugerir outra categoria, e essa o usuário ainda não viu.
+  const [dismissedSuggestion, setDismissedSuggestion] = useState<Ulid | null>(null);
 
   const selectedMethod = paymentMethods.find((method) => method.id === paymentMethodId) ?? null;
   const showsCashback = offersCashback(selectedMethod?.kind ?? null, kind);
@@ -152,6 +201,52 @@ export function TransactionWizard({
     chosenCategory !== null && !offered.some((category) => category.id === chosenCategory.id)
       ? [...offered, chosenCategory]
       : offered;
+  /*
+    Só aparece enquanto não há categoria escolhida e nunca é gravada sozinha:
+    quem decide é o toque em "Usar". Escolha já feita (inclusive a de uma edição)
+    não é substituída. Precisa servir ao tipo atual: a grade oferecida é quem
+    sabe se a categoria serve a ele.
+  */
+  const suggestedId =
+    categoryIndex === undefined || categoryId !== null
+      ? null
+      : suggestCategory(categoryIndex, description, kind);
+  const suggestedCategory =
+    suggestedId === null || suggestedId === dismissedSuggestion
+      ? null
+      : (offered.find((category) => category.id === suggestedId) ?? null);
+  const suggestionChip =
+    suggestedCategory === null ? null : (
+      <div
+        class="mt-4 flex items-center gap-2.5 rounded-lg bg-bg px-3 py-2"
+        data-testid="category-suggestion"
+      >
+        <IconTile
+          icon={suggestedCategory.icon}
+          color={suggestedCategory.color}
+          size={26}
+          iconSize={15}
+        />
+        <p class="min-w-0 flex-1 truncate text-[13px] text-fg/70">
+          Sugestão: <span class="font-medium text-fg">{suggestedCategory.name}</span>
+        </p>
+        <button
+          type="button"
+          onClick={() => setCategoryId(suggestedCategory.id)}
+          class="hf-press rounded-md px-2 py-1 text-[13px] font-medium text-accent-300"
+        >
+          Usar
+        </button>
+        <button
+          type="button"
+          aria-label="Dispensar sugestão"
+          onClick={() => setDismissedSuggestion(suggestedCategory.id)}
+          class="hf-press grid size-7 place-items-center rounded-md text-fg/55"
+        >
+          <Icon name="x" size={14} />
+        </button>
+      </div>
+    );
   const categoryIsDead = categoryId !== null && chosenCategory === null;
   const methodIsDead = paymentMethodId !== null && selectedMethod === null;
 
@@ -186,10 +281,13 @@ export function TransactionWizard({
   }
 
   function recurrenceInput(): RecurrenceRule {
+    // Semanal/quinzenal ignoram "Quando"/"Dia": grava o padrão, não o que sobrou
+    // de uma escolha feita antes de trocar a frequência.
+    const byDays = isDayStep(frequency);
     return {
       frequency,
-      scheduleType,
-      scheduleN: clampedN,
+      scheduleType: byDays ? "dayOfMonth" : scheduleType,
+      scheduleN: byDays ? Number(occurredOn.slice(8, 10)) || 1 : clampedN,
       endOn: hasEnd ? endOn : null,
       variable,
     };
@@ -224,6 +322,11 @@ export function TransactionWizard({
         // o valor: abrir e salvar é um ato deliberado, e deixá-la estimada
         // depois de mexer na data seria um limbo sem explicação.
         ...(editing?.estimated === true ? { estimated: false } : {}),
+        // Só quando mudou: criar sem escolher não grava a coluna, e abrir e salvar
+        // uma linha com valor futuro não o apaga.
+        ...(countMode !== initialCount
+          ? { reportState: countMode === "counts" ? null : countMode }
+          : {}),
       },
       canConfigureRecurrence && repeats ? recurrenceInput() : null,
     );
@@ -242,6 +345,20 @@ export function TransactionWizard({
     />
   );
   const amountTone = kind === "income" ? "text-income-fg" : "";
+
+  if (creatingCard && onCreateCard !== undefined) {
+    return (
+      <QuickCardSheet
+        existingNames={paymentMethods.map((method) => method.name)}
+        onCreate={onCreateCard}
+        onCreated={(card) => {
+          setPaymentMethodId(card.id);
+          setCreatingCard(false);
+        }}
+        onCancel={() => setCreatingCard(false)}
+      />
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} class="flex flex-col">
@@ -321,7 +438,7 @@ export function TransactionWizard({
                     autocomplete="off"
                     placeholder="0,00"
                     value={maskDigits(amount)}
-                    onInput={(event) => setAmount(onlyDigits(event.currentTarget.value))}
+                    onInput={(event) => setAmount(digitsOf(event.currentTarget))}
                     class={`hf-num w-full min-w-0 bg-transparent font-medium tracking-[-0.02em]
                       outline-none placeholder:text-fg/30 focus-visible:outline-none ${amountTone} ${
                         calendarOpen ? "text-2xl" : "text-[40px] leading-tight"
@@ -350,6 +467,8 @@ export function TransactionWizard({
                 />
               </div>
             </div>
+
+            {!calendarOpen && suggestionChip}
 
             <div class="mt-5">
               <DateChips
@@ -443,7 +562,7 @@ export function TransactionWizard({
                     legend="Frequência"
                     dense
                     class="mt-2"
-                    options={RECURRENCE_FREQUENCIES.map((value) => ({
+                    options={OFFERED_FREQUENCIES.map((value) => ({
                       value,
                       label: FREQUENCY_LABELS[value],
                     }))}
@@ -452,88 +571,96 @@ export function TransactionWizard({
                   />
                 </div>
 
-                <div>
-                  <div class="grid grid-cols-[1.4fr_1fr] gap-3">
-                    <div>
-                      <label class={LABEL} for="recurrence-schedule-type">
-                        Quando
-                      </label>
-                      <div class="relative mt-2">
-                        <select
-                          id="recurrence-schedule-type"
-                          class={`${FIELD_SHEET} appearance-none pr-9 text-[15px]`}
-                          value={scheduleType}
-                          onChange={(event) =>
-                            setScheduleType(event.currentTarget.value as ScheduleType)
-                          }
-                        >
-                          {SCHEDULE_TYPES.map((value) => (
-                            <option key={value} value={value}>
-                              {SCHEDULE_TYPE_LABELS[value]}
-                            </option>
-                          ))}
-                        </select>
-                        <Icon
-                          name="caret-down"
-                          size={16}
-                          class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-fg/55"
-                        />
+                {isDayStep(frequency) ? (
+                  <p class={HINT}>
+                    {frequency === "weekly"
+                      ? "Repete a cada 7 dias, a partir da data do lançamento."
+                      : "Repete a cada 14 dias, a partir da data do lançamento."}
+                  </p>
+                ) : (
+                  <div>
+                    <div class="grid grid-cols-[1.4fr_1fr] gap-3">
+                      <div>
+                        <label class={LABEL} for="recurrence-schedule-type">
+                          Quando
+                        </label>
+                        <div class="relative mt-2">
+                          <select
+                            id="recurrence-schedule-type"
+                            class={`${FIELD_SHEET} appearance-none pr-9 text-[15px]`}
+                            value={scheduleType}
+                            onChange={(event) =>
+                              setScheduleType(event.currentTarget.value as ScheduleType)
+                            }
+                          >
+                            {SCHEDULE_TYPES.map((value) => (
+                              <option key={value} value={value}>
+                                {SCHEDULE_TYPE_LABELS[value]}
+                              </option>
+                            ))}
+                          </select>
+                          <Icon
+                            name="caret-down"
+                            size={16}
+                            class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-fg/55"
+                          />
+                        </div>
                       </div>
-                    </div>
 
-                    <div>
-                      <label class={LABEL} for="recurrence-schedule-n">
-                        {scheduleType === "nthBusinessDay" ? "Nº do dia útil" : "Dia"}
-                      </label>
-                      {/*
+                      <div>
+                        <label class={LABEL} for="recurrence-schedule-n">
+                          {scheduleType === "nthBusinessDay" ? "Nº do dia útil" : "Dia"}
+                        </label>
+                        {/*
                       Stepper em vez do teclado: o valor quase sempre anda um ou
                       dois dias a partir da data do lançamento.
                     */}
-                      <div class="mt-2 flex h-12 items-center rounded-lg border border-divider bg-bg">
-                        <button
-                          type="button"
-                          aria-label="Diminuir dia"
-                          onClick={() => setScheduleN(Math.max(1, clampedN - 1))}
-                          class="hf-press grid h-full w-10 place-items-center text-fg/70"
-                        >
-                          <Icon name="minus" size={16} />
-                        </button>
-                        <input
-                          id="recurrence-schedule-n"
-                          type="number"
-                          min={1}
-                          max={31}
-                          inputMode="numeric"
-                          class="hf-num w-full min-w-0 appearance-none bg-transparent text-center text-base
+                        <div class="mt-2 flex h-12 items-center rounded-lg border border-divider bg-bg">
+                          <button
+                            type="button"
+                            aria-label="Diminuir dia"
+                            onClick={() => setScheduleN(Math.max(1, clampedN - 1))}
+                            class="hf-press grid h-full w-10 place-items-center text-fg/70"
+                          >
+                            <Icon name="minus" size={16} />
+                          </button>
+                          <input
+                            id="recurrence-schedule-n"
+                            type="number"
+                            min={1}
+                            max={31}
+                            inputMode="numeric"
+                            class="hf-num w-full min-w-0 appearance-none bg-transparent text-center text-base
                           outline-none [&::-webkit-inner-spin-button]:appearance-none"
-                          value={scheduleN}
-                          onInput={(event) => setScheduleN(Number(event.currentTarget.value) || 1)}
-                        />
-                        <button
-                          type="button"
-                          aria-label="Aumentar dia"
-                          onClick={() => setScheduleN(Math.min(31, clampedN + 1))}
-                          class="hf-press grid h-full w-10 place-items-center text-fg/70"
-                        >
-                          <Icon name="plus" size={16} />
-                        </button>
+                            value={scheduleN}
+                            onInput={(event) =>
+                              setScheduleN(Number(event.currentTarget.value) || 1)
+                            }
+                          />
+                          <button
+                            type="button"
+                            aria-label="Aumentar dia"
+                            onClick={() => setScheduleN(Math.min(31, clampedN + 1))}
+                            class="hf-press grid h-full w-10 place-items-center text-fg/70"
+                          >
+                            <Icon name="plus" size={16} />
+                          </button>
+                        </div>
                       </div>
                     </div>
+                    <p class={HINT}>
+                      {scheduleType === "nthBusinessDay"
+                        ? "Dia útil = segunda a sexta (sem feriados nesta versão)."
+                        : "Se o mês for mais curto, usa o último dia."}
+                    </p>
                   </div>
-                  <p class={HINT}>
-                    {scheduleType === "nthBusinessDay"
-                      ? "Dia útil = segunda a sexta (sem feriados nesta versão)."
-                      : "Se o mês for mais curto, usa o último dia."}
-                  </p>
-                </div>
+                )}
 
                 <div class="rounded-lg bg-bg px-4 py-3">
                   <Toggle
-                    label="Valor varia todo mês"
+                    label={VARIABLE_COPY[frequency].label}
                     hint={
-                      variable
-                        ? "Cada mês nasce com a média dos últimos 6 confirmados. Este valor é o palpite até lá."
-                        : "Luz, água: o valor só existe quando a conta chega."
+                      variable ? VARIABLE_COPY[frequency].hintOn : VARIABLE_COPY[frequency].hintOff
                     }
                     checked={variable}
                     onChange={setVariable}
@@ -604,6 +731,8 @@ export function TransactionWizard({
                 </button>
               )}
             </div>
+
+            {suggestionChip}
 
             {categories.length === 0 && !categoryIsDead ? (
               <p class="mt-2 rounded-lg bg-bg px-3.5 py-3 text-sm text-fg/60">
@@ -704,12 +833,31 @@ export function TransactionWizard({
                       name={method.name}
                       icon={method.icon}
                       color={method.color}
+                      credit={isCreditCard(method)}
+                      detail={cardDetail(method)}
                       checked={paymentMethodId === method.id}
                       onSelect={() => setPaymentMethodId(method.id)}
                     />
                   ))}
                 </div>
               )}
+              {onCreateCard !== undefined && (
+                <NewCardButton class="mt-3" onClick={() => setCreatingCard(true)} />
+              )}
+            </fieldset>
+
+            <fieldset class="mt-5">
+              <legend class={LABEL}>Nas contas</legend>
+              <Segmented
+                name="count-mode"
+                legend="Nas contas"
+                dense
+                class="mt-2"
+                options={COUNT_OPTIONS}
+                value={countMode}
+                onChange={setCountMode}
+              />
+              <p class={HINT}>{COUNT_HINTS[countMode]}</p>
             </fieldset>
 
             {showsCashback && (
@@ -738,7 +886,7 @@ export function TransactionWizard({
                     placeholder="0,00"
                     class={`${FIELD_SHEET} hf-num pl-10`}
                     value={maskDigits(cashback)}
-                    onInput={(event) => setCashback(onlyDigits(event.currentTarget.value))}
+                    onInput={(event) => setCashback(digitsOf(event.currentTarget))}
                   />
                 </div>
                 <p class={HINT}>Quanto voltou. Não entra no saldo — fica registrado na despesa.</p>
@@ -790,88 +938,5 @@ export function TransactionWizard({
         )}
       </div>
     </form>
-  );
-}
-
-interface ChoiceProps {
-  name: string;
-  icon: string;
-  /** `null` = opção neutra ("Sem categoria"). */
-  color: string | null;
-  checked: boolean;
-  onSelect: () => void;
-}
-
-/**
- * Tile da grade de categoria (3 colunas, 80px): ícone em cima, nome embaixo.
- *
- * Rádio nativo escondido: o nome acessível é o texto do próprio `<label>`, então
- * nada de `aria-label` — ele venceria o texto e obrigaria a manter dois nomes.
- */
-function CategoryTile({ name, icon, color, checked, onSelect }: ChoiceProps) {
-  return (
-    <label
-      class={`hf-press flex h-20 cursor-pointer flex-col justify-between rounded-lg p-2.5
-        has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent ${
-          checked ? "hf-selected" : "bg-bg hover:bg-fg/[0.04]"
-        }`}
-    >
-      <input
-        type="radio"
-        name="categoryId"
-        value={name}
-        checked={checked}
-        onChange={onSelect}
-        class="sr-only"
-      />
-      <IconTile icon={icon} color={color} size={30} iconSize={17} />
-      <span
-        class={`truncate text-[12.5px] font-medium ${checked ? "text-accent-200" : "text-fg/85"}`}
-      >
-        {name}
-      </span>
-    </label>
-  );
-}
-
-/** Linha de 52px da lista de pagamento: tile, nome e rádio à direita. */
-function MethodRow({
-  name,
-  icon,
-  color,
-  checked,
-  onSelect,
-  first,
-}: ChoiceProps & { first?: boolean }) {
-  return (
-    <label
-      class="relative flex h-[52px] cursor-pointer items-center gap-3 px-3
-        has-[:focus-visible]:outline-2 has-[:focus-visible]:-outline-offset-2
-        has-[:focus-visible]:outline-accent hover:bg-fg/[0.03]"
-    >
-      {/* Régua recuada até o texto, que esmaece antes da borda. */}
-      {!first && <span aria-hidden="true" class="hf-rule absolute top-0 right-0 left-[54px]" />}
-      <input
-        type="radio"
-        name="paymentMethodId"
-        value={name}
-        checked={checked}
-        onChange={onSelect}
-        class="sr-only"
-      />
-      <IconTile icon={icon} color={color} size={30} iconSize={17} />
-      <span class={`min-w-0 flex-1 truncate text-[15px] ${color === null ? "text-fg/60" : ""}`}>
-        {name}
-      </span>
-      <span
-        aria-hidden="true"
-        class="size-5 shrink-0 rounded-full"
-        style={{
-          boxShadow: checked
-            ? "inset 0 0 0 1.5px var(--color-accent), inset 0 0 0 5px var(--color-bg), inset 0 0 0 10px var(--color-accent)"
-            : "inset 0 0 0 1.5px var(--color-neutral-700)",
-        }}
-      />
-    </label>
   );
 }

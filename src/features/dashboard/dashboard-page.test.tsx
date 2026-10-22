@@ -249,4 +249,52 @@ describe("DashboardPage", () => {
     expect(screen.getByText("75%")).toBeDefined();
     expect(screen.getByText("Sem categoria")).toBeDefined();
   });
+
+  describe("mapa de calor", () => {
+    const month = [
+      record({ id: "a", occurredOn: "2026-08-03", amountMinor: 10_000 }),
+      record({ id: "b", occurredOn: "2026-08-03", amountMinor: 20_000, description: "Feira" }),
+      record({ id: "c", occurredOn: "2026-08-05", amountMinor: 5_000 }),
+      record({ id: "t", occurredOn: "2026-08-06", amountMinor: 99_000, reportState: "transfer" }),
+    ];
+
+    it("mostra a intensidade e os tres numeros de apoio", () => {
+      render(<DashboardPage items={month} state={stateWith()} today={TODAY} />);
+
+      expect(screen.getByTestId("heat-day-3").getAttribute("data-level")).toBe("4");
+      expect(screen.getByTestId("heat-day-5").getAttribute("data-level")).toBe("1");
+      // A transferência não conta: o dia 6 fica sem saída.
+      expect(screen.getByTestId("heat-day-6").getAttribute("data-level")).toBe("0");
+      // Até o dia 10: 350 / 10 = 35 por dia; saídas em 2 dias, 8 sem saída.
+      expect(screen.getByTestId("heat-average").textContent).toContain("35");
+      expect(screen.getByTestId("heat-peak").textContent).toContain("300");
+      expect(screen.getByTestId("heat-empty").textContent).toBe("8");
+    });
+
+    it("tocar no dia lista os lancamentos dele", () => {
+      render(<DashboardPage items={month} state={stateWith()} today={TODAY} />);
+
+      fireEvent.click(screen.getByTestId("heat-day-3"));
+
+      expect(screen.getByRole("button", { name: "Editar Feira" })).toBeDefined();
+      expect(screen.getByText(/2 saídas/)).toBeDefined();
+    });
+
+    it("tocar numa linha do dia abre a edicao", () => {
+      const edited: string[] = [];
+      render(
+        <DashboardPage
+          items={month}
+          state={stateWith()}
+          today={TODAY}
+          onEdit={(row) => edited.push(row.id)}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId("heat-day-3"));
+      fireEvent.click(screen.getByRole("button", { name: "Editar Feira" }));
+
+      expect(edited).toEqual(["b"]);
+    });
+  });
 });

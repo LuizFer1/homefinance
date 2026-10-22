@@ -1,4 +1,5 @@
 import { formatBRL } from "../../domain/money/money";
+import { hideValues, MASK } from "../privacy/privacy";
 
 /** Sinal de menos tipográfico (U+2212), como pede o handoff. */
 export const MINUS = "−";
@@ -19,6 +20,7 @@ export interface MoneyParts {
  * a formatação: separador de milhar e vírgula continuam vindo de um lugar só.
  */
 export function moneyParts(minor: number, signed: "auto" | "always" = "auto"): MoneyParts {
+  if (hideValues.value) return { sign: "", whole: "•••••", cents: "" };
   const text = formatBRL(Math.abs(minor)).replace(/^R\$\s*/u, "");
   const comma = text.lastIndexOf(",");
   const sign = minor < 0 ? MINUS : signed === "always" && minor > 0 ? "+" : "";
@@ -32,6 +34,7 @@ export function moneyParts(minor: number, signed: "auto" | "always" = "auto"): M
 
 /** Texto corrido com sinal tipográfico: "−R$ 254,30", "+R$ 6.500,00". */
 export function signedBRL(minor: number, signed: "auto" | "always" = "auto"): string {
+  if (hideValues.value) return MASK;
   const { sign, whole, cents } = moneyParts(minor, signed);
   // Espaço rígido como o do `Intl`: o valor não quebra linha entre "R$" e o número.
   return `${sign}R$ ${whole}${cents}`;
@@ -45,6 +48,7 @@ const WHOLE = new Intl.NumberFormat("pt-BR", {
 
 /** Reais sem centavos ("R$ 2.412"): média é estimativa, centavo ali é falsa precisão. */
 export function wholeBRL(minor: number): string {
+  if (hideValues.value) return MASK;
   return WHOLE.format(Math.round(minor / 100));
 }
 
@@ -54,7 +58,16 @@ export function wholeBRL(minor: number): string {
  * mostraria um número que não foi movido; `wholeBRL` é para estimativas.
  */
 export function compactBRL(minor: number): string {
-  return minor % 100 === 0 ? wholeBRL(minor) : formatBRL(minor);
+  return minor % 100 === 0 ? wholeBRL(minor) : brl(minor);
+}
+
+/**
+ * `formatBRL` das telas: com a privacidade ligada devolve a máscara. É o ponto
+ * único por onde o valor chega ao texto — chamar `formatBRL` direto numa tela
+ * vazaria o número por cima do botão de ocultar.
+ */
+export function brl(minor: number): string {
+  return hideValues.value ? MASK : formatBRL(minor);
 }
 
 export interface MoneyProps {
@@ -73,6 +86,7 @@ export interface MoneyProps {
  */
 export function Money({ minor, signed = "auto", size, class: className = "", testId }: MoneyProps) {
   const { sign, whole, cents } = moneyParts(minor, signed);
+  const hidden = hideValues.value;
 
   return (
     <span
@@ -81,7 +95,7 @@ export function Money({ minor, signed = "auto", size, class: className = "", tes
       style={{ fontSize: `${size}px`, lineHeight: 1.05 }}
     >
       {/* O leitor de tela lê o valor inteiro de uma vez, não em três pedaços. */}
-      <span class="sr-only">{signedBRL(minor, signed)}</span>
+      <span class="sr-only">{hidden ? "valor oculto" : signedBRL(minor, signed)}</span>
       <span aria-hidden="true" class="inline-flex items-baseline">
         {sign}
         <span class="mr-[0.18em] opacity-60" style={{ fontSize: "0.5em" }}>
@@ -94,4 +108,18 @@ export function Money({ minor, signed = "auto", size, class: className = "", tes
       </span>
     </span>
   );
+}
+
+const SHORT = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+
+/**
+ * Valor sem símbolo e sem centavos, curto para caber numa célula: "850",
+ * "1,3 mil", "2 mi". Arredonda: serve para ler a escala, não para somar.
+ */
+export function shortBRL(minor: number): string {
+  if (hideValues.value) return "•••";
+  const reais = Math.round(Math.abs(minor) / 100);
+  if (reais < 1000) return String(reais);
+  if (reais < 1_000_000) return `${SHORT.format(reais / 1000)} mil`;
+  return `${SHORT.format(reais / 1_000_000)} mi`;
 }

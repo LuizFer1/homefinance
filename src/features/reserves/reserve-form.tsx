@@ -10,8 +10,7 @@ import {
   type ReserveKind,
 } from "../../domain/model/reserve";
 import type { ColorToken, IconKey } from "../../domain/model/tokens";
-import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
-import { formatBRL } from "../../domain/money/money";
+import { digitsOf, maskDigits, minorOf } from "../../domain/money/mask";
 import { monthOf } from "../../domain/projections/periods";
 import { emergencyOf, isDuplicateEmergency, reserveBalance } from "../../domain/reserves/balances";
 import { essentialCost, findEssentialCategoryIds } from "../../domain/reserves/essential";
@@ -22,7 +21,7 @@ import { Button } from "../ui/button";
 import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
 import { HoldToDelete } from "../ui/hold-button";
 import { SheetHeader } from "../ui/modal";
-import { compactBRL, wholeBRL } from "../ui/money";
+import { brl, compactBRL, wholeBRL } from "../ui/money";
 import { Progress } from "../ui/progress";
 import { SummaryChip } from "../ui/summary-chip";
 import { Swatches } from "../ui/swatches";
@@ -93,7 +92,7 @@ function MoneyField({
           autocomplete="off"
           placeholder="0,00"
           value={maskDigits(digits)}
-          onInput={(event) => onDigits(onlyDigits(event.currentTarget.value))}
+          onInput={(event) => onDigits(digitsOf(event.currentTarget))}
           aria-describedby={hint === undefined ? undefined : `${id}-hint`}
           class="hf-num min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-fg/40"
         />
@@ -558,7 +557,7 @@ export function ReserveForm({
                 <span class="block truncate text-[15px] font-medium">{trimmed}</span>
                 <span class="mt-0.5 block truncate text-xs text-fg/55">{previewMeta}</span>
               </span>
-              <span class="hf-num text-[15px] font-medium">{formatBRL(balance)}</span>
+              <span class="hf-num text-[15px] font-medium">{brl(balance)}</span>
             </div>
           </>
         )}

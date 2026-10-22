@@ -1,6 +1,12 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import type { PrepareResult } from "./data/import";
+import { listBudgets } from "./domain/budgets/list";
+import { isCompleteCard, listCreditCards } from "./domain/cards/card";
+import { listPickableMethods, pendingCardGroups } from "./domain/cards/migration";
+import type { ImportPlan } from "./domain/export/import-data";
 import type { Ulid } from "./domain/ids/ulid";
+import { buildCategoryIndex } from "./domain/import/suggest-category";
 import { isAlive } from "./domain/model/base";
 import type { RecurrenceRule } from "./domain/model/recurrence";
 import type { ReserveKind, ReserveMovement } from "./domain/model/reserve";
@@ -11,9 +17,17 @@ import {
   listPaymentMethods,
   listTransactions,
 } from "./domain/projections/selectors";
+import { findSimilar, type SimilarQuery } from "./domain/transactions/similar";
 import { BrandMark } from "./features/brand/brand-mark";
+import { BudgetsPage } from "./features/budgets/budgets-page";
+import type { BudgetsStore } from "./features/budgets/store";
+import { InvoicesPage } from "./features/cards/invoices-page";
+import { MigrationSheet } from "./features/cards/migration-sheet";
+import type { CardsStore } from "./features/cards/store";
 import { cssVarForToken } from "./features/colors/color-token";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
+import { pendingHelp } from "./features/help/deep-link";
+import { HelpPage } from "./features/help/help-page";
 import { HomePage } from "./features/home/home-page";
 import { Icon } from "./features/icons/icon";
 import { ImportSheet } from "./features/import/import-sheet";
@@ -21,6 +35,7 @@ import type { ReadPdf } from "./features/import/read-pdf";
 import type { ImportStore } from "./features/import/store";
 import type { OnboardingStore } from "./features/onboarding/store";
 import { OnboardingWizard } from "./features/onboarding/wizard";
+import { PrivacyToggle } from "./features/privacy/privacy-toggle";
 import { ProfilePage } from "./features/profile/profile-page";
 import type { ProfileStore } from "./features/profile/store";
 import { AdjustSheet } from "./features/recurrence/adjust-sheet";
@@ -39,8 +54,10 @@ import { SettingsPage, type SettingsSection } from "./features/settings/settings
 import { HubPage } from "./features/sync/hub-page";
 import type { SyncStore } from "./features/sync/store";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
+import { SimilarSheet } from "./features/transactions/similar-sheet";
 import type { TransactionsStore } from "./features/transactions/store";
 import { TransactionWizard } from "./features/transactions/transaction-wizard";
+import { UncategorizedSheet } from "./features/transactions/uncategorized-sheet";
 import { Modal } from "./features/ui/modal";
 import { useSwipeNav } from "./features/ui/use-swipe-nav";
 import type { UpdateStore } from "./features/update/store";
@@ -58,6 +75,9 @@ export interface AppProps {
   profileStore: ProfileStore;
   recurrence: RecurrenceStore;
   reserves: ReservesStore;
+  budgets: BudgetsStore;
+  /** Migração dos cartões por completar (adiamento local e gravação em lote). */
+  cards: CardsStore;
   onboarding: OnboardingStore;
   importer: ImportStore;
   /** Versão nova do app esperando a pessoa aceitar. */
@@ -71,6 +91,12 @@ export interface AppProps {
   processFile: (file: Blob) => Promise<string>;
   /** Rejeita se o banco não apagou; a tela de reset mostra o motivo. */
   onReset: () => Promise<void>;
+  /** Lê o banco e baixa o JSON de exportação; rejeita se falhar. */
+  onExport: () => Promise<void>;
+  /** Lê, valida e planeja o arquivo de importação; não grava. */
+  onImportPrepare: (file: File) => Promise<PrepareResult>;
+  /** Grava o plano da importação num lote atômico; rejeita sem gravar se falhar. */
+  onImportApply: (plan: ImportPlan) => Promise<void>;
   /** Data de hoje em 'YYYY-MM-DD'. Vem de fora para o teste não depender do relógio. */
   today: string;
   /** Hora local 0..23, injetada pelo mesmo motivo que `today`. */
@@ -142,6 +168,8 @@ export function App({
   profileStore,
   recurrence,
   reserves,
+  budgets,
+  cards,
   onboarding,
   importer,
   update,
@@ -150,6 +178,9 @@ export function App({
   readPdf,
   processFile,
   onReset,
+  onExport,
+  onImportPrepare,
+  onImportApply,
   today,
   hour,
   theme,
@@ -165,6 +196,15 @@ export function App({
   const [adjusting, setAdjusting] = useState<Ulid | null>(null);
   // Estimativa em confirmação, ou null. Aberta pelo bloco "A confirmar".
   const [confirming, setConfirming] = useState<Transaction | null>(null);
+  const [classifying, setClassifying] = useState(false);
+  // "Ajustar cartões" aberto à mão (pelas Faturas), mesmo depois de um "Depois".
+  const [fixingCards, setFixingCards] = useState(false);
+  // O boot (fusão dos padrões, materialização) já rodou. O aviso dos cartões
+  // espera por ele: as cópias antigas do genérico ainda estão para ser fundidas, e
+  // abrir antes mostraria grupos que o boot está prestes a desfazer.
+  const [booted, setBooted] = useState(false);
+  // Reclassificação que oferece "aplicar às semelhantes", ou null.
+  const [similar, setSimilar] = useState<SimilarQuery | null>(null);
   // Cor do brilho do topo enquanto o Perfil está aberto: acompanha a cor que a
   // pessoa está escolhendo, antes mesmo de salvar.
   const [glow, setGlow] = useState<string | null>(null);
@@ -211,13 +251,15 @@ export function App({
     // já nasce apontando para a categoria que vai ficar.
     void session
       .init()
+      .then(() => cards.init())
       .then(() => registry.mergeLegacyDefaults().catch(ignoreHandled))
       .then(() => recurrence.materializeDue(today).catch(ignoreHandled))
       .then(() => reserves.materializeDue(today).catch(ignoreHandled))
+      .then(() => setBooted(true))
       .then(() => sync.init())
       .then(() => sync.sync({ auto: true }))
       .catch(ignoreHandled);
-  }, [session, registry, recurrence, reserves, sync, today]);
+  }, [session, registry, recurrence, reserves, sync, cards, today]);
 
   // Deep link do QR: espera a sessão e o primeiro uso, porque o pareamento
   // manda o perfil local e o wizard ainda não o criou.
@@ -228,6 +270,15 @@ export function App({
     setScreen("config");
     setSection("hub");
   }, [deepLink, canPair]);
+
+  // Link de uma pergunta da Ajuda (`#ajuda=<id>`): mesma espera do deep link
+  // do hub. A própria HelpPage lê o pedido e o zera.
+  const helpRequest = pendingHelp.value;
+  useEffect(() => {
+    if (helpRequest === null || !canPair) return;
+    setScreen("config");
+    setSection("help");
+  }, [helpRequest, canPair]);
 
   // Uma condição só para os dois casos: o modal está aberto para criar
   // (`editing` nulo) ou para editar. Dois estados independentes permitiriam
@@ -297,6 +348,28 @@ export function App({
   const items = listTransactions(state);
   const categories = listCategories(state);
   const paymentMethods = listPaymentMethods(state);
+  // O genérico que ninguém usa não é oferecido ao lançar (ver `unusedGenericCard`).
+  const pickableMethods = listPickableMethods(state);
+  // Gatilho derivado do estado: some sozinho quando o último grupo é atribuído.
+  const hasPendingCards = pendingCardGroups(state).length > 0;
+  const otherSheetOpen =
+    modalOpen ||
+    importing ||
+    adjusting !== null ||
+    confirming !== null ||
+    classifying ||
+    reserveSheet !== null ||
+    reserveForm !== null;
+  // Não interrompe quem está no meio de um formulário: o aviso espera ele fechar.
+  const migrationOpen =
+    booted && hasPendingCards && !otherSheetOpen && (fixingCards || !cards.deferred.value);
+
+  // O `<dialog>` dispara `close` também quando fecha por ter migrado: só adia se
+  // ainda há pendência, senão um grupo que o sync trouxer depois nunca avisaria.
+  function closeMigration() {
+    setFixingCards(false);
+    if (hasPendingCards) void cards.defer();
+  }
 
   function closeModal() {
     setComposing(null);
@@ -317,7 +390,29 @@ export function App({
     }
 
     // O draft vai inteiro: o repositório não grava quando nada mudou.
-    void store.edit(editing.id, draft).catch(ignoreHandled);
+    const reclassified =
+      draft.categoryId !== null && draft.categoryId !== editing.categoryId
+        ? draft.categoryId
+        : null;
+    const editedId = editing.id;
+    const edited = store.edit(editedId, draft);
+    if (reclassified === null) {
+      void edited.catch(ignoreHandled);
+    } else {
+      // Só oferece depois de gravar, e só se sobrou alguém para mudar: a lista
+      // vem do estado vivo, então o próprio lançamento já gravado não entra.
+      void edited
+        .then(() => {
+          const query = {
+            sourceId: editedId,
+            description: draft.description,
+            kind: draft.kind,
+            categoryId: reclassified,
+          };
+          if (findSimilar(session.state.value, query).length > 0) setSimilar(query);
+        })
+        .catch(ignoreHandled);
+    }
     closeModal();
   }
 
@@ -419,6 +514,8 @@ export function App({
         data-swiping={swipe["data-swiping"]}
         style={swipe.style}
       >
+        <PrivacyToggle />
+
         {update.ready.value && <UpdateBanner onApply={update.apply} />}
 
         {session.error.value !== null && (
@@ -433,6 +530,9 @@ export function App({
             state={state}
             today={today}
             onGoHome={() => goToScreen("inicio")}
+            onOpenBudgets={() => openSection("budget")}
+            currentUserId={profile?.id ?? null}
+            onEdit={setEditing}
           />
         )}
 
@@ -447,6 +547,9 @@ export function App({
             onImport={() => setImporting(true)}
             onEdit={setEditing}
             onConfirm={setConfirming}
+            onClassify={() => setClassifying(true)}
+            onOpenBudgets={() => openSection("budget")}
+            onOpenInvoices={() => openSection("invoices")}
             onOpenProfile={() => openSection("profile")}
           />
         )}
@@ -458,11 +561,18 @@ export function App({
             <SettingsPage
               categoryCount={categories.length}
               paymentMethodCount={paymentMethods.length}
+              cardCount={listCreditCards(state).filter(isCompleteCard).length}
+              budgetCount={listBudgets(state).length}
               profile={profile}
               theme={theme}
               update={update}
               onOpen={openSection}
               onReset={onReset}
+              state={state}
+              today={today}
+              onExport={onExport}
+              onImportPrepare={onImportPrepare}
+              onImportApply={onImportApply}
               sync={sync}
             />
           ) : section === "profile" ? (
@@ -481,6 +591,24 @@ export function App({
                 }}
               />
             ) : null
+          ) : section === "budget" ? (
+            <BudgetsPage
+              state={state}
+              items={items}
+              today={today}
+              store={budgets}
+              onBack={() => setSection(null)}
+            />
+          ) : section === "invoices" ? (
+            <InvoicesPage
+              state={state}
+              today={today}
+              onBack={() => setSection(null)}
+              onFixCards={() => setFixingCards(true)}
+              onOpenPayments={() => openSection("paymentMethod")}
+            />
+          ) : section === "help" ? (
+            <HelpPage onBack={() => setSection(null)} />
           ) : section === "hub" ? (
             <HubPage
               sync={sync}
@@ -543,6 +671,7 @@ export function App({
             state={state}
             today={today}
             readPdf={readPdf}
+            onCreateCard={registry.addPaymentMethod}
             onImport={(plan) => importer.commit(plan, today)}
             onClose={() => setImporting(false)}
           />
@@ -566,10 +695,12 @@ export function App({
             editing={editing}
             onSubmit={handleSubmit}
             onCancel={closeModal}
+            categoryIndex={buildCategoryIndex(state)}
             today={today}
             initialKind={composing ?? undefined}
             categories={categories}
-            paymentMethods={paymentMethods}
+            paymentMethods={pickableMethods}
+            onCreateCard={registry.addPaymentMethod}
             author={
               editingAuthor === null
                 ? null
@@ -620,6 +751,45 @@ export function App({
               void recurrence.removeAdjustment(id).catch(ignoreHandled);
             }}
             onClose={() => setAdjusting(null)}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={similar !== null}
+        title="Aplicar às semelhantes"
+        onClose={() => setSimilar(null)}
+      >
+        {similar !== null && (
+          <SimilarSheet
+            state={state}
+            query={similar}
+            onApply={(ids, categoryId) => store.setCategory(ids, categoryId)}
+            onClose={() => setSimilar(null)}
+          />
+        )}
+      </Modal>
+
+      <Modal open={classifying} title="Sem categoria" onClose={() => setClassifying(false)}>
+        {classifying && (
+          <UncategorizedSheet
+            state={state}
+            onApply={(ids, categoryId) => store.setCategory(ids, categoryId)}
+            onClose={() => setClassifying(false)}
+          />
+        )}
+      </Modal>
+
+      <Modal open={migrationOpen} title="Ajustar cartões" onClose={closeMigration}>
+        {/* Montada só enquanto aberta: fechar descarta as escolhas pela metade. */}
+        {migrationOpen && (
+          <MigrationSheet
+            state={state}
+            onMigrate={(choices) => cards.migrate(choices)}
+            onDefer={closeMigration}
+            onExport={onExport}
+            onReload={() => session.reload()}
+            onDone={() => setFixingCards(false)}
           />
         )}
       </Modal>

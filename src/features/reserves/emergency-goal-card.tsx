@@ -1,5 +1,5 @@
 import { EMERGENCY_MULTIPLES, type EmergencyMultiple } from "../../domain/model/reserve";
-import { maskDigits, minorOf, onlyDigits } from "../../domain/money/mask";
+import { digitsOf, maskDigits, minorOf } from "../../domain/money/mask";
 import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
 import { Money, wholeBRL } from "../ui/money";
 import { Segmented } from "../ui/segmented";
@@ -65,7 +65,7 @@ export function EmergencyGoalCard({
             autocomplete="off"
             placeholder="0,00"
             value={maskDigits(digits)}
-            onInput={(event) => onDigits(onlyDigits(event.currentTarget.value))}
+            onInput={(event) => onDigits(digitsOf(event.currentTarget))}
             aria-describedby={costHint === undefined ? undefined : "essential-cost-hint"}
             class={`${FIELD_SHEET} hf-num mt-2`}
           />

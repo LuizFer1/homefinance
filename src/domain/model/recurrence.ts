@@ -2,8 +2,14 @@ import type { Ulid } from "../ids/ulid";
 import type { BaseRow, Draft } from "./base";
 import type { TransactionKind } from "./transaction";
 
-/** Só frequências alinhadas a mês civil: extrato e dashboard pensam em mês. */
+/**
+ * Tudo que uma série pode ter gravado. `bimonthly`, `quarterly` e `semiannual`
+ * saíram do formulário mas seguem aqui: há séries delas em aparelhos e no hub, e
+ * apagar o valor da união faria a série antiga parar de gerar.
+ */
 export const RECURRENCE_FREQUENCIES = [
+  "weekly",
+  "biweekly",
   "monthly",
   "bimonthly",
   "quarterly",
@@ -11,6 +17,14 @@ export const RECURRENCE_FREQUENCIES = [
   "annual",
 ] as const;
 export type RecurrenceFrequency = (typeof RECURRENCE_FREQUENCIES)[number];
+
+/** O que o formulário oferece, na ordem da tela. */
+export const OFFERED_FREQUENCIES = ["weekly", "biweekly", "monthly", "annual"] as const;
+
+/** Passo em dias: a competência da ocorrência é a própria data, não o mês. */
+export type DayStepFrequency = "weekly" | "biweekly";
+/** Passo em meses: a competência é `YYYY-MM`. */
+export type MonthStepFrequency = Exclude<RecurrenceFrequency, DayStepFrequency>;
 
 export const SCHEDULE_TYPES = ["dayOfMonth", "nthBusinessDay"] as const;
 export type ScheduleType = (typeof SCHEDULE_TYPES)[number];
@@ -51,6 +65,8 @@ export type RecurrenceRule = Pick<
 };
 
 export const FREQUENCY_LABELS: Record<RecurrenceFrequency, string> = {
+  weekly: "Semanal",
+  biweekly: "Quinzenal",
   monthly: "Mensal",
   bimonthly: "Bimestral",
   quarterly: "Trimestral",
@@ -61,4 +77,58 @@ export const FREQUENCY_LABELS: Record<RecurrenceFrequency, string> = {
 export const SCHEDULE_TYPE_LABELS: Record<ScheduleType, string> = {
   dayOfMonth: "Dia fixo do mês",
   nthBusinessDay: "Dia útil do mês",
+};
+
+/** Textos do toggle de valor variável, que acompanham o ritmo da série. */
+export interface VariableCopy {
+  label: string;
+  /** Com o toggle ligado. */
+  hintOn: string;
+  /** Com o toggle desligado. */
+  hintOff: string;
+}
+
+const VARIABLE_ESTIMATE = "a média dos últimos 6 confirmados. Este valor é o palpite até lá.";
+
+/**
+ * Séries antigas (bimestral etc.) usam o texto mensal: o formulário nem as
+ * oferece mais, mas o mapa é total para não haver `undefined` com valor de
+ * versão futura ou legado.
+ */
+export const VARIABLE_COPY: Record<RecurrenceFrequency, VariableCopy> = {
+  weekly: {
+    label: "Valor varia toda semana",
+    hintOn: `Cada semana nasce com ${VARIABLE_ESTIMATE}`,
+    hintOff: "Feira, combustível: o valor só existe quando a conta chega.",
+  },
+  biweekly: {
+    label: "Valor varia a cada quinzena",
+    hintOn: `Cada quinzena nasce com ${VARIABLE_ESTIMATE}`,
+    hintOff: "O valor só existe quando a conta chega.",
+  },
+  monthly: {
+    label: "Valor varia todo mês",
+    hintOn: `Cada mês nasce com ${VARIABLE_ESTIMATE}`,
+    hintOff: "Luz, água: o valor só existe quando a conta chega.",
+  },
+  bimonthly: {
+    label: "Valor varia todo mês",
+    hintOn: `Cada mês nasce com ${VARIABLE_ESTIMATE}`,
+    hintOff: "Luz, água: o valor só existe quando a conta chega.",
+  },
+  quarterly: {
+    label: "Valor varia todo mês",
+    hintOn: `Cada mês nasce com ${VARIABLE_ESTIMATE}`,
+    hintOff: "Luz, água: o valor só existe quando a conta chega.",
+  },
+  semiannual: {
+    label: "Valor varia todo mês",
+    hintOn: `Cada mês nasce com ${VARIABLE_ESTIMATE}`,
+    hintOff: "Luz, água: o valor só existe quando a conta chega.",
+  },
+  annual: {
+    label: "Valor varia todo ano",
+    hintOn: `Cada ano nasce com ${VARIABLE_ESTIMATE}`,
+    hintOff: "O valor só existe quando a conta chega.",
+  },
 };

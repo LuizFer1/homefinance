@@ -1,10 +1,12 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
+import { budgetReport } from "../../domain/budgets/status";
 import { shiftMonth } from "../../domain/dates/calendar";
+import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
-import { formatBRL } from "../../domain/money/money";
 import { filterByMonth, monthlyTotals } from "../../domain/projections/breakdown";
+import { dailyExpenses, expensesOn } from "../../domain/projections/daily-expenses";
 import {
   averageSurplus,
   cashbackSummary,
@@ -24,11 +26,15 @@ import { findCategory } from "../../domain/projections/selectors";
 import { upcomingRecurrences } from "../../domain/recurrence/upcoming";
 import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
+import { BudgetBar } from "../ui/budget-bar";
 import { Button } from "../ui/button";
-import { Money, signedBRL, wholeBRL } from "../ui/money";
+import { brl, Money, signedBRL, wholeBRL } from "../ui/money";
+import { MonthPicker } from "../ui/month-picker";
 import { PageHeader } from "../ui/page-header";
 import { IconTile } from "../ui/tile";
 import { BarChart } from "./bar-chart";
+import { DaySheet } from "./day-sheet";
+import { HeatMap } from "./heat-map";
 import { PaceChart } from "./pace-chart";
 
 export interface DashboardPageProps {
@@ -40,6 +46,12 @@ export interface DashboardPageProps {
   today: string;
   /** Botão do estado vazio. */
   onGoHome?: () => void;
+  /** Abre o Orçamento. Sem ele, o card de metas não tem para onde levar e some. */
+  onOpenBudgets?: () => void;
+  /** Perfil deste aparelho, para o "Você" nas linhas do dia. */
+  currentUserId?: Ulid | null;
+  /** Abre a edição de um lançamento da lista do dia. Sem ele, tocar na linha não faz nada. */
+  onEdit?: (record: Transaction) => void;
 }
 
 /**
@@ -47,6 +59,8 @@ export interface DashboardPageProps {
  * frase "últimos seis meses" do vazio — por extenso, não dá para compor daqui.
  */
 const WINDOW = 6;
+/** Metas no card do Dashboard: as mais usadas; o resto fica na tela de Orçamento. */
+const BUDGET_CARD_ROWS = 3;
 /** Janela dos "Recorrentes a caminho". */
 const UPCOMING_DAYS = 30;
 
@@ -70,56 +84,9 @@ function Card({
   );
 }
 
-function capitalize(text: string): string {
-  return text.charAt(0).toLocaleUpperCase("pt-BR") + text.slice(1);
-}
-
-/** "Set 2026" do seletor. */
-function pickerLabel(month: string): string {
-  return `${capitalize(monthLabelShort(month))} ${month.slice(0, 4)}`;
-}
-
 /** Nome do mês sem o ano ("agosto"), para as frases de comparação. */
 function monthWord(month: string): string {
   return monthLabelLong(month).split(" ")[0] ?? "";
-}
-
-function MonthPicker({
-  month,
-  current,
-  onChange,
-}: {
-  month: string;
-  current: string;
-  onChange: (month: string) => void;
-}) {
-  const atPresent = month >= current;
-
-  return (
-    <div class="flex h-9 shrink-0 items-center rounded-lg border border-divider">
-      <button
-        type="button"
-        aria-label="Mês anterior"
-        onClick={() => onChange(shiftMonth(month, -1))}
-        class="hf-press grid h-full w-8 place-items-center text-fg/75"
-      >
-        <Icon name="caret-left" size={16} />
-      </button>
-      <span aria-live="polite" class="hf-num px-0.5 text-[13px] font-medium">
-        {pickerLabel(month)}
-      </span>
-      {/* O futuro não tem lançamento: a seta fica a 30% e não anda. */}
-      <button
-        type="button"
-        aria-label="Próximo mês"
-        disabled={atPresent}
-        onClick={() => onChange(shiftMonth(month, 1))}
-        class="hf-press grid h-full w-8 place-items-center text-fg/75 disabled:opacity-30"
-      >
-        <Icon name="caret-right" size={16} />
-      </button>
-    </div>
-  );
 }
 
 /** Esqueleto do vazio: rosca-fantasma e barras tracejadas sobre a régua. */
@@ -160,9 +127,18 @@ function EmptyDashboard({ month, onGoHome }: { month: string; onGoHome?: () => v
  * compara no mesmo dia, "para onde foi" ordena as categorias, "a caminho"
  * antecipa o que a recorrência vai lançar. O seletor de mês recalcula tudo.
  */
-export function DashboardPage({ items, state, today, onGoHome }: DashboardPageProps) {
+export function DashboardPage({
+  items,
+  state,
+  today,
+  onGoHome,
+  onOpenBudgets,
+  currentUserId = null,
+  onEdit,
+}: DashboardPageProps) {
   const current = monthOf(today);
   const [month, setMonth] = useState(current);
+  const [pickedDay, setPickedDay] = useState<string | null>(null);
 
   const header = (
     <PageHeader
@@ -186,11 +162,14 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
   const previous = shiftMonth(month, -1);
   const hadPrevious = filterByMonth(items, previous).length > 0;
   const pace = spendingPace(items, month, today);
+  // Médias só sobre os dias que já aconteceram: o mesmo corte do ritmo de gastos.
+  const daily = dailyExpenses(items, month, pace.cutoff);
   const categories = categoryBreakdown(monthItems, state);
   const biggest = categories[0]?.amountMinor ?? 0;
   const bars = monthlyTotals(items, lastMonths(`${month}-01`, WINDOW));
   const upcoming = month === current ? upcomingRecurrences(state, today, UPCOMING_DAYS) : [];
   const cashback = cashbackSummary(monthItems, state);
+  const budgets = budgetReport(items, state, month).rows;
   const moved = summary.incomeMinor + summary.expenseMinor;
   const label = monthLabelLong(month);
   const up = comparison.deltaMinor >= 0;
@@ -221,7 +200,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
               <Icon name={up ? "trend-up" : "trend-down"} size={16} />
               {comparison.deltaMinor === 0
                 ? `Igual a ${monthWord(previous)}`
-                : `${formatBRL(Math.abs(comparison.deltaMinor))} a ${up ? "mais" : "menos"} que ${monthWord(previous)}`}
+                : `${brl(Math.abs(comparison.deltaMinor))} a ${up ? "mais" : "menos"} que ${monthWord(previous)}`}
             </p>
           )}
           <div
@@ -242,7 +221,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
                 Receitas
               </p>
               <p data-testid="total-income" class="hf-num mt-1 text-[15px] font-medium">
-                {formatBRL(summary.incomeMinor)}
+                {brl(summary.incomeMinor)}
               </p>
             </div>
             <div>
@@ -251,7 +230,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
                 Despesas
               </p>
               <p data-testid="total-expense" class="hf-num mt-1 text-[15px] font-medium">
-                {formatBRL(summary.expenseMinor)}
+                {brl(summary.expenseMinor)}
               </p>
             </div>
           </div>
@@ -280,7 +259,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
             }
           >
             <p class="mt-2 text-[13px] leading-normal text-fg/70 text-pretty">
-              {formatBRL(pace.spentMinor)} até o dia {pace.cutoff}
+              {brl(pace.spentMinor)} até o dia {pace.cutoff}
               {pace.change !== null && (
                 <>
                   {" — "}
@@ -303,6 +282,35 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
           </Card>
         )}
 
+        {summary.expenseMinor > 0 && (
+          <Card title="Saídas por dia" aside={monthLabelShort(month)}>
+            <div class="mt-3 grid grid-cols-3 gap-3">
+              <div>
+                <p class="text-xs text-fg/55">Média por dia</p>
+                <p data-testid="heat-average" class="hf-num mt-1 text-[15px] font-medium">
+                  {wholeBRL(daily.averageMinor)}
+                </p>
+              </div>
+              <div>
+                <p class="text-xs text-fg/55">Maior dia</p>
+                <p data-testid="heat-peak" class="hf-num mt-1 text-[15px] font-medium">
+                  {wholeBRL(daily.maxMinor)}
+                </p>
+                {daily.peakDay !== null && (
+                  <p class="hf-num text-xs text-fg/55">dia {daily.peakDay}</p>
+                )}
+              </div>
+              <div>
+                <p class="text-xs text-fg/55">Dias sem saída</p>
+                <p data-testid="heat-empty" class="hf-num mt-1 text-[15px] font-medium">
+                  {daily.emptyDays}
+                </p>
+              </div>
+            </div>
+            <HeatMap month={month} daily={daily} today={today} onPickDay={setPickedDay} />
+          </Card>
+        )}
+
         <Card
           title="Para onde foi"
           aside={
@@ -320,7 +328,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
                   <div class="flex items-center gap-2.5">
                     <IconTile icon={row.icon} color={row.color} size={28} iconSize={15} />
                     <span class="min-w-0 flex-1 truncate text-sm">{row.name}</span>
-                    <span class="hf-num text-sm font-medium">{formatBRL(row.amountMinor)}</span>
+                    <span class="hf-num text-sm font-medium">{brl(row.amountMinor)}</span>
                     <span class="hf-num w-9 text-right text-xs text-fg/50">
                       {Math.round(row.share * 100)}%
                     </span>
@@ -339,6 +347,53 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
             </ul>
           )}
         </Card>
+
+        {onOpenBudgets !== undefined && budgets.length > 0 && (
+          <Card
+            title="Metas"
+            aside={`${budgets.length} ${budgets.length === 1 ? "categoria" : "categorias"}`}
+          >
+            <ul class="mt-3 space-y-3.5">
+              {budgets.slice(0, BUDGET_CARD_ROWS).map((row) => (
+                <li key={row.budget.id}>
+                  <div class="flex items-center gap-2.5">
+                    <IconTile
+                      icon={row.category.icon}
+                      color={row.category.color}
+                      size={28}
+                      iconSize={15}
+                    />
+                    <span class="min-w-0 flex-1 truncate text-sm">{row.category.name}</span>
+                    <span class="hf-num text-xs text-fg/60">
+                      {brl(row.spentMinor)} de {brl(row.limitMinor)}
+                    </span>
+                    <span
+                      class={`hf-num w-10 text-right text-xs font-medium ${
+                        row.level === "over" ? "text-expense-fg" : "text-fg/60"
+                      }`}
+                    >
+                      {Math.floor(row.usedRatio * 100)}%
+                    </span>
+                  </div>
+                  <div class="mt-1.5 ml-[38px]">
+                    <BudgetBar
+                      ratio={row.usedRatio}
+                      level={row.level}
+                      label={`Meta de ${row.category.name}`}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={onOpenBudgets}
+              class="hf-press mt-3 text-[13px] font-medium text-accent-300"
+            >
+              Ver orçamento
+            </button>
+          </Card>
+        )}
 
         {upcoming.length > 0 && (
           <Card title="Recorrentes a caminho" aside={`próximos ${UPCOMING_DAYS} dias`}>
@@ -425,7 +480,7 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
             </span>
             <span class="min-w-0">
               <span class="block text-[15px] font-medium">
-                {formatBRL(cashback.totalMinor)} de cashback
+                {brl(cashback.totalMinor)} de cashback
               </span>
               <span class="mt-0.5 block text-xs text-fg/55">
                 Em {monthWord(month)} · {cashback.purchases}{" "}
@@ -435,6 +490,15 @@ export function DashboardPage({ items, state, today, onGoHome }: DashboardPagePr
           </section>
         )}
       </div>
+      <DaySheet
+        date={pickedDay}
+        items={pickedDay === null ? [] : expensesOn(items, pickedDay, state)}
+        state={state}
+        today={today}
+        currentUserId={currentUserId}
+        onEdit={(record) => onEdit?.(record)}
+        onClose={() => setPickedDay(null)}
+      />
     </section>
   );
 }

@@ -77,7 +77,7 @@ function pickFile() {
 }
 
 function renderSheet(readPdf: ReadPdf, state = stateWith()) {
-  const onImport = vi.fn().mockResolvedValue({ transactions: 3, series: 1 });
+  const onImport = vi.fn().mockResolvedValue({ transactions: 3, series: 1, confirmed: 0 });
   const onClose = vi.fn();
   render(
     <ImportSheet
@@ -156,7 +156,7 @@ describe("ImportSheet", () => {
   });
 
   it("linha já importada vem travada e desmarcada", async () => {
-    const entries = parseStatement(LINES, "card", "2026-10");
+    const entries = parseStatement(LINES, "card", "2026-10").entries;
     const [firstId] = identify(entries, { paymentMethodId: CARD.id, referenceMonth: "2026-10" });
     if (firstId === undefined) throw new Error("sem id");
     const state = stateWith({
@@ -204,7 +204,7 @@ describe("ImportSheet", () => {
   });
 
   it("linha que já confirmou uma estimativa conta como importada", async () => {
-    const entries = parseStatement(LINES, "card", "2026-10");
+    const entries = parseStatement(LINES, "card", "2026-10").entries;
     const [firstId] = identify(entries, { paymentMethodId: CARD.id, referenceMonth: "2026-10" });
     const state = stateWith({
       transactions: { [PAST.id]: PAST, CONF: { ...PAST, id: "CONF", importKey: firstId } },
@@ -214,6 +214,57 @@ describe("ImportSheet", () => {
 
     const box = (await screen.findByLabelText("Importar IFOOD *RESTAURANTE")) as HTMLInputElement;
     expect(box.disabled).toBe(true);
+  });
+
+  it("resumo final conta importadas, já existentes e não interpretadas com o motivo", async () => {
+    const lines = [...LINES, "99/99 LOJA QUEBRADA 10,00", "12/09 SEM VALOR AQUI"];
+    const entries = parseStatement(lines, "card", "2026-10").entries;
+    const [firstId] = identify(entries, { paymentMethodId: CARD.id, referenceMonth: "2026-10" });
+    if (firstId === undefined) throw new Error("sem id");
+    const state = stateWith({
+      transactions: { [PAST.id]: PAST, [firstId]: { ...PAST, id: firstId } },
+    });
+    const { onImport } = renderSheet(() => Promise.resolve(itemsOf(lines)), state);
+    onImport.mockResolvedValue({ transactions: 1, series: 0, confirmed: 0 });
+    pickFile();
+
+    await screen.findByRole("list", { name: "Lançamentos encontrados" });
+    fireEvent.click(screen.getByRole("button", { name: /^Importar/ }));
+
+    const summary = await screen.findByLabelText("Resumo da importação");
+    expect(summary.textContent).toContain("Importadas1");
+    expect(summary.textContent).toContain("Já existiam1");
+    expect(summary.textContent).toContain("Não interpretadas2");
+    const unread = screen.getByRole("list", { name: "Linhas não interpretadas" });
+    expect(unread.textContent).toContain("99/99 LOJA QUEBRADA 10,00");
+    expect(unread.textContent).toContain("Data inválida");
+    expect(unread.textContent).toContain("12/09 SEM VALOR AQUI");
+    expect(unread.textContent).toContain("Sem valor");
+  });
+
+  it("reimportar o mesmo arquivo mostra tudo como já existia", async () => {
+    const entries = parseStatement(LINES, "card", "2026-10").entries;
+    const ids = identify(entries, { paymentMethodId: CARD.id, referenceMonth: "2026-10" });
+    const state = stateWith({
+      transactions: {
+        [PAST.id]: PAST,
+        ...Object.fromEntries(ids.map((id) => [id, { ...PAST, id }])),
+      },
+    });
+    const { onImport } = renderSheet(() => Promise.resolve(itemsOf(LINES)), state);
+    onImport.mockResolvedValue({ transactions: 0, series: 0, confirmed: 0 });
+    pickFile();
+
+    await screen.findByRole("list", { name: "Lançamentos encontrados" });
+    fireEvent.click(screen.getByRole("button", { name: "Ver resumo" }));
+
+    const summary = await screen.findByLabelText("Resumo da importação");
+    expect(summary.textContent).toContain("Importadas0");
+    expect(summary.textContent).toContain("Já existiam3");
+    expect(summary.textContent).toContain("Não interpretadas0");
+    const plan = onImport.mock.calls[0]?.[0];
+    expect(plan.transactions).toHaveLength(0);
+    expect(plan.series).toHaveLength(0);
   });
 
   it("PDF sem texto avisa que parece escaneado", async () => {

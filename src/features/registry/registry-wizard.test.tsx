@@ -248,14 +248,14 @@ describe("forma de pagamento", () => {
   it("oferece o tipo na primeira etapa e o inclui no draft", () => {
     const { onSubmit } = montar({ entity: "paymentMethod" });
 
-    digitarNome("Nubank");
-    fireEvent.click(screen.getByRole("radio", { name: "Crédito" }));
+    digitarNome("Vale refeição");
+    fireEvent.click(screen.getByRole("radio", { name: "Débito" }));
     continuar();
     continuar();
     salvar();
 
     expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Nubank", kind: "credit" }),
+      expect.objectContaining({ name: "Vale refeição", kind: "debit" }),
     );
   });
 
@@ -303,5 +303,210 @@ describe("prévia na etapa de cor", () => {
     // A previa e um lancamento de exemplo com a categoria escolhida.
     expect(screen.getByText("Farmacia · Pix")).toBeDefined();
     expect(screen.getByTestId("icon-pill")).toBeDefined();
+  });
+});
+
+function preencherCartao(banco: string, fechamento: string, vencimento: string) {
+  fireEvent.input(screen.getByLabelText("Banco"), { target: { value: banco } });
+  fireEvent.input(screen.getByLabelText("Fechamento"), { target: { value: fechamento } });
+  fireEvent.input(screen.getByLabelText("Vencimento"), { target: { value: vencimento } });
+}
+
+function escolherCredito() {
+  fireEvent.click(screen.getByRole("radio", { name: "Crédito" }));
+}
+
+describe("cartão de crédito", () => {
+  it("só crédito ganha a etapa de dados do cartão", () => {
+    montar({ entity: "paymentMethod" });
+    expect(screen.queryByRole("button", { name: "Cartão" })).toBeNull();
+
+    escolherCredito();
+    expect(screen.getByRole("button", { name: "Cartão" })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Pix" }));
+    expect(screen.queryByRole("button", { name: "Cartão" })).toBeNull();
+  });
+
+  it("crédito não tem a etapa de ícone: Nome, Cartão e Cor", () => {
+    montar({ entity: "paymentMethod" });
+    expect(screen.getByRole("button", { name: /Ícone/ })).toBeDefined();
+
+    escolherCredito();
+
+    expect(screen.queryByRole("button", { name: /Ícone/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Cartão" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Cor" })).toBeDefined();
+  });
+
+  it("outros tipos continuam com a etapa de ícone", () => {
+    montar({ entity: "paymentMethod" });
+    fireEvent.click(screen.getByRole("radio", { name: "Pix" }));
+
+    expect(screen.getByRole("button", { name: /Ícone/ })).toBeDefined();
+    digitarNome("Pix");
+    continuar();
+    expect(screen.getByRole("radio", { name: "pill" })).toBeDefined();
+  });
+
+  it("cartão novo grava o ícone padrão sem pedir escolha", () => {
+    const { onSubmit } = montar({ entity: "paymentMethod" });
+    escolherCredito();
+    continuar();
+    preencherCartao("Inter", "10", "20");
+    continuar();
+    salvar();
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ icon: "credit-card" }));
+  });
+
+  it("cartão em edição mantém o ícone que já tinha", () => {
+    const antigo: PaymentMethod = {
+      ...METODO,
+      icon: "pill",
+      bank: "Nubank",
+      closingDay: 5,
+      dueDay: 12,
+    };
+    const { onSubmit } = montar({ entity: "paymentMethod", editing: antigo });
+    continuar();
+    continuar();
+    salvar();
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ icon: "pill" }));
+  });
+
+  it("a prévia do cartão mostra só a cor, sem tile de ícone", () => {
+    montar({ entity: "paymentMethod" });
+    escolherCredito();
+    continuar();
+    preencherCartao("Inter", "10", "20");
+    continuar();
+
+    expect(screen.getByTestId("card-mark")).toBeDefined();
+  });
+
+  it("grava banco, fechamento e vencimento no draft", () => {
+    const { onSubmit } = montar({ entity: "paymentMethod" });
+
+    digitarNome("Nubank roxo");
+    escolherCredito();
+    continuar();
+    preencherCartao("Nubank", "5", "12");
+    continuar();
+    salvar();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Nubank roxo",
+        kind: "credit",
+        bank: "Nubank",
+        closingDay: 5,
+        dueDay: 12,
+      }),
+    );
+  });
+
+  it("sem nome digitado, o nome do cartão é o banco", () => {
+    const { onSubmit } = montar({ entity: "paymentMethod" });
+
+    escolherCredito();
+    continuar();
+    preencherCartao("Inter", "10", "20");
+    continuar();
+    salvar();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Inter", bank: "Inter" }),
+    );
+  });
+
+  it("não deixa sair da etapa sem banco, nem com dia fora de 1 a 31", () => {
+    const { onSubmit } = montar({ entity: "paymentMethod" });
+    escolherCredito();
+    continuar();
+
+    continuar();
+    expect(screen.getByRole("alert").textContent).toMatch(/banco/i);
+
+    preencherCartao("Inter", "32", "10");
+    continuar();
+    expect(screen.getByRole("alert").textContent).toMatch(/fechamento/i);
+
+    preencherCartao("Inter", "10", "0");
+    continuar();
+    expect(screen.getByRole("alert").textContent).toMatch(/vencimento/i);
+
+    expect(screen.getByLabelText("Banco")).toBeDefined();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("os campos de dia aceitam só dígitos", () => {
+    montar({ entity: "paymentMethod" });
+    escolherCredito();
+    continuar();
+
+    fireEvent.input(screen.getByLabelText("Fechamento"), { target: { value: "1a5" } });
+
+    expect((screen.getByLabelText("Fechamento") as HTMLInputElement).value).toBe("15");
+  });
+
+  it("a duplicata vale para o nome efetivo, o banco quando o nome está em branco", () => {
+    montar({ entity: "paymentMethod", existingNames: ["Inter"] });
+    escolherCredito();
+    continuar();
+    preencherCartao("inter", "10", "20");
+
+    continuar();
+
+    expect(screen.getByRole("alert").textContent).toMatch(/ja existe/i);
+  });
+
+  it("a prévia mostra o ciclo do cartão", () => {
+    montar({ entity: "paymentMethod" });
+    escolherCredito();
+    continuar();
+    preencherCartao("Nubank", "5", "12");
+    continuar();
+
+    expect(screen.getByTestId("card-preview").textContent).toContain("Fecha dia 5 · vence dia 12");
+  });
+
+  it("cartão antigo, sem os dados, pede que sejam preenchidos ao editar", () => {
+    const { onSubmit } = montar({ entity: "paymentMethod", editing: METODO });
+
+    continuar();
+    continuar();
+    expect(screen.getByRole("alert").textContent).toMatch(/banco/i);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("trocar para outro tipo limpa os dados do cartão gravados", () => {
+    const completo: PaymentMethod = {
+      ...METODO,
+      bank: "Nubank",
+      closingDay: 5,
+      dueDay: 12,
+    };
+    const { onSubmit } = montar({ entity: "paymentMethod", editing: completo });
+
+    fireEvent.click(screen.getByRole("radio", { name: "Débito" }));
+    continuar();
+    continuar();
+    salvar();
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "debit", bank: null, closingDay: null, dueDay: null }),
+    );
+  });
+
+  it("forma que não é crédito não carrega campos de cartão no draft", () => {
+    const { onSubmit } = montar({ entity: "paymentMethod" });
+
+    ateACor("Vale refeicao");
+    salvar();
+
+    const draft = onSubmit.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect("bank" in draft).toBe(false);
   });
 });

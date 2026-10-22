@@ -1,5 +1,5 @@
 import type { Reserve } from "../../domain/model/reserve";
-import { maskDigits, onlyDigits } from "../../domain/money/mask";
+import { digitsOf, maskDigits } from "../../domain/money/mask";
 import { Icon } from "../icons/icon";
 import { LABEL } from "../ui/field";
 
@@ -37,7 +37,7 @@ export function AmountField({
           placeholder="0,00"
           aria-describedby={describedBy}
           value={maskDigits(digits)}
-          onInput={(event) => onDigits(onlyDigits(event.currentTarget.value))}
+          onInput={(event) => onDigits(digitsOf(event.currentTarget))}
           class="min-w-0 flex-1 bg-transparent text-[40px] leading-[48px] font-medium
             tracking-[-0.02em] caret-accent outline-none placeholder:text-fg/30"
         />

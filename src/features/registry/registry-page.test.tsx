@@ -422,3 +422,63 @@ describe("RegistryPage", () => {
     expect(screen.getAllByText("cashback")).toHaveLength(1);
   });
 });
+
+describe("RegistryPage: cadastro rápido de cartão", () => {
+  function abrirPagamentos() {
+    const store = fakeStore();
+    render(
+      <RegistryPage
+        entity="paymentMethod"
+        state={stateWith({})}
+        items={[]}
+        today="2026-10-10"
+        store={store}
+        onBack={vi.fn()}
+      />,
+    );
+    return store;
+  }
+
+  it("Formas de pagamento tem o botão, e Categorias não", () => {
+    abrirPagamentos();
+    expect(screen.getByRole("button", { name: "Novo cartão de crédito" })).toBeDefined();
+
+    cleanup();
+    render(
+      <RegistryPage
+        entity="category"
+        state={stateWith({})}
+        items={[]}
+        today="2026-10-10"
+        store={fakeStore()}
+        onBack={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Novo cartão de crédito" })).toBeNull();
+  });
+
+  it("salva pela mesma escrita do cadastro normal", async () => {
+    const store = abrirPagamentos();
+    fireEvent.click(screen.getByRole("button", { name: "Novo cartão de crédito" }));
+    fireEvent.input(screen.getByLabelText("Banco"), { target: { value: "Inter" } });
+    fireEvent.input(screen.getByLabelText("Fechamento"), { target: { value: "10" } });
+    fireEvent.input(screen.getByLabelText("Vencimento"), { target: { value: "20" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar cartão" }));
+
+    await vi.waitFor(() => expect(store.addPaymentMethod).toHaveBeenCalledTimes(1));
+    expect(store.addPaymentMethod).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "credit", name: "Inter", bank: "Inter", closingDay: 10 }),
+    );
+  });
+
+  it("cancelar não grava nada", () => {
+    const store = abrirPagamentos();
+    fireEvent.click(screen.getByRole("button", { name: "Novo cartão de crédito" }));
+    fireEvent.input(screen.getByLabelText("Banco"), { target: { value: "Inter" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
+
+    expect(store.addPaymentMethod).not.toHaveBeenCalled();
+  });
+});
