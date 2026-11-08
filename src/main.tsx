@@ -130,6 +130,9 @@ const sync = createSyncStore({
     // A falha de uma (já em `session.error`) não pode impedir as seguintes.
     await registry.mergeLegacyDefaults().catch(ignoreHandled);
     await recurrence.materializeDue(today).catch(ignoreHandled);
+    // O pull pode trazer meses gerados por um aparelho ainda na versão que
+    // carimbava o próprio usuário: voltam para o autor da série.
+    await recurrence.repairAuthors().catch(ignoreHandled);
     await reserves.materializeDue(today);
   },
 });

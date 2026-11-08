@@ -48,6 +48,7 @@ export const HELP_STRUCTURE: readonly HelpEntryShape[] = [
   { id: "start-category-suggestion", topic: "start" },
   { id: "start-apply-similar", topic: "start" },
   { id: "recurrence-create", topic: "recurrence" },
+  { id: "recurrence-installments", topic: "recurrence" },
   { id: "recurrence-variable", topic: "recurrence" },
   { id: "recurrence-adjust", topic: "recurrence" },
   { id: "states-estimated", topic: "states" },
@@ -111,8 +112,15 @@ export const HELP_TEXT_PT: Record<string, HelpText> = {
   "recurrence-create": {
     question: "Como faço um lançamento se repetir todo mês?",
     answer: [
-      "Ao lançar, ligue Repetir este lançamento. Escolha a frequência (semanal, quinzenal, mensal ou anual). Em mensal e anual, escolha o dia: um dia fixo do mês ou o enésimo dia útil. Dia útil considera segunda a sexta, sem feriados. Dá para definir uma data final.",
+      "Ao lançar, no último passo (Repetir), escolha Repete. Escolha a frequência (semanal, quinzenal, mensal ou anual). Em mensal e anual, escolha o dia: um dia fixo do mês ou o enésimo dia útil. Dia útil considera segunda a sexta, sem feriados. Dá para definir uma data final.",
       "O app gera as ocorrências sozinho a cada mês, inclusive as que ficaram para trás se você passou um tempo sem abrir.",
+    ],
+  },
+  "recurrence-installments": {
+    question: "Como lanço uma compra parcelada no cartão?",
+    answer: [
+      "Lance a compra com o valor total. No último passo (Repetir), escolha Parcelado e diga em quantas vezes. O app mostra o valor de cada parcela e as datas, e cria uma série mensal que termina na última parcela.",
+      "Quando a divisão não fecha nos centavos, a sobra fica na primeira parcela, como fazem os bancos: R$ 100,00 em 3x vira R$ 33,34 + R$ 33,33 + R$ 33,33.",
     ],
   },
   "recurrence-variable": {

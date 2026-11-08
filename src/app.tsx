@@ -257,7 +257,12 @@ export function App({
       .then(() => reserves.materializeDue(today).catch(ignoreHandled))
       .then(() => setBooted(true))
       .then(() => sync.init())
-      .then(() => sync.sync({ auto: true }))
+      .then(() => sync.sync({ auto: true }).catch(ignoreHandled))
+      // Ocorrências que nasceram com o autor do aparelho (versões anteriores à
+      // coluna `userId` na série) voltam para quem criou a série. Depois do
+      // sync, e não antes: com dados parciais o autor deduzido poderia sair
+      // errado, e uma vez gravado na série ele não é mais deduzido.
+      .then(() => recurrence.repairAuthors().catch(ignoreHandled))
       .catch(ignoreHandled);
   }, [session, registry, recurrence, reserves, sync, cards, today]);
 

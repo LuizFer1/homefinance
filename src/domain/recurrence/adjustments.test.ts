@@ -56,6 +56,31 @@ describe("amountFor", () => {
     const lista = [ajuste("2027-01", 350_000, { recurrenceId: "OUTRA" })];
     expect(amountFor(SERIE, lista, "2027-06")).toBe(300_000);
   });
+
+  describe("1ª parcela com a sobra", () => {
+    const PARCELADA = {
+      id: "SERIE-1",
+      amountMinor: 3_333,
+      firstAmountMinor: 3_334,
+      startOn: "2026-11-15",
+      frequency: "monthly" as const,
+    };
+
+    it("vale só na competência inicial", () => {
+      expect(amountFor(PARCELADA, [], "2026-11")).toBe(3_334);
+      expect(amountFor(PARCELADA, [], "2026-12")).toBe(3_333);
+    });
+
+    it("reajuste que cobre a competência inicial vence", () => {
+      expect(amountFor(PARCELADA, [ajuste("2026-11", 5_000)], "2026-11")).toBe(5_000);
+    });
+
+    it("valor inválido vindo do sync degrada para o valor-base", () => {
+      expect(amountFor({ ...PARCELADA, firstAmountMinor: 0 }, [], "2026-11")).toBe(3_333);
+      expect(amountFor({ ...PARCELADA, firstAmountMinor: 1.5 }, [], "2026-11")).toBe(3_333);
+      expect(amountFor({ ...PARCELADA, firstAmountMinor: null }, [], "2026-11")).toBe(3_333);
+    });
+  });
 });
 
 describe("adjustmentsOf", () => {

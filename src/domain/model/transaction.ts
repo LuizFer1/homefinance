@@ -15,7 +15,11 @@ export interface Transaction extends BaseRow {
   cashbackMinor: number | null;
   /** Data do fato, 'YYYY-MM-DD'. Não confundir com `updatedAt`. */
   occurredOn: string;
-  /** Autor. Decidido pela store no create; nenhum update o reescreve. */
+  /**
+   * Autor. Decidido pela store no create; nenhuma edição o reescreve. Ocorrência
+   * de série herda o autor da série, e `planAuthorRepair` é a única exceção à
+   * regra: só move o autor de uma ocorrência para o da série dela.
+   */
   userId: Ulid | null;
   recurrenceId: Ulid | null;
   /** `${recurrenceId}:${YYYY-MM}`, ou null para lançamento avulso. */
