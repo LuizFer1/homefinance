@@ -182,7 +182,9 @@ export function TransactionWizard({
   );
   // Série só na criação: editar ocorrência materializada não reescreve a regra.
   const [repeatMode, setRepeatMode] = useState<RepeatMode>("once");
-  const [installments, setInstallments] = useState(MIN_INSTALLMENTS);
+  // Texto cru, como o `scheduleN` do dia: guardar o número já limitado faria o
+  // "1" de "10" virar "2" no meio da digitação.
+  const [installmentsText, setInstallmentsText] = useState(String(MIN_INSTALLMENTS));
   const [frequency, setFrequency] = useState<RecurrenceFrequency>("monthly");
   const [scheduleType, setScheduleType] = useState<ScheduleType>("dayOfMonth");
   const [scheduleN, setScheduleN] = useState(() => Number(occurredOn.slice(8, 10)) || 1);
@@ -288,7 +290,10 @@ export function TransactionWizard({
   // Mudar o valor depois de escolher as vezes não pode deixar parcela de zero
   // centavo: o número efetivo é limitado pelo total, sem apagar a escolha.
   const maxInstallments = maxInstallmentsFor(amountMinor);
-  const installmentCount = Math.min(maxInstallments, Math.max(MIN_INSTALLMENTS, installments));
+  const installmentCount = Math.min(
+    maxInstallments,
+    Math.max(MIN_INSTALLMENTS, Math.trunc(Number(installmentsText)) || MIN_INSTALLMENTS),
+  );
   const parcelled = canConfigureRecurrence && repeatMode === "installments";
   const canSplit = amountMinor >= MIN_INSTALLMENTS;
   const split = canSplit ? splitInstallments(amountMinor, installmentCount) : null;
@@ -602,10 +607,11 @@ export function TransactionWizard({
             {repeatMode === "installments" && (
               <InstallmentFields
                 count={installmentCount}
+                text={installmentsText}
                 max={maxInstallments}
                 split={split}
                 firstOn={occurredOn}
-                onCount={setInstallments}
+                onText={setInstallmentsText}
               />
             )}
 
@@ -1006,11 +1012,13 @@ interface InstallmentFieldsProps {
   split: { amountMinor: number; firstAmountMinor: number } | null;
   /** Data da compra, que é a da 1ª parcela. */
   firstOn: string;
-  onCount: (count: number) => void;
+  /** O que está no campo, ainda sem limite (pode estar vazio no meio da digitação). */
+  text: string;
+  onText: (text: string) => void;
 }
 
 /** Quantas vezes, quanto fica cada parcela e quando elas caem. */
-function InstallmentFields({ count, max, split, firstOn, onCount }: InstallmentFieldsProps) {
+function InstallmentFields({ count, text, max, split, firstOn, onText }: InstallmentFieldsProps) {
   if (split === null) {
     return <p class={`${HINT} mt-5`}>Valor pequeno demais para parcelar.</p>;
   }
@@ -1033,7 +1041,7 @@ function InstallmentFields({ count, max, split, firstOn, onCount }: InstallmentF
             type="button"
             aria-label="Menos parcelas"
             disabled={count <= MIN_INSTALLMENTS}
-            onClick={() => onCount(Math.max(MIN_INSTALLMENTS, count - 1))}
+            onClick={() => onText(String(Math.max(MIN_INSTALLMENTS, count - 1)))}
             class="hf-press grid h-full w-12 place-items-center text-fg/70 disabled:opacity-40"
           >
             <Icon name="minus" size={16} />
@@ -1046,14 +1054,16 @@ function InstallmentFields({ count, max, split, firstOn, onCount }: InstallmentF
             inputMode="numeric"
             class="hf-num w-full min-w-0 appearance-none bg-transparent text-center text-base
               outline-none [&::-webkit-inner-spin-button]:appearance-none"
-            value={count}
-            onInput={(event) => onCount(Number(event.currentTarget.value) || MIN_INSTALLMENTS)}
+            value={text}
+            onInput={(event) => onText(event.currentTarget.value.replace(/\D/g, "").slice(0, 3))}
+            // Ao sair do campo ele mostra o número que vale (vazio vira 2, 99 vira 48).
+            onBlur={() => onText(String(count))}
           />
           <button
             type="button"
             aria-label="Mais parcelas"
             disabled={count >= max}
-            onClick={() => onCount(Math.min(max, count + 1))}
+            onClick={() => onText(String(Math.min(max, count + 1)))}
             class="hf-press grid h-full w-12 place-items-center text-fg/70 disabled:opacity-40"
           >
             <Icon name="plus" size={16} />

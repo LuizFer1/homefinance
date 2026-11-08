@@ -884,6 +884,29 @@ describe("parcelado", () => {
     );
   });
 
+  it("digitar 10 dígito a dígito não pula para outro número", () => {
+    const { onSubmit } = abrirParcelado();
+    const campo = screen.getByLabelText("Em quantas vezes") as HTMLInputElement;
+    fireEvent.input(campo, { target: { value: "" } });
+    fireEvent.input(campo, { target: { value: "1" } });
+    expect(campo.value).toBe("1");
+    fireEvent.input(campo, { target: { value: "10" } });
+    expect(campo.value).toBe("10");
+    fireEvent.click(screen.getByRole("button", { name: /Lançar 10x de R\$\s10,00/ }));
+    expect(onSubmit.mock.calls[0]?.[1]).toMatchObject({ installments: 10 });
+  });
+
+  it("ao sair do campo ele mostra o número que vale", () => {
+    abrirParcelado();
+    const campo = screen.getByLabelText("Em quantas vezes") as HTMLInputElement;
+    fireEvent.input(campo, { target: { value: "99" } });
+    fireEvent.blur(campo);
+    expect(campo.value).toBe("48");
+    fireEvent.input(campo, { target: { value: "" } });
+    fireEvent.blur(campo);
+    expect(campo.value).toBe("2");
+  });
+
   it("muitas parcelas mostram as primeiras e a última", () => {
     abrirParcelado();
     fireEvent.input(screen.getByLabelText("Em quantas vezes"), { target: { value: "12" } });
