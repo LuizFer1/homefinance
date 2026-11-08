@@ -254,6 +254,9 @@ export function App({
       .then(() => cards.init())
       .then(() => registry.mergeLegacyDefaults().catch(ignoreHandled))
       .then(() => recurrence.materializeDue(today).catch(ignoreHandled))
+      // Ocorrências que nasceram com o autor do aparelho (versões anteriores à
+      // coluna `userId` na série) voltam para quem criou a série.
+      .then(() => recurrence.repairAuthors().catch(ignoreHandled))
       .then(() => reserves.materializeDue(today).catch(ignoreHandled))
       .then(() => setBooted(true))
       .then(() => sync.init())

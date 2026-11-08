@@ -18,6 +18,7 @@ import type { PaymentMethod } from "../domain/model/payment-method";
 import { movement, reserve } from "../domain/reserves/fixtures.fake";
 import { createBudgetsStore } from "../features/budgets/store";
 import { createCardsStore } from "../features/cards/store";
+import { createRecurrenceStore } from "../features/recurrence/store";
 import { createRegistryStore, type RegistryStore } from "../features/registry/store";
 import { createSession, type Session } from "../features/session/session";
 import { createSyncStore, type SyncStore } from "../features/sync/store";
@@ -446,5 +447,59 @@ describe("migração de cartões entre dois aparelhos", () => {
     await a.sync.sync();
     await b.sync.sync();
     expect(hub.maxSeq()).toBe(seq);
+  });
+});
+
+describe("autoria de série entre dois aparelhos", () => {
+  const ANA = "01J9F3K2M7QX8YB4TVWZ0DCAN1";
+  const BIA = "01J9F3K2M7QX8YB4TVWZ0DCB11";
+
+  it("o mês gerado no aparelho de outra pessoa sai com o autor da série, nos dois", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+    a.session.localUserId.value = ANA;
+    b.session.localUserId.value = BIA;
+
+    await createRecurrenceStore(a.session).createSeries(
+      {
+        kind: "expense",
+        description: "Geladeira",
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn: "2026-06-15",
+        recurrenceId: null,
+        occurrenceKey: null,
+      },
+      {
+        frequency: "monthly",
+        scheduleType: "dayOfMonth",
+        scheduleN: 15,
+        endOn: null,
+        variable: false,
+        installments: 3,
+      },
+      "2026-06-20",
+    );
+    await a.sync.sync();
+    await b.sync.sync();
+    // B abre o app em agosto: gera julho e agosto.
+    await createRecurrenceStore(b.session).materializeDue("2026-08-20");
+    await b.sync.sync();
+    await a.sync.sync();
+
+    for (const d of [a, b]) {
+      const parcelas = Object.values(d.session.state.value.transactions)
+        .sort((x, y) => x.occurredOn.localeCompare(y.occurredOn))
+        .map((t) => [t.occurredOn, t.amountMinor, t.userId]);
+      expect(parcelas).toEqual([
+        ["2026-06-15", 3_334, ANA],
+        ["2026-07-15", 3_333, ANA],
+        ["2026-08-15", 3_333, ANA],
+      ]);
+    }
   });
 });

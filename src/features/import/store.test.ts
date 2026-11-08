@@ -56,6 +56,10 @@ describe("createImportStore", () => {
       "2026-09-15 LOJA (10x)",
     ]);
     expect(alive().every((t) => t.userId === "AUTOR-1")).toBe(true);
+    // A série guarda o autor: a parcela que nascer noutro aparelho herda dele.
+    expect(Object.values(session.state.value.recurrences).map((r) => r.userId)).toEqual([
+      "AUTOR-1",
+    ]);
   });
 
   it("reimportar o mesmo PDF não duplica", async () => {
