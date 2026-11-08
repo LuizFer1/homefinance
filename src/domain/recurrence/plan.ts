@@ -3,6 +3,7 @@ import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import type { TransactionDraft } from "../model/transaction";
 import { amountFor } from "./adjustments";
+import { earliestOccurrenceAuthors, seriesAuthor } from "./author";
 import { estimateFor } from "./estimate";
 import { eachPeriod, occurrenceKey, occurrenceOn } from "./schedule";
 
@@ -16,6 +17,11 @@ export interface OccurrencePlan {
    * esta geração no LWW por linha, por mais tarde que ela aconteça.
    */
   anchored: boolean;
+  /**
+   * Autor da série (gravado ou deduzido, ver `seriesAuthor`). `null` só quando
+   * não há como saber; aí quem materializa usa o usuário do aparelho.
+   */
+  userId: Ulid | null;
 }
 
 /**
@@ -31,11 +37,13 @@ export function planOccurrences(state: AppState, today: string): OccurrencePlan[
 
   const adjustments = Object.values(state.recurrenceAdjustments);
   const transactions = Object.values(state.transactions);
+  const earliest = earliestOccurrenceAuthors(transactions);
 
   for (const series of Object.values(state.recurrences)) {
     if (series.deletedAt !== null || !series.active) continue;
     if (series.startOn === "" || series.startOn > today) continue;
 
+    const userId = seriesAuthor(series, earliest);
     const until = series.endOn !== null && series.endOn < today ? series.endOn : today;
 
     for (const period of eachPeriod(series.startOn, until, series.frequency)) {
@@ -54,6 +62,7 @@ export function planOccurrences(state: AppState, today: string): OccurrencePlan[
       plans.push({
         entityId,
         anchored: variable,
+        userId,
         draft: {
           kind: series.kind,
           description: series.description,
