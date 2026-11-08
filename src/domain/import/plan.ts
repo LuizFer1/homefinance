@@ -4,6 +4,7 @@ import { stableEntityId } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { RecurrenceDraft } from "../model/recurrence";
 import type { TransactionDraft } from "../model/transaction";
+import { installmentDescription, installmentRule } from "../recurrence/installments";
 import type { ParsedEntry } from "./parse";
 import { normalizeDescription } from "./suggest-category";
 
@@ -135,22 +136,24 @@ export function planImport(entries: readonly ReviewedEntry[], ctx: ImportContext
     seriesIds.add(id);
     const { n, k } = entry.installment;
     const anchor = installmentAnchor(entry.date, k, ctx.referenceMonth);
-    const day = Number(anchor.slice(8, 10));
+    // A mesma regra do parcelamento feito no formulário: as duas origens têm de
+    // gerar a mesma série para a mesma compra.
+    const rule = installmentRule(anchor, n);
     plan.series.push({
       id,
       draft: {
         kind: entry.kind,
-        description: `${description} (${n}x)`,
+        description: installmentDescription(description, n),
         amountMinor: entry.amountMinor,
         currency: "BRL",
         categoryId: entry.categoryId,
         paymentMethodId: ctx.paymentMethodId,
         cashbackMinor: null,
-        frequency: "monthly",
-        scheduleType: "dayOfMonth",
-        scheduleN: day,
+        frequency: rule.frequency,
+        scheduleType: rule.scheduleType,
+        scheduleN: rule.scheduleN,
         startOn: anchor,
-        endOn: dayOfMonthClamped(shiftMonth(anchor.slice(0, 7), n - 1), day),
+        endOn: rule.endOn,
         active: true,
       },
     });

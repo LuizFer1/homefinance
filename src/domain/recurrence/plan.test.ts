@@ -278,4 +278,28 @@ describe("planOccurrences semanal e quinzenal", () => {
 
     expect(planOccurrences(stateWith(futura), "2026-10-30")).toEqual([]);
   });
+  it("ocorrência nasce com o autor da série, não com o do aparelho", () => {
+    const plans = planOccurrences(stateWith({ ...SALARIO, userId: "ANA" }), "2026-07-10");
+    expect(plans.map((p) => p.userId)).toEqual(["ANA", "ANA"]);
+  });
+
+  it("série antiga sem autor usa o da 1ª ocorrência; sem nenhuma pista, null", () => {
+    const junho = { ...occurrenceOf(SALARIO, "2026-06", "2026-06-05"), userId: "ANA" };
+    const plans = planOccurrences(stateWith(SALARIO, [junho]), "2026-07-10");
+    expect(plans.map((p) => p.userId)).toEqual(["ANA"]);
+
+    expect(planOccurrences(stateWith(SALARIO), "2026-06-10")[0]?.userId).toBeNull();
+  });
+
+  it("1ª parcela nasce com a sobra de centavos e as seguintes com a base", () => {
+    const parcelada: Recurrence = {
+      ...SALARIO,
+      kind: "expense",
+      amountMinor: 3_333,
+      firstAmountMinor: 3_334,
+      endOn: "2026-08-05",
+    };
+    const plans = planOccurrences(stateWith(parcelada), "2026-12-01");
+    expect(plans.map((p) => p.draft.amountMinor)).toEqual([3_334, 3_333, 3_333]);
+  });
 });

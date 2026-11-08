@@ -442,3 +442,95 @@ describe("série variável", () => {
     expect(await db.recurrenceAdjustments.count()).toBe(0);
   });
 });
+
+describe("parcelamento", () => {
+  const COMPRA: TransactionDraft = {
+    ...DRAFT,
+    kind: "expense",
+    description: "Geladeira",
+    amountMinor: 10_000,
+    occurredOn: "2026-06-15",
+  };
+
+  it("divide o total, põe a sobra na 1ª parcela e termina na última", async () => {
+    await store.createSeries(COMPRA, { ...MENSAL, installments: 3 }, "2026-12-01");
+
+    const serie = onlySeries();
+    expect(serie).toMatchObject({
+      description: "Geladeira (3x)",
+      amountMinor: 3_333,
+      firstAmountMinor: 3_334,
+      userId: "AUTOR-1",
+    });
+    expect(
+      alive()
+        .sort((a, b) => a.occurredOn.localeCompare(b.occurredOn))
+        .map((t) => [t.occurredOn, t.amountMinor]),
+    ).toEqual([
+      ["2026-06-15", 3_334],
+      ["2026-07-15", 3_333],
+      ["2026-08-15", 3_333],
+    ]);
+  });
+
+  it("divisão exata não grava firstAmountMinor", async () => {
+    await store.createSeries(COMPRA, { ...MENSAL, installments: 2 }, "2026-06-20");
+    expect(onlySeries().amountMinor).toBe(5_000);
+    expect(onlySeries()).not.toHaveProperty("firstAmountMinor");
+  });
+});
+
+describe("autoria", () => {
+  it("o mês gerado no aparelho de outra pessoa sai com o autor da série", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-06-10");
+    session.localUserId.value = "AUTOR-2";
+
+    await store.materializeDue("2026-08-10");
+
+    expect(alive().map((t) => t.userId)).toEqual(["AUTOR-1", "AUTOR-1", "AUTOR-1"]);
+  });
+
+  it("editSeries não troca o autor, nem com userId contrabandeado no draft", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-06-10");
+    const serie = onlySeries();
+    const draft = { ...draftOf(serie), description: "Salário novo", userId: "INTRUSO" };
+
+    await store.editSeries(serie.id, draft as RecurrenceDraft);
+
+    expect(onlySeries()).toMatchObject({ description: "Salário novo", userId: "AUTOR-1" });
+  });
+
+  it("repairAuthors corrige série antiga e meses de outro aparelho, e é idempotente", async () => {
+    // Formato antigo: série sem autor, junho gerado por quem criou, julho pelo outro.
+    await session.mutate("recurrences", (repo) => repo.create(mensalDraft(), "SERIE-ANTIGA"));
+    await store.materializeDue("2026-06-10");
+    session.localUserId.value = "AUTOR-2";
+    const julhoId = stableEntityId(occurrenceKey("SERIE-ANTIGA", "2026-07"));
+    const junho = alive()[0];
+    if (junho === undefined) throw new Error("junho não materializou");
+    await session.putRows({
+      transactions: [
+        {
+          ...junho,
+          id: julhoId,
+          occurredOn: "2026-07-05",
+          occurrenceKey: occurrenceKey("SERIE-ANTIGA", "2026-07"),
+          userId: "AUTOR-2",
+        },
+      ],
+    });
+
+    await store.repairAuthors();
+
+    expect(session.state.value.recurrences["SERIE-ANTIGA"]?.userId).toBe("AUTOR-1");
+    expect(session.state.value.transactions[julhoId]).toMatchObject({
+      userId: "AUTOR-1",
+      dirty: 1,
+    });
+    expect((await db.transactions.get(julhoId))?.userId).toBe("AUTOR-1");
+
+    const antes = session.state.value;
+    await store.repairAuthors();
+    expect(session.state.value).toBe(antes);
+  });
+});

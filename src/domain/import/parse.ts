@@ -1,5 +1,6 @@
 import { lastDayOfMonth } from "../dates/business-day";
 import type { TransactionKind } from "../model/transaction";
+import { MAX_INSTALLMENTS } from "../recurrence/installments";
 
 /** `card`: fatura de cartão. `account`: extrato de conta. Escolhido pelo usuário. */
 export type DocumentKind = "card" | "account";
@@ -110,8 +111,8 @@ const SAVINGS_MOVE =
   /\bRESERVA POR\b|\bDINHEIRO (?:RESERVADO|RETIRADO|GUARDADO|RESGATADO)\b|\bCAIXINHA\b|\bCOFRINHO\b/i;
 const BALANCE = /\bSALDO\b/i;
 
-/** Maior parcelamento aceito. Acima disso, `k/n` é mais provável ser outra coisa. */
-const MAX_INSTALLMENTS = 48;
+// `MAX_INSTALLMENTS`: maior parcelamento aceito. Acima disso, `k/n` é mais
+// provável ser outra coisa. É o mesmo teto do formulário.
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");

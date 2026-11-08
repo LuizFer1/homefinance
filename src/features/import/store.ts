@@ -47,7 +47,11 @@ export function createImportStore(session: Session, recurrence: RecurrenceStore)
         }
 
         if (plan.series.length > 0) {
-          const rows = plan.series.map(({ id, draft }) => buildRow<Recurrence>(clock, draft, id));
+          // A série guarda quem importou: as parcelas seguintes podem nascer no
+          // telefone de outra pessoa e têm de continuar com este autor.
+          const rows = plan.series.map(({ id, draft }) =>
+            buildRow<Recurrence>(clock, { ...draft, userId }, id),
+          );
           series = (await session.insertMissing("recurrences", rows)).length;
         }
 

@@ -55,9 +55,15 @@ function montar() {
 function ateOPagamento() {
   fireEvent.input(screen.getByLabelText("Descrição"), { target: { value: "Padaria" } });
   fireEvent.input(screen.getByLabelText("Valor"), { target: { value: "10,00" } });
+  fireEvent.click(screen.getByRole("button", { name: /Pagamento/ }));
+}
+
+/** Pagamento não é mais a última etapa: avança até Repetir e grava. */
+function enviar() {
   for (let i = 0; i < 6 && screen.queryByRole("button", { name: "Continuar" }); i += 1) {
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
   }
+  fireEvent.click(screen.getByRole("button", { name: /adicionar|salvar/i }));
 }
 
 describe("wizard de lançamento: cartões", () => {
@@ -84,7 +90,7 @@ describe("wizard de lançamento: cartões", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: /^Itaú Platinum/ }));
     expect(screen.getByLabelText(/cashback/i)).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: /adicionar|salvar/i }));
+    enviar();
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ paymentMethodId: "pm-itau" }),
@@ -168,7 +174,7 @@ describe("wizard de lançamento: cadastro rápido de cartão", () => {
       ),
     );
     expect(onCreate).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: /adicionar|salvar/i }));
+    enviar();
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ paymentMethodId: "pm-novo", description: "Padaria" }),
       null,

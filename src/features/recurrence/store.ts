@@ -1,13 +1,25 @@
 import { buildRow } from "../../data/repository";
 import { floorHlc } from "../../domain/clock/hlc";
 import type { Ulid } from "../../domain/ids/ulid";
+import type { Draft } from "../../domain/model/base";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
 import type { RecurrenceAdjustment } from "../../domain/model/recurrence-adjustment";
 import type { Transaction, TransactionDraft } from "../../domain/model/transaction";
 import { MAX_MINOR } from "../../domain/money/mask";
 import { type AdjustmentInput, planAdjustment } from "../../domain/recurrence/adjust-plan";
+import { planAuthorRepair } from "../../domain/recurrence/author";
+import {
+  installmentDescription,
+  installmentRule,
+  splitInstallments,
+} from "../../domain/recurrence/installments";
 import { planOccurrences } from "../../domain/recurrence/plan";
-import { describeError, type ExpectedVersions, type Session } from "../session/session";
+import {
+  describeError,
+  type ExpectedVersions,
+  type Session,
+  StaleRowsError,
+} from "../session/session";
 
 /**
  * Série de recorrência: cria a partir de um lançamento + regra, materializa o
@@ -34,6 +46,11 @@ export interface RecurrenceStore {
   adjustSeries: (input: AdjustmentInput) => Promise<void>;
   /** Desfaz um reajuste (exclusão lógica). Ocorrências já lançadas ficam como estão. */
   removeAdjustment: (id: Ulid) => Promise<RecurrenceAdjustment>;
+  /**
+   * Põe em toda ocorrência o autor da sua série (ver `planAuthorRepair`).
+   * Idempotente: com tudo certo não grava nada. Roda no boot e depois do sync.
+   */
+  repairAuthors: () => Promise<void>;
 }
 
 export function createRecurrenceStore(session: Session): RecurrenceStore {
@@ -46,7 +63,7 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
       if (plans.length === 0) return;
 
       const clock = session.clock();
-      const userId = session.localUserId.value;
+      const localUserId = session.localUserId.value;
       // Monta as linhas fora da transação (`buildRow` não grava). O plano
       // veio do `state` em memória, que pode estar desatualizado (outra aba
       // ainda não recarregou); `insertMissing` — e não `putRows`/`bulkPut` —
@@ -54,6 +71,9 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
       // banco. Sem isso, a ocorrência que o usuário apagou nesta ou noutra
       // aba voltaria viva no próximo boot.
       const rows = plans.map((plan) => {
+        // O autor é o da série, não o deste aparelho: o mês que nasce no telefone
+        // de outra pessoa continua sendo lançamento de quem criou a série.
+        const userId = plan.userId ?? localUserId;
         const row = buildRow<Transaction>(clock, { ...plan.draft, userId }, plan.entityId);
         // Estimativa nasce "velha" (ver `floorHlc`): se outro aparelho já
         // confirmou esta competência e o sync ainda não trouxe, a confirmação
@@ -145,12 +165,69 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
     }
   }
 
+  async function repairAuthors(): Promise<void> {
+    try {
+      const plan = planAuthorRepair(session.state.value);
+      if (plan.recurrences.length === 0 && plan.transactions.length === 0) return;
+
+      const clock = session.clock();
+      const recurrences: Recurrence[] = plan.recurrences.map(({ row, userId }) => ({
+        ...row,
+        userId,
+        updatedAt: clock.stamp().hlc,
+        dirty: 1,
+      }));
+      const transactions: Transaction[] = plan.transactions.map(({ row, userId }) => ({
+        ...row,
+        userId,
+        updatedAt: clock.stamp().hlc,
+        dirty: 1,
+      }));
+      // Só regrava a linha que ainda está na versão lida: se o sync ou outra aba
+      // a mudou desde o boot, a correção espera o próximo gatilho em vez de
+      // desfazer aquela mudança (ou ressuscitar uma linha apagada).
+      const expected: ExpectedVersions = {
+        recurrences: Object.fromEntries(plan.recurrences.map(({ row }) => [row.id, row.updatedAt])),
+        transactions: Object.fromEntries(
+          plan.transactions.map(({ row }) => [row.id, row.updatedAt]),
+        ),
+      };
+      await session.putRowsIfCurrent({ recurrences, transactions }, expected);
+    } catch (cause) {
+      // Linha velha não é falha a mostrar: a correção é refeita no próximo boot
+      // ou sync, com o estado já relido.
+      if (cause instanceof StaleRowsError) return;
+      session.error.value = describeError(cause);
+      throw cause;
+    }
+  }
+
   return {
-    async createSeries(draft, rule, today) {
-      const series: RecurrenceDraft = {
+    async createSeries(draft, input, today) {
+      // Parcelado, a regra sai do número de vezes e da data da compra, e não do
+      // que o formulário montou: frequência, dia e data final são consequência
+      // do parcelamento, e uma regra divergente geraria parcelas a mais.
+      const rule: RecurrenceRule =
+        input.installments === undefined
+          ? input
+          : {
+              ...installmentRule(draft.occurredOn, input.installments),
+              installments: input.installments,
+            };
+      // Parcelado: o valor digitado é o total, e a série grava a parcela. A sobra
+      // de centavos vai para a 1ª, guardada na série para que qualquer aparelho
+      // gere a mesma 1ª parcela.
+      const split =
+        rule.installments === undefined
+          ? null
+          : splitInstallments(draft.amountMinor, rule.installments);
+      const series: Draft<Recurrence> = {
         kind: draft.kind,
-        description: draft.description,
-        amountMinor: draft.amountMinor,
+        description:
+          rule.installments === undefined
+            ? draft.description
+            : installmentDescription(draft.description, rule.installments),
+        amountMinor: split?.amountMinor ?? draft.amountMinor,
         currency: "BRL",
         categoryId: draft.categoryId,
         paymentMethodId: draft.paymentMethodId,
@@ -163,6 +240,11 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         active: true,
         // Só na variável: série fixa continua sem a coluna, como antes dela.
         ...(rule.variable ? { variable: true } : {}),
+        ...(split !== null && split.firstAmountMinor !== split.amountMinor
+          ? { firstAmountMinor: split.firstAmountMinor }
+          : {}),
+        // Autoria vem da sessão, só no create; as ocorrências herdam daqui.
+        userId: session.localUserId.value,
       };
       // Se a série não gravar, `mutate` rejeita e a materialização nem começa.
       await session.mutate("recurrences", (repo) => repo.create(series));
@@ -171,11 +253,17 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
 
     materializeDue,
 
-    editSeries: (id, draft) => session.mutate("recurrences", (repo) => repo.update(id, draft)),
+    // Mesma proteção de `transactions/store.ts`: o tipo já barra `userId` no
+    // draft, mas quem chama em runtime não é obrigado a respeitar o tipo.
+    editSeries: (id, draft) => {
+      const { userId: _userId, ...semAutor } = draft as RecurrenceDraft & { userId?: unknown };
+      return session.mutate("recurrences", (repo) => repo.update(id, semAutor));
+    },
     removeSeries: (id) => session.mutate("recurrences", (repo) => repo.remove(id)),
     makeVariable: (id) =>
       session.mutate("recurrences", (repo) => repo.update(id, { variable: true })),
     adjustSeries,
     removeAdjustment: (id) => session.mutate("recurrenceAdjustments", (repo) => repo.remove(id)),
+    repairAuthors,
   };
 }

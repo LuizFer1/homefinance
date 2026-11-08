@@ -95,8 +95,15 @@ function opcoes(): string[] {
   return screen.getAllByRole("radio").map((radio) => radio.closest("label")?.textContent ?? "");
 }
 
+/** Grava a partir de qualquer etapa: avança até a última (Repetir, na criação). */
 function enviar() {
-  fireEvent.click(screen.getByRole("button", { name: /adicionar|salvar/i }));
+  avancarAteOFim();
+  fireEvent.click(screen.getByRole("button", { name: /adicionar|salvar|lançar/i }));
+}
+
+/** Na criação, Repetir é a última etapa. */
+function abrirEtapaRepetir() {
+  fireEvent.click(screen.getByRole("button", { name: /Repetir/ }));
 }
 
 /** Avança Continuar até sobrar só Adicionar/Salvar (3 ou 4 etapas conforme o fluxo). */
@@ -106,10 +113,10 @@ function avancarAteOFim() {
   }
 }
 
-/** Etapa 1 preenchida, depois avança até a etapa de pagamento. */
+/** Etapa 1 preenchida, depois vai direto à etapa de pagamento. */
 function ateOPagamento(descricao = "Padaria", valor = "10,00") {
   preencherDados(descricao, valor);
-  avancarAteOFim();
+  fireEvent.click(screen.getByRole("button", { name: /Pagamento/ }));
 }
 
 describe("navegação entre etapas", () => {
@@ -126,7 +133,6 @@ describe("navegação entre etapas", () => {
     montar();
     preencherDados("Farmacia", "25,50");
 
-    continuar(); // Repetir
     continuar(); // Categoria
     escolher("Alimentacao");
     fireEvent.click(screen.getByRole("button", { name: /Dados/ }));
@@ -178,13 +184,13 @@ describe("navegação entre etapas", () => {
     preencherDados();
     expect(screen.queryByRole("button", { name: /^Adicionar/ })).toBeNull();
 
-    continuar(); // Repetir
-    expect(screen.queryByRole("button", { name: /^Adicionar/ })).toBeNull();
-
     continuar(); // Categoria
     expect(screen.queryByRole("button", { name: /^Adicionar/ })).toBeNull();
 
     continuar(); // Pagamento
+    expect(screen.queryByRole("button", { name: /^Adicionar/ })).toBeNull();
+
+    continuar(); // Repetir
     expect(screen.getByRole("button", { name: /^Adicionar/ })).toBeDefined();
   });
 
@@ -237,7 +243,6 @@ describe("emissão do rascunho", () => {
   it("carrega as escolhas de categoria e pagamento", () => {
     const { onSubmit } = montar();
     preencherDados();
-    continuar(); // Repetir
     continuar(); // Categoria
     escolher("Alimentacao");
     continuar(); // Pagamento
@@ -413,7 +418,6 @@ describe("referências e listas vazias", () => {
   it("sem nada cadastrado mostra atalho em vez de dropdown vazio", () => {
     montar({ categories: [], paymentMethods: [] });
     preencherDados();
-    continuar(); // Repetir
     continuar(); // Categoria
 
     expect(screen.queryByRole("radio", { name: "Alimentacao" })).toBeNull();
@@ -430,7 +434,6 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
 
   function ateACategoria() {
     preencherDados();
-    continuar(); // Repetir
     continuar(); // Categoria
   }
 
@@ -511,10 +514,8 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
   it("emite regra de recorrencia na etapa Repetir", () => {
     const { onSubmit } = montar({ today: "2026-08-11" });
     preencherDados("Salário", "5000,00");
-    continuar();
-
-    expect(screen.getByRole("button", { name: /Repetir/ })).toBeDefined();
-    fireEvent.click(screen.getByRole("checkbox", { name: /repetir este lançamento/i }));
+    abrirEtapaRepetir();
+    fireEvent.click(screen.getByRole("radio", { name: "Repete" }));
     fireEvent.click(screen.getByRole("radio", { name: "Mensal" }));
     fireEvent.change(screen.getByLabelText(/^quando$/i), {
       target: { value: "nthBusinessDay" },
@@ -538,8 +539,8 @@ describe("categoria filtrada pelo tipo do lancamento", () => {
   it("valor variável entra na regra da série", () => {
     const { onSubmit } = montar({ today: "2026-08-11" });
     preencherDados("Conta de luz", "200,00");
-    continuar();
-    fireEvent.click(screen.getByRole("checkbox", { name: /repetir este lançamento/i }));
+    abrirEtapaRepetir();
+    fireEvent.click(screen.getByRole("radio", { name: "Repete" }));
     fireEvent.click(screen.getByRole("checkbox", { name: /valor varia todo mês/i }));
     expect(screen.getByText(/média dos últimos 6 confirmados/)).toBeDefined();
     avancarAteOFim();
@@ -570,7 +571,7 @@ describe("regressao: avancar nao pode virar submit", () => {
     // Por isso o teste afirma a causa, e nao o sintoma.
     montar();
     preencherDados();
-    continuar(); // Ainda nao e a ultima etapa (falta Categoria e Pagamento)
+    continuar(); // Ainda nao e a ultima etapa (falta Pagamento e Repetir)
 
     const avancar = screen.getByRole("button", { name: "Continuar" });
     expect(avancar.getAttribute("type")).toBe("button");
@@ -612,9 +613,9 @@ describe("recorrência", () => {
   it("mostra as próximas vezes calculadas pela regra", () => {
     montar({ today: "2026-09-24" });
     preencherDados("Salário", "6500,00");
-    continuar();
+    abrirEtapaRepetir();
 
-    fireEvent.click(screen.getByRole("checkbox", { name: /repetir este lançamento/i }));
+    fireEvent.click(screen.getByRole("radio", { name: "Repete" }));
 
     for (const chip of ["24 out", "24 nov", "24 dez", "24 jan"]) {
       expect(screen.getByText(chip)).toBeDefined();
@@ -782,8 +783,8 @@ describe("frequencia da recorrencia", () => {
   function abrirRepetir() {
     const handlers = montar({ today: "2026-08-11" });
     preencherDados("Feira", "100,00");
-    continuar();
-    fireEvent.click(screen.getByRole("checkbox", { name: /repetir este lançamento/i }));
+    abrirEtapaRepetir();
+    fireEvent.click(screen.getByRole("radio", { name: "Repete" }));
     return handlers;
   }
 
@@ -827,5 +828,114 @@ describe("frequencia da recorrencia", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "Anual" }));
     expect(screen.getByRole("checkbox", { name: /Valor varia todo ano/ })).toBeDefined();
+  });
+});
+
+describe("parcelado", () => {
+  function abrirParcelado(valor = "100,00") {
+    const handlers = montar({ today: "2026-08-15" });
+    preencherDados("Geladeira", valor);
+    abrirEtapaRepetir();
+    fireEvent.click(screen.getByRole("radio", { name: "Parcelado" }));
+    return handlers;
+  }
+
+  it("a criação termina em Repetir, depois de Categoria e Pagamento", () => {
+    montar();
+    const etapas = within(screen.getByRole("list", { name: "Etapas" }))
+      .getAllByRole("button")
+      .map((b) => b.getAttribute("aria-label"));
+    expect(etapas).toEqual(["Dados", "Categoria", "Pagamento", "Repetir"]);
+  });
+
+  it("divide o total, mostra a sobra na 1ª e nomeia a ação no botão", () => {
+    abrirParcelado();
+    fireEvent.click(screen.getByRole("button", { name: "Mais parcelas" }));
+
+    expect(screen.getByTestId("installment-preview").textContent).toMatch(/3x de R\$\s33,33/);
+    expect(screen.getByTestId("installment-preview").textContent).toMatch(
+      /1ª parcela de R\$\s33,34/,
+    );
+    expect(screen.getByRole("button", { name: /Lançar 3x de R\$\s33,33/ })).toBeDefined();
+    for (const chip of ["15 ago", "15 set", "15 out"]) expect(screen.getByText(chip)).toBeDefined();
+  });
+
+  it("divisão exata não fala em sobra", () => {
+    abrirParcelado("90,00");
+    fireEvent.click(screen.getByRole("button", { name: "Mais parcelas" }));
+    expect(screen.getByTestId("installment-preview").textContent).not.toMatch(/sobram/);
+  });
+
+  it("emite o total no draft e a regra com o número de vezes", () => {
+    const { onSubmit } = abrirParcelado();
+    fireEvent.input(screen.getByLabelText("Em quantas vezes"), { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("button", { name: /Lançar 10x/ }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ description: "Geladeira", amountMinor: 10_000 }),
+      {
+        frequency: "monthly",
+        scheduleType: "dayOfMonth",
+        scheduleN: 15,
+        endOn: "2027-05-15",
+        variable: false,
+        installments: 10,
+      },
+    );
+  });
+
+  it("digitar 10 dígito a dígito não pula para outro número", () => {
+    const { onSubmit } = abrirParcelado();
+    const campo = screen.getByLabelText("Em quantas vezes") as HTMLInputElement;
+    fireEvent.input(campo, { target: { value: "" } });
+    fireEvent.input(campo, { target: { value: "1" } });
+    expect(campo.value).toBe("1");
+    fireEvent.input(campo, { target: { value: "10" } });
+    expect(campo.value).toBe("10");
+    fireEvent.click(screen.getByRole("button", { name: /Lançar 10x de R\$\s10,00/ }));
+    expect(onSubmit.mock.calls[0]?.[1]).toMatchObject({ installments: 10 });
+  });
+
+  it("ao sair do campo ele mostra o número que vale", () => {
+    abrirParcelado();
+    const campo = screen.getByLabelText("Em quantas vezes") as HTMLInputElement;
+    fireEvent.input(campo, { target: { value: "99" } });
+    fireEvent.blur(campo);
+    expect(campo.value).toBe("48");
+    fireEvent.input(campo, { target: { value: "" } });
+    fireEvent.blur(campo);
+    expect(campo.value).toBe("2");
+  });
+
+  it("muitas parcelas mostram as primeiras e a última", () => {
+    abrirParcelado();
+    fireEvent.input(screen.getByLabelText("Em quantas vezes"), { target: { value: "12" } });
+    expect(screen.getByText(/última em 15 jul de 2027/)).toBeDefined();
+  });
+
+  it("o número de vezes é limitado a 48 e ao total em centavos", () => {
+    abrirParcelado();
+    fireEvent.input(screen.getByLabelText("Em quantas vezes"), { target: { value: "99" } });
+    expect(screen.getByTestId("installment-preview").textContent).toMatch(/^48x/);
+    expect(screen.getByRole("button", { name: "Mais parcelas" })).toHaveProperty("disabled", true);
+
+    fireEvent.click(screen.getByRole("button", { name: /Dados/ }));
+    fireEvent.input(screen.getByLabelText("Valor"), { target: { value: "0,05" } });
+    abrirEtapaRepetir();
+    expect(screen.getByTestId("installment-preview").textContent).toMatch(/^5x de R\$\s0,01/);
+  });
+
+  it("valor de um centavo não parcela e não grava", () => {
+    const { onSubmit } = abrirParcelado("0,01");
+    expect(screen.getAllByText("Valor pequeno demais para parcelar.").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /Adicionar despesa/ }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("voltar para Não repete grava lançamento avulso", () => {
+    const { onSubmit } = abrirParcelado();
+    fireEvent.click(screen.getByRole("radio", { name: "Não repete" }));
+    enviar();
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ amountMinor: 10_000 }), null);
   });
 });
