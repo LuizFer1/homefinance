@@ -52,9 +52,28 @@ export interface Recurrence extends BaseRow {
    * histórico. Ausente vale `null` (série fixa).
    */
   variable?: boolean | null;
+  /**
+   * Valor da 1ª ocorrência quando difere de `amountMinor`: a sobra de centavos
+   * de um parcelamento (R$ 100 em 3x = 33,34 + 33,33 + 33,33). Fica na série, e
+   * não só na ocorrência, porque qualquer aparelho pode materializar a 1ª
+   * parcela (compra com data futura) e todos têm de gerar o mesmo valor.
+   * Ausente vale `null`: todas as ocorrências seguem `amountMinor`.
+   */
+  firstAmountMinor?: number | null;
+  /**
+   * Autor da série. As ocorrências herdam este autor, não o do aparelho que as
+   * materializou: sem isto, o mês gerado no telefone de outra pessoa aparecia
+   * como lançado por ela. Decidido pela store no create; nenhum update o
+   * reescreve. Ausente nas séries anteriores à coluna (ver `planAuthorRepair`).
+   */
+  userId?: Ulid | null;
 }
 
-export type RecurrenceDraft = Draft<Recurrence>;
+/**
+ * `userId` fica fora do draft pelo mesmo motivo de `TransactionDraft`: autoria
+ * não é campo de formulário, e `editSeries` recebe um draft.
+ */
+export type RecurrenceDraft = Omit<Draft<Recurrence>, "userId">;
 
 /** O que o formulário de lançamento acrescenta para virar série. */
 export type RecurrenceRule = Pick<
@@ -62,6 +81,11 @@ export type RecurrenceRule = Pick<
   "frequency" | "scheduleType" | "scheduleN" | "endOn"
 > & {
   variable: boolean;
+  /**
+   * Parcelado em N vezes: o valor do lançamento é o total, e a série grava a
+   * parcela (ver `splitInstallments`). Só o formulário usa; não é coluna.
+   */
+  installments?: number;
 };
 
 export const FREQUENCY_LABELS: Record<RecurrenceFrequency, string> = {

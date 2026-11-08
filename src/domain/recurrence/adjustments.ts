@@ -3,6 +3,7 @@ import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import type { Recurrence } from "../model/recurrence";
 import type { RecurrenceAdjustment } from "../model/recurrence-adjustment";
+import { isKnownFrequency, periodOf } from "./schedule";
 
 /** O que `amountFor` lê de um reajuste — permite simular um que ainda não foi gravado. */
 export type AdjustmentLike = Pick<
@@ -38,7 +39,8 @@ export function adjustmentsOf(state: AppState, recurrenceId: Ulid): RecurrenceAd
  * valesse faria a ocorrência nascer com um valor que o usuário desfez.
  */
 export function amountFor(
-  series: Pick<Recurrence, "id" | "amountMinor">,
+  series: Pick<Recurrence, "id" | "amountMinor"> &
+    Partial<Pick<Recurrence, "startOn" | "frequency" | "firstAmountMinor">>,
   adjustments: readonly AdjustmentLike[],
   period: string,
 ): number {
@@ -48,5 +50,27 @@ export function amountFor(
     if (row.fromPeriod > period) continue;
     if (best === null || row.fromPeriod > best.fromPeriod) best = row;
   }
-  return best?.amountMinor ?? series.amountMinor;
+  if (best !== null) return best.amountMinor;
+  return isFirstPeriod(series, period)
+    ? (validFirst(series) ?? series.amountMinor)
+    : series.amountMinor;
+}
+
+/**
+ * A 1ª parcela com a sobra de centavos. Reajuste que cubra a competência inicial
+ * vence (é uma decisão posterior do usuário). Valor inválido vindo do sync de
+ * uma versão futura degrada para o valor-base em vez de gerar centavo quebrado.
+ */
+function validFirst(series: Partial<Pick<Recurrence, "firstAmountMinor">>): number | null {
+  const first = series.firstAmountMinor;
+  return typeof first === "number" && Number.isSafeInteger(first) && first > 0 ? first : null;
+}
+
+function isFirstPeriod(
+  series: Partial<Pick<Recurrence, "startOn" | "frequency">>,
+  period: string,
+): boolean {
+  if (series.startOn == null || series.startOn === "" || series.frequency == null) return false;
+  if (!isKnownFrequency(series.frequency)) return false;
+  return periodOf(series.frequency, series.startOn) === period;
 }
