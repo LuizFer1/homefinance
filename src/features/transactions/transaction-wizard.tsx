@@ -23,6 +23,12 @@ import {
 } from "../../domain/model/transaction";
 import { digitsOf, maskDigits, minorOf } from "../../domain/money/mask";
 import { dayMonth } from "../../domain/projections/periods";
+import {
+  installmentRule,
+  MIN_INSTALLMENTS,
+  maxInstallmentsFor,
+  splitInstallments,
+} from "../../domain/recurrence/installments";
 import { isDayStep } from "../../domain/recurrence/schedule";
 import { nextOccurrences } from "../../domain/recurrence/upcoming";
 import { offersCashback } from "../../domain/transactions/cashback";
@@ -34,7 +40,7 @@ import { chipDate, DateButton, DateChips } from "../ui/date-field";
 import { FIELD_SHEET, HINT, LABEL } from "../ui/field";
 import { HoldToDelete } from "../ui/hold-button";
 import { SheetHeader } from "../ui/modal";
-import { signedBRL } from "../ui/money";
+import { brl, signedBRL } from "../ui/money";
 import { Progress } from "../ui/progress";
 import { Segmented } from "../ui/segmented";
 import { SummaryChip } from "../ui/summary-chip";
@@ -80,13 +86,34 @@ export interface TransactionWizardProps {
  * o mesmo que editar uma ocorrência, e misturar os dois no mesmo fluxo esconderia
  * qual decisão o usuário está tomando.
  */
-const CREATE_STEPS = ["Dados", "Repetir", "Categoria", "Pagamento"] as const;
+//
+// "Repetir" é a última: parcelar depende do valor já digitado e é a decisão que
+// muda quantos lançamentos o botão final vai criar.
+const CREATE_STEPS = ["Dados", "Categoria", "Pagamento", "Repetir"] as const;
 const EDIT_STEPS = ["Dados", "Categoria", "Pagamento"] as const;
 
 const KINDS = [
   { value: "expense", label: "Despesa", tone: "expense" },
   { value: "income", label: "Receita", tone: "income" },
 ] as const;
+
+/**
+ * Um segmento e não dois toggles: "parcelado" e "repete" juntos permitiriam
+ * parcelamento com valor variável ou data final própria, combinações sem sentido.
+ */
+type RepeatMode = "once" | "installments" | "repeats";
+
+const REPEAT_OPTIONS: readonly { value: RepeatMode; label: string }[] = [
+  { value: "once", label: "Não repete" },
+  { value: "installments", label: "Parcelado" },
+  { value: "repeats", label: "Repete" },
+];
+
+const REPEAT_HINTS: Record<RepeatMode, string> = {
+  once: "Acontece uma vez só.",
+  installments: "O valor informado é o total da compra, dividido em parcelas mensais.",
+  repeats: "Gera as próximas vezes sozinho.",
+};
 
 /** Como o lançamento entra nas contas; `counts` é a ausência de `reportState`. */
 type CountMode = "counts" | ReportState;
@@ -154,7 +181,8 @@ export function TransactionWizard({
     editing?.cashbackMinor == null ? "" : String(editing.cashbackMinor),
   );
   // Série só na criação: editar ocorrência materializada não reescreve a regra.
-  const [repeats, setRepeats] = useState(false);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>("once");
+  const [installments, setInstallments] = useState(MIN_INSTALLMENTS);
   const [frequency, setFrequency] = useState<RecurrenceFrequency>("monthly");
   const [scheduleType, setScheduleType] = useState<ScheduleType>("dayOfMonth");
   const [scheduleN, setScheduleN] = useState(() => Number(occurredOn.slice(8, 10)) || 1);
@@ -178,10 +206,10 @@ export function TransactionWizard({
   const showsCashback = offersCashback(selectedMethod?.kind ?? null, kind);
   const canConfigureRecurrence = editing === null;
   const steps = canConfigureRecurrence ? CREATE_STEPS : EDIT_STEPS;
-  // Índices dependem do fluxo: na criação "Repetir" empurra categoria e pagamento.
-  const categoryStep = canConfigureRecurrence ? 2 : 1;
-  const paymentStep = canConfigureRecurrence ? 3 : 2;
-  const recurrenceStep = 1;
+  // "Repetir" só existe na criação e vem por último, então não desloca os outros.
+  const categoryStep = 1;
+  const paymentStep = 2;
+  const recurrenceStep = 3;
 
   /*
     Filtra pelo tipo do lançamento, e o filtro é reativo: trocar de despesa para
@@ -257,6 +285,13 @@ export function TransactionWizard({
   // Depois de "Dados", o resto não bloqueia: repetir, categoria e pagamento são opcionais.
   const maxReachable = detailsValid ? steps.length - 1 : 0;
   const clampedN = Math.min(31, Math.max(1, Math.trunc(scheduleN) || 1));
+  // Mudar o valor depois de escolher as vezes não pode deixar parcela de zero
+  // centavo: o número efetivo é limitado pelo total, sem apagar a escolha.
+  const maxInstallments = maxInstallmentsFor(amountMinor);
+  const installmentCount = Math.min(maxInstallments, Math.max(MIN_INSTALLMENTS, installments));
+  const parcelled = canConfigureRecurrence && repeatMode === "installments";
+  const canSplit = amountMinor >= MIN_INSTALLMENTS;
+  const split = canSplit ? splitInstallments(amountMinor, installmentCount) : null;
 
   function validateDetails(): boolean {
     if (trimmed === "") {
@@ -293,10 +328,22 @@ export function TransactionWizard({
     };
   }
 
+  function recurrenceForSubmit(): RecurrenceRule | null {
+    if (!canConfigureRecurrence || repeatMode === "once") return null;
+    if (repeatMode === "repeats") return recurrenceInput();
+    // A store recalcula a regra a partir de `installments`; mandar a regra
+    // completa mantém o contrato de `onSubmit` para quem só lê a regra.
+    return { ...installmentRule(occurredOn, installmentCount), installments: installmentCount };
+  }
+
   function handleSubmit(event: Event) {
     event.preventDefault();
     if (!validateDetails()) {
       setStep(0);
+      return;
+    }
+    if (parcelled && !canSplit) {
+      setProblem("Valor pequeno demais para parcelar.");
       return;
     }
 
@@ -328,16 +375,13 @@ export function TransactionWizard({
           ? { reportState: countMode === "counts" ? null : countMode }
           : {}),
       },
-      canConfigureRecurrence && repeats ? recurrenceInput() : null,
+      recurrenceForSubmit(),
     );
   }
 
   const isLast = step === steps.length - 1;
   const signed = signedBRL(kind === "expense" ? -amountMinor : amountMinor, "always");
   const dateWord = occurredOn === today ? "Hoje" : chipDate(occurredOn, today);
-  const repeatWord = repeats
-    ? FREQUENCY_LABELS[frequency].toLocaleLowerCase("pt-BR")
-    : "não repete";
   const toneDot = (
     <span
       aria-hidden="true"
@@ -478,7 +522,7 @@ export function TransactionWizard({
                 onChange={(next) => {
                   setOccurredOn(next);
                   // Na etapa Repetir, o dia default acompanha a data escolhida aqui.
-                  if (!repeats) setScheduleN(Number(next.slice(8, 10)) || 1);
+                  if (repeatMode !== "repeats") setScheduleN(Number(next.slice(8, 10)) || 1);
                 }}
               />
             </div>
@@ -539,21 +583,33 @@ export function TransactionWizard({
               trailing={<span class={amountTone}>{signed}</span>}
             />
 
-            <div class="mt-4 rounded-lg bg-bg px-4 py-3">
-              <Toggle
-                label="Repetir este lançamento"
-                hint={
-                  repeats ? "Gera as próximas vezes sozinho." : "Sem repetir, acontece uma vez só."
-                }
-                checked={repeats}
-                onChange={(on) => {
-                  setRepeats(on);
-                  if (on) setScheduleN(Number(occurredOn.slice(8, 10)) || 1);
+            <div class="mt-4">
+              <Segmented
+                name="repeat-mode"
+                legend="Repetir"
+                options={REPEAT_OPTIONS}
+                value={repeatMode}
+                onChange={(mode) => {
+                  if (mode === "repeats" && repeatMode !== "repeats") {
+                    setScheduleN(Number(occurredOn.slice(8, 10)) || 1);
+                  }
+                  setRepeatMode(mode);
                 }}
               />
+              <p class={HINT}>{REPEAT_HINTS[repeatMode]}</p>
             </div>
 
-            {repeats && (
+            {repeatMode === "installments" && (
+              <InstallmentFields
+                count={installmentCount}
+                max={maxInstallments}
+                split={split}
+                firstOn={occurredOn}
+                onCount={setInstallments}
+              />
+            )}
+
+            {repeatMode === "repeats" && (
               <div key="recurrence-fields" class="hf-disclose mt-5 space-y-5">
                 <div>
                   <p class={LABEL}>Frequência</p>
@@ -715,7 +771,7 @@ export function TransactionWizard({
             <SummaryChip
               leading={toneDot}
               title={trimmed}
-              context={canConfigureRecurrence ? `${dateWord} · ${repeatWord}` : dateWord}
+              context={dateWord}
               trailing={<span class={amountTone}>{signed}</span>}
             />
 
@@ -927,9 +983,11 @@ export function TransactionWizard({
           <Button key="enviar" type="submit" icon="check" iconSide="left" class="flex-1">
             {editing !== null
               ? "Salvar"
-              : kind === "income"
-                ? "Adicionar receita"
-                : "Adicionar despesa"}
+              : parcelled && split !== null
+                ? `Lançar ${installmentCount}x de ${brl(split.amountMinor)}`
+                : kind === "income"
+                  ? "Adicionar receita"
+                  : "Adicionar despesa"}
           </Button>
         ) : (
           <Button key="avancar" icon="arrow-right" class="flex-1" onClick={() => goTo(step + 1)}>
@@ -938,5 +996,97 @@ export function TransactionWizard({
         )}
       </div>
     </form>
+  );
+}
+
+interface InstallmentFieldsProps {
+  count: number;
+  max: number;
+  /** `null`: o total não chega a um centavo por parcela. */
+  split: { amountMinor: number; firstAmountMinor: number } | null;
+  /** Data da compra, que é a da 1ª parcela. */
+  firstOn: string;
+  onCount: (count: number) => void;
+}
+
+/** Quantas vezes, quanto fica cada parcela e quando elas caem. */
+function InstallmentFields({ count, max, split, firstOn, onCount }: InstallmentFieldsProps) {
+  if (split === null) {
+    return <p class={`${HINT} mt-5`}>Valor pequeno demais para parcelar.</p>;
+  }
+  const rule = installmentRule(firstOn, count);
+  // A mesma aritmética da materialização: o que a prévia promete é o que será gravado.
+  const dates = [
+    firstOn,
+    ...nextOccurrences({ ...rule, startOn: firstOn }, Math.min(3, count - 1)),
+  ];
+  const last = rule.endOn ?? firstOn;
+  return (
+    <div key="installment-fields" class="hf-disclose mt-5 space-y-5">
+      <div>
+        <label class={LABEL} for="installment-count">
+          Em quantas vezes
+        </label>
+        {/* Stepper como o do dia: o número quase sempre anda pouco a partir de 2. */}
+        <div class="mt-2 flex h-12 items-center rounded-lg border border-divider bg-bg">
+          <button
+            type="button"
+            aria-label="Menos parcelas"
+            disabled={count <= MIN_INSTALLMENTS}
+            onClick={() => onCount(Math.max(MIN_INSTALLMENTS, count - 1))}
+            class="hf-press grid h-full w-12 place-items-center text-fg/70 disabled:opacity-40"
+          >
+            <Icon name="minus" size={16} />
+          </button>
+          <input
+            id="installment-count"
+            type="number"
+            min={MIN_INSTALLMENTS}
+            max={max}
+            inputMode="numeric"
+            class="hf-num w-full min-w-0 appearance-none bg-transparent text-center text-base
+              outline-none [&::-webkit-inner-spin-button]:appearance-none"
+            value={count}
+            onInput={(event) => onCount(Number(event.currentTarget.value) || MIN_INSTALLMENTS)}
+          />
+          <button
+            type="button"
+            aria-label="Mais parcelas"
+            disabled={count >= max}
+            onClick={() => onCount(Math.min(max, count + 1))}
+            class="hf-press grid h-full w-12 place-items-center text-fg/70 disabled:opacity-40"
+          >
+            <Icon name="plus" size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div class="rounded-lg bg-bg px-4 py-3" data-testid="installment-preview">
+        <p class="hf-num text-[15px] font-medium">
+          {count}x de {brl(split.amountMinor)}
+        </p>
+        {split.firstAmountMinor !== split.amountMinor && (
+          <p class={HINT}>
+            1ª parcela de {brl(split.firstAmountMinor)}, com os centavos que sobram.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <span class={LABEL}>Parcelas</span>
+        <div class="mt-2 flex flex-wrap gap-1.5">
+          {dates.map((date) => (
+            <span key={date} class="hf-num rounded-md bg-bg px-2.5 py-1.5 text-[13px] text-fg/75">
+              {dayMonth(date)}
+            </span>
+          ))}
+          {count > dates.length && (
+            <span class="px-1 py-1.5 text-[13px] text-fg/45">
+              … última em {dayMonth(last)} de {last.slice(0, 4)}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
