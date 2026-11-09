@@ -50,7 +50,19 @@ export function upcomingRecurrences(
   today: string,
   days: number,
 ): UpcomingOccurrence[] {
-  const limit = shiftDay(today, days);
+  return projectRecurrences(state, today, shiftDay(today, days));
+}
+
+/**
+ * Ocorrências ainda não gravadas de séries ativas com data em (`after`, `limit`],
+ * ordenadas por data. É a projeção dos "Recorrentes a caminho" e do "Dinheiro
+ * livre": as duas telas têm de prometer o mesmo valor para a mesma ocorrência.
+ */
+export function projectRecurrences(
+  state: AppState,
+  after: string,
+  limit: string,
+): UpcomingOccurrence[] {
   const found: UpcomingOccurrence[] = [];
   const adjustments = Object.values(state.recurrenceAdjustments);
   const transactions = Object.values(state.transactions);
@@ -62,7 +74,7 @@ export function upcomingRecurrences(
 
     for (const period of eachPeriod(series.startOn, limit, series.frequency)) {
       const date = occurrenceOn(period, series.scheduleType, series.scheduleN);
-      if (date <= today || date > limit) continue;
+      if (date <= after || date > limit) continue;
       if (series.endOn !== null && date > series.endOn) continue;
       if (state.transactions[stableEntityId(occurrenceKey(series.id, period))] !== undefined) {
         continue;

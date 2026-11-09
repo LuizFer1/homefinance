@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it } from "vitest";
 import { type AppState, EMPTY_APP_STATE } from "../../domain/model/app-state";
 import type { Category } from "../../domain/model/category";
+import type { Recurrence } from "../../domain/model/recurrence";
 import { ALIVE } from "../../domain/model/row.fake";
 import type { Transaction } from "../../domain/model/transaction";
 import { DashboardPage } from "./dashboard-page";
@@ -295,6 +296,58 @@ describe("DashboardPage", () => {
       fireEvent.click(screen.getByRole("button", { name: "Editar Feira" }));
 
       expect(edited).toEqual(["b"]);
+    });
+  });
+
+  describe("dinheiro livre mês que vem", () => {
+    function recurrence(overrides: Partial<Recurrence> & { id: string }): Recurrence {
+      return {
+        ...ALIVE,
+        kind: "expense",
+        description: "Aluguel",
+        amountMinor: 23_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        frequency: "monthly",
+        scheduleType: "dayOfMonth",
+        scheduleN: 10,
+        startOn: "2026-06-10",
+        endOn: null,
+        active: true,
+        ...overrides,
+      };
+    }
+
+    const series = [
+      recurrence({
+        id: "01J9F3K2M7QX8YB4TVWZ0DCEH1",
+        kind: "income",
+        description: "Salário",
+        amountMinor: 100_000,
+      }),
+      recurrence({ id: "01J9F3K2M7QX8YB4TVWZ0DCEH2" }),
+    ];
+    const state: AppState = {
+      ...stateWith(),
+      recurrences: Object.fromEntries(series.map((row) => [row.id, row])),
+    };
+
+    it("mostra o que sobra das entradas recorrentes depois das saídas", () => {
+      render(<DashboardPage items={[record({ id: "a" })]} state={state} today={TODAY} />);
+
+      const card = screen.getByRole("region", { name: "Dinheiro livre mês que vem" });
+      expect(card.textContent).toContain("setembro");
+      expect(screen.getByTestId("free-money").textContent).toContain("770");
+      expect(screen.getByTestId("free-money-of").textContent).toMatch(/de R\$\s1\.000,00/u);
+      expect(screen.getByTestId("free-money-expense").textContent).toMatch(/230,00/u);
+    });
+
+    it("some sem nenhuma recorrência", () => {
+      render(<DashboardPage items={[record({ id: "a" })]} state={stateWith()} today={TODAY} />);
+
+      expect(screen.queryByRole("region", { name: "Dinheiro livre mês que vem" })).toBeNull();
     });
   });
 });

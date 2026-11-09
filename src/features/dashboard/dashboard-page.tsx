@@ -7,6 +7,7 @@ import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
 import { filterByMonth, monthlyTotals } from "../../domain/projections/breakdown";
 import { dailyExpenses, expensesOn } from "../../domain/projections/daily-expenses";
+import { type FreeMoney, nextMonthFreeMoney } from "../../domain/projections/free-money";
 import {
   averageSurplus,
   cashbackSummary,
@@ -80,6 +81,78 @@ function Card({
         {aside !== undefined && <span class="text-xs text-fg/55">{aside}</span>}
       </div>
       {children}
+    </section>
+  );
+}
+
+/**
+ * "Dinheiro livre mês que vem": o que sobra das entradas recorrentes depois das
+ * saídas recorrentes. A barra mostra a parte já comprometida das entradas.
+ */
+function FreeMoneyCard({ free }: { free: FreeMoney }) {
+  const committed = free.incomeMinor > 0 ? Math.min(1, free.expenseMinor / free.incomeMinor) : 1;
+  const negative = free.freeMinor < 0;
+  const approx = free.estimated && (
+    <>
+      <span class="sr-only">aproximadamente </span>
+      <span aria-hidden="true">~</span>
+    </>
+  );
+  return (
+    <section aria-label="Dinheiro livre mês que vem" class="rounded-lg bg-surface p-4">
+      <div class="flex items-baseline justify-between gap-3">
+        <h2 class="hf-label">Dinheiro livre mês que vem</h2>
+        <span class="text-xs text-fg/55">{monthWord(free.month)}</span>
+      </div>
+      <p class="mt-2 flex flex-wrap items-baseline gap-x-2">
+        {approx}
+        <Money
+          minor={free.freeMinor}
+          size={28}
+          testId="free-money"
+          class={negative ? "text-expense-fg" : ""}
+        />
+        {free.incomeMinor > 0 && (
+          <span data-testid="free-money-of" class="hf-num text-sm text-fg/55">
+            de {brl(free.incomeMinor)}
+          </span>
+        )}
+      </p>
+      <div
+        role="img"
+        aria-label={`${Math.round(committed * 100)}% das entradas recorrentes já comprometidos`}
+        class="mt-4 h-1.5 overflow-hidden rounded-full bg-income/70"
+      >
+        <span
+          class="block h-full rounded-full bg-expense"
+          style={{ width: `${committed * 100}%` }}
+        />
+      </div>
+      <div class="mt-3 grid grid-cols-2 gap-3">
+        <div>
+          <p class="flex items-center gap-1.5 text-xs text-fg/55">
+            <span aria-hidden="true" class="size-2 rounded-full bg-income" />
+            Entradas recorrentes
+          </p>
+          <p data-testid="free-money-income" class="hf-num mt-1 text-[15px] font-medium">
+            {brl(free.incomeMinor)}
+          </p>
+        </div>
+        <div>
+          <p class="flex items-center gap-1.5 text-xs text-fg/55">
+            <span aria-hidden="true" class="size-2 rounded-full bg-expense" />
+            Já comprometido
+          </p>
+          <p data-testid="free-money-expense" class="hf-num mt-1 text-[15px] font-medium">
+            {brl(free.expenseMinor)}
+          </p>
+        </div>
+      </div>
+      {free.estimated && (
+        <p class="mt-3 text-xs text-fg/55 text-pretty">
+          Inclui a estimativa de contas com valor variável.
+        </p>
+      )}
     </section>
   );
 }
@@ -168,6 +241,8 @@ export function DashboardPage({
   const biggest = categories[0]?.amountMinor ?? 0;
   const bars = monthlyTotals(items, lastMonths(`${month}-01`, WINDOW));
   const upcoming = month === current ? upcomingRecurrences(state, today, UPCOMING_DAYS) : [];
+  // Só no mês corrente: "mês que vem" de um mês passado já aconteceu e está no extrato.
+  const free = month === current ? nextMonthFreeMoney(state, today) : null;
   const cashback = cashbackSummary(monthItems, state);
   const budgets = budgetReport(items, state, month).rows;
   const moved = summary.incomeMinor + summary.expenseMinor;
@@ -238,6 +313,10 @@ export function DashboardPage({
             {comparison.count} {comparison.count === 1 ? "lançamento" : "lançamentos"} no mês.
           </p>
         </section>
+
+        {free !== null && (free.incomeMinor > 0 || free.expenseMinor > 0) && (
+          <FreeMoneyCard free={free} />
+        )}
 
         {summary.expenseMinor > 0 && (
           <Card
