@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { stableEntityId } from "../../domain/ids/stable-id";
 import { type AppState, EMPTY_APP_STATE } from "../../domain/model/app-state";
 import type { Budget } from "../../domain/model/budget";
 import type { Category } from "../../domain/model/category";
@@ -7,6 +8,7 @@ import type { PaymentMethod } from "../../domain/model/payment-method";
 import type { Recurrence } from "../../domain/model/recurrence";
 import { ALIVE } from "../../domain/model/row.fake";
 import type { Transaction } from "../../domain/model/transaction";
+import { occurrenceKey } from "../../domain/recurrence/schedule";
 import { DashboardPage } from "./dashboard-page";
 
 afterEach(cleanup);
@@ -44,6 +46,26 @@ function category(id: string, name: string): Category {
 
 function budget(categoryId: string, limitMinor: number): Budget {
   return { ...ALIVE, id: `B-${categoryId}`, categoryId, limitMinor };
+}
+
+function recurrence(overrides: Partial<Recurrence> & { id: string }): Recurrence {
+  return {
+    ...ALIVE,
+    kind: "expense",
+    description: "Aluguel",
+    amountMinor: 23_000,
+    currency: "BRL",
+    categoryId: null,
+    paymentMethodId: null,
+    cashbackMinor: null,
+    frequency: "monthly",
+    scheduleType: "dayOfMonth",
+    scheduleN: 10,
+    startOn: "2026-06-10",
+    endOn: null,
+    active: true,
+    ...overrides,
+  };
 }
 
 /** O sheet aberto com este título. Fechado, o `<dialog>` continua no DOM, então checa `open`. */
@@ -401,7 +423,108 @@ describe("DashboardPage", () => {
       expect(plain.getByText("25%")).toBeDefined();
     });
 
-    it("todas as barras usam a mesma escala: o maior gasto ou o maior limite mostrado", () => {
+    const block = () => screen.getByRole("region", { name: "Para onde foi" });
+    const widthOf = (id: string, scope: HTMLElement = block()) =>
+      within(within(scope).getByTestId(`category-row-${id}`)).getByTestId("category-fill").style
+        .width;
+    const limitOf = (id: string) =>
+      within(within(block()).getByTestId(`category-row-${id}`)).getByTestId("category-limit").style
+        .left;
+    const SALARY = "01J9F3K2M7QX8YB4TVWZ0DCEH1";
+    /** Estado com uma entrada recorrente mensal no dia 10, desde junho de 2026. */
+    const withSalary = (amountMinor: number, ...budgets: Budget[]): AppState => {
+      const salary = recurrence({
+        id: SALARY,
+        kind: "income",
+        description: "Salário",
+        amountMinor,
+      });
+      return { ...withBudgets(...budgets), recurrences: { [salary.id]: salary } };
+    };
+
+    it("a escala das barras é a entrada recorrente do mês", () => {
+      // Salário de 1.000: A (70) ocupa 7% da renda; o limite de B (50) fica em 5%
+      // e o de D (400) em 40%, mesmo sendo o maior número entre as linhas.
+      render(
+        <DashboardPage
+          items={spend}
+          state={withSalary(100_000, budget("D", 40_000), budget("B", 5000))}
+          today={TODAY}
+        />,
+      );
+
+      expect(widthOf("A")).toBe("7%");
+      expect(widthOf("D")).toBe("4%");
+      expect(limitOf("D")).toBe("40%");
+      expect(limitOf("B")).toBe("5%");
+    });
+
+    it("categoria miúda perto da renda mantém o piso de 2% da barra", () => {
+      // E gastou 30 de uma renda de 10.000: 0,3% sumiria do trilho.
+      render(<DashboardPage items={spend} state={withSalary(1_000_000)} today={TODAY} />);
+
+      expect(widthOf("E")).toBe("2%");
+    });
+
+    it("o sheet de todas as categorias usa a mesma escala do bloco", () => {
+      render(<DashboardPage items={spend} state={withSalary(100_000)} today={TODAY} />);
+
+      tap("Ver todas as 7");
+      const sheet = openSheet("Todas as categorias") as HTMLElement;
+      // Com a escala antiga, A viraria 100% nos dois; com a renda, 7% nos dois.
+      expect(widthOf("A", sheet)).toBe("7%");
+      expect(widthOf("G", sheet)).toBe("2%");
+      expect(widthOf("A")).toBe("7%");
+    });
+
+    it("a escala é a entrada recorrente do mês selecionado, não a de hoje", () => {
+      // Julho já materializado com outro valor (2.000): a barra de julho mede contra ele.
+      // Id e chave determinísticos, como a materialização grava: é por eles que a
+      // projeção sabe que julho já tem linha e não soma a regra por cima.
+      const key = occurrenceKey(SALARY, "2026-07");
+      const july = record({
+        id: stableEntityId(key),
+        kind: "income",
+        amountMinor: 200_000,
+        occurredOn: "2026-07-10",
+        recurrenceId: SALARY,
+        occurrenceKey: key,
+      });
+      const julySpend = record({
+        id: "t-jul",
+        categoryId: "A",
+        amountMinor: 10_000,
+        occurredOn: "2026-07-15",
+      });
+      render(
+        <DashboardPage
+          items={[...spend, july, julySpend]}
+          state={{ ...withSalary(100_000), transactions: { [july.id]: july } }}
+          today={TODAY}
+        />,
+      );
+
+      tap("Mês anterior");
+      expect(widthOf("A")).toBe("5%");
+    });
+
+    it("gasto ou limite acima da entrada recorrente trava em 100%, sem vazar do trilho", () => {
+      // Renda fixa de 50: A (70) e o limite de D (400) passam dela.
+      render(
+        <DashboardPage
+          items={spend}
+          state={withSalary(5000, budget("D", 40_000), budget("B", 5000))}
+          today={TODAY}
+        />,
+      );
+
+      expect(widthOf("A")).toBe("100%");
+      expect(limitOf("D")).toBe("100%");
+      expect(limitOf("B")).toBe("100%");
+      expect(widthOf("E")).toBe("60%");
+    });
+
+    it("sem entrada recorrente no mês, a escala é o maior gasto ou o maior limite mostrado", () => {
       // O limite de D (400) é o maior número entre as linhas: ele vira os 100%.
       render(
         <DashboardPage
@@ -410,15 +533,24 @@ describe("DashboardPage", () => {
           today={TODAY}
         />,
       );
-      const widthOf = (id: string) =>
-        within(screen.getByTestId(`category-row-${id}`)).getByTestId("category-fill").style.width;
-      const limitOf = (id: string) =>
-        within(screen.getByTestId(`category-row-${id}`)).getByTestId("category-limit").style.left;
 
       expect(widthOf("A")).toBe("17.5%");
       expect(widthOf("D")).toBe("10%");
       expect(limitOf("D")).toBe("100%");
       expect(limitOf("B")).toBe("12.5%");
+    });
+
+    it("saída recorrente sozinha não vira escala", () => {
+      const rent = recurrence({ id: "01J9F3K2M7QX8YB4TVWZ0DCEH2" });
+      render(
+        <DashboardPage
+          items={spend}
+          state={{ ...stateWith(cats), recurrences: { [rent.id]: rent } }}
+          today={TODAY}
+        />,
+      );
+
+      expect(widthOf("A")).toBe("100%");
     });
 
     it("a barra de meta fala só em porcentagem, como a BudgetBar", () => {
@@ -587,26 +719,6 @@ describe("DashboardPage", () => {
   });
 
   describe("dinheiro livre mês que vem", () => {
-    function recurrence(overrides: Partial<Recurrence> & { id: string }): Recurrence {
-      return {
-        ...ALIVE,
-        kind: "expense",
-        description: "Aluguel",
-        amountMinor: 23_000,
-        currency: "BRL",
-        categoryId: null,
-        paymentMethodId: null,
-        cashbackMinor: null,
-        frequency: "monthly",
-        scheduleType: "dayOfMonth",
-        scheduleN: 10,
-        startOn: "2026-06-10",
-        endOn: null,
-        active: true,
-        ...overrides,
-      };
-    }
-
     const series = [
       recurrence({
         id: "01J9F3K2M7QX8YB4TVWZ0DCEH1",
