@@ -121,7 +121,7 @@ const SHELL = "hf-backdrop min-h-dvh text-fg";
  * formulário de uma reserva seguem a mesma regra — sub-telas, não destinos.
  */
 const SCREENS = [
-  { id: "dashboard", label: "Dashboard", icon: "chart-pie-slice" },
+  { id: "dashboard", label: "Resumo", icon: "chart-pie-slice" },
   { id: "inicio", label: "Início", icon: "house" },
   { id: "reservas", label: "Reservas", icon: "vault" },
   { id: "config", label: "Ajustes", icon: "gear-six" },
@@ -129,7 +129,7 @@ const SCREENS = [
 
 type ScreenId = (typeof SCREENS)[number]["id"];
 
-/** Ordem esquerda → direita do arraste (Dashboard · Início · Reservas · Ajustes). */
+/** Ordem esquerda → direita do arraste (Resumo · Início · Reservas · Ajustes). */
 const SCREEN_IDS: readonly ScreenId[] = SCREENS.map((s) => s.id);
 
 /** Sub-tela da aba Reservas. */
