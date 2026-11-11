@@ -6,7 +6,7 @@ import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
 import { filterByMonth, monthlyTotals } from "../../domain/projections/breakdown";
 import { dailyExpenses, expensesOn } from "../../domain/projections/daily-expenses";
-import { nextMonthFreeMoney } from "../../domain/projections/free-money";
+import { nextMonthFreeMoney, recurringMonth } from "../../domain/projections/free-money";
 import {
   cashbackSummary,
   categoryBreakdown,
@@ -138,6 +138,8 @@ export function DashboardPage({
   const budgets = budgetReport(items, state, month).rows;
   const categories = withBudgets(categoryBreakdown(monthItems, state), budgets);
   const shown = visibleRows(categories);
+  // Do mês do seletor, não de hoje: a barra de agosto mede contra a renda fixa de agosto.
+  const categoryScale = recurringMonth(state, month).incomeMinor;
   const bars = monthlyTotals(items, lastMonths(`${month}-01`, HISTORY_MONTHS));
   const upcoming = isCurrent ? upcomingRecurrences(state, today, UPCOMING_DAYS) : [];
   // Só no mês corrente: "mês que vem" de um mês passado já aconteceu e está no extrato.
@@ -191,7 +193,7 @@ export function DashboardPage({
             {categories.length === 0 ? (
               <p class="text-sm text-fg/55">Nenhuma despesa em {label}</p>
             ) : (
-              <CategoryRows rows={shown} />
+              <CategoryRows rows={shown} scaleMinor={categoryScale} />
             )}
             {(categories.length > shown.length ||
               (onOpenBudgets !== undefined && budgets.length > 0)) && (
@@ -256,7 +258,7 @@ export function DashboardPage({
         note={label}
         onClose={close("categories")}
       >
-        <CategoryRows rows={categories} />
+        <CategoryRows rows={categories} scaleMinor={categoryScale} />
       </ListSheet>
       <ListSheet
         open={sheet === "upcoming"}

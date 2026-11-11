@@ -21,6 +21,15 @@ export interface FreeMoney {
 /**
  * "Dinheiro livre mês que vem": entradas recorrentes menos saídas recorrentes
  * do mês seguinte a `today`.
+ */
+export function nextMonthFreeMoney(state: AppState, today: string): FreeMoney {
+  return recurringMonth(state, shiftMonth(today.slice(0, 7), 1));
+}
+
+/**
+ * Entradas e saídas recorrentes de um mês 'YYYY-MM' qualquer — futuro, corrente
+ * ou passado. É a régua do "Dinheiro livre" e a escala das barras do Resumo: as
+ * duas telas têm de chamar de "renda fixa do mês" o mesmo número.
  *
  * Soma duas fontes, sem contar a mesma ocorrência duas vezes: o que a regra
  * ainda vai gerar (`projectRecurrences` já pula a chave que existe no banco) e
@@ -29,9 +38,13 @@ export interface FreeMoney {
  * usuário fica de fora nas duas: a projeção pula a chave e o tombstone não está
  * vivo. Lançamento avulso datado para frente não entra; a pergunta é o que a
  * recorrência já comprometeu.
+ *
+ * Não recebe `today` de propósito. Em mês passado a projeção só devolve a
+ * ocorrência vencida que ainda não tem linha nem tombstone — exatamente a que
+ * `planOccurrences` grava no próximo boot, com a mesma chave e o mesmo valor —,
+ * então o número não muda quando a materialização roda e nada conta em dobro.
  */
-export function nextMonthFreeMoney(state: AppState, today: string): FreeMoney {
-  const month = shiftMonth(today.slice(0, 7), 1);
+export function recurringMonth(state: AppState, month: string): FreeMoney {
   let incomeMinor = 0;
   let expenseMinor = 0;
   let estimated = false;
