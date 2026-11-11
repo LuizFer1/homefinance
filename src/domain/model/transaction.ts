@@ -1,9 +1,10 @@
 import type { Ulid } from "../ids/ulid";
 import type { BaseRow, Draft } from "./base";
+import type { BookScoped } from "./book";
 
 export type TransactionKind = "income" | "expense";
 
-export interface Transaction extends BaseRow {
+export interface Transaction extends BaseRow, BookScoped {
   kind: TransactionKind;
   description: string;
   /** Inteiro na unidade menor: 1234 é R$ 12,34. */

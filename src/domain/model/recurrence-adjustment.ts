@@ -1,5 +1,6 @@
 import type { Ulid } from "../ids/ulid";
 import type { BaseRow, Draft } from "./base";
+import type { BookScoped } from "./book";
 
 /**
  * Valor novo de uma série a partir de uma competência. A série guarda o
@@ -10,7 +11,7 @@ import type { BaseRow, Draft } from "./base";
  * reajustes feitos offline em aparelhos diferentes na mesma série perderiam um
  * deles em silêncio se morassem na mesma linha.
  */
-export interface RecurrenceAdjustment extends BaseRow {
+export interface RecurrenceAdjustment extends BaseRow, BookScoped {
   recurrenceId: Ulid;
   /** 'YYYY-MM': primeira competência com o valor novo. */
   fromPeriod: string;

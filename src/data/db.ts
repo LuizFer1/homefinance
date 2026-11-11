@@ -1,6 +1,9 @@
 import Dexie, { type Table } from "dexie";
+import type { Asset } from "../domain/model/asset";
+import type { BookAccount } from "../domain/model/book-account";
 import type { Budget } from "../domain/model/budget";
 import type { Category } from "../domain/model/category";
+import type { Debt } from "../domain/model/debt";
 import type { PaymentMethod } from "../domain/model/payment-method";
 import type { Recurrence } from "../domain/model/recurrence";
 import type { RecurrenceAdjustment } from "../domain/model/recurrence-adjustment";
@@ -33,6 +36,9 @@ export class HomeFinanceDb extends Dexie {
   readonly reserves: Table<Reserve, string>;
   readonly reserveMovements: Table<ReserveMovement, string>;
   readonly budgets: Table<Budget, string>;
+  readonly books: Table<BookAccount, string>;
+  readonly assets: Table<Asset, string>;
+  readonly debts: Table<Debt, string>;
   readonly meta: Table<MetaRow, string>;
 
   constructor(name = "homefinance") {
@@ -56,6 +62,9 @@ export class HomeFinanceDb extends Dexie {
     this.version(4).stores({ reserves: "id, dirty", reserveMovements: "id, reserveId, dirty" });
     // Metas por categoria: tabela nova, nenhuma linha existente muda de forma.
     this.version(5).stores({ budgets: "id, dirty" });
+    // Conta comercial: três tabelas novas. O campo `book` das outras tabelas não é
+    // indexado, então nenhuma linha existente muda de forma (ausente vale pessoal).
+    this.version(6).stores({ books: "id, dirty", assets: "id, dirty", debts: "id, dirty" });
     this.users = this.table("users");
     this.categories = this.table("categories");
     this.paymentMethods = this.table("paymentMethods");
@@ -65,6 +74,9 @@ export class HomeFinanceDb extends Dexie {
     this.reserves = this.table("reserves");
     this.reserveMovements = this.table("reserveMovements");
     this.budgets = this.table("budgets");
+    this.books = this.table("books");
+    this.assets = this.table("assets");
+    this.debts = this.table("debts");
     this.meta = this.table("meta");
   }
 }
