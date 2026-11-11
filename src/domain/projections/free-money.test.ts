@@ -5,7 +5,7 @@ import type { Recurrence } from "../model/recurrence";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
 import type { Transaction } from "../model/transaction";
 import { occurrenceKey } from "../recurrence/schedule";
-import { nextMonthFreeMoney } from "./free-money";
+import { nextMonthFreeMoney, recurringMonth } from "./free-money";
 
 const SALARY = "01J9F3K2M7QX8YB4TVWZ0DCEH1";
 const RENT = "01J9F3K2M7QX8YB4TVWZ0DCEH2";
@@ -135,5 +135,72 @@ describe("nextMonthFreeMoney", () => {
     const result = nextMonthFreeMoney(stateWith([series({})]), "2026-11-09");
 
     expect(result.freeMinor).toBe(-23_000);
+  });
+});
+
+describe("recurringMonth", () => {
+  it("no mês corrente soma a ocorrência já gravada com a que ainda vai nascer, uma vez cada", () => {
+    // Dia 9 de novembro: o salário do dia 5 já foi materializado (com o valor
+    // que o usuário corrigiu); o aluguel do dia 10 ainda é só regra.
+    const state = stateWith(
+      [salary, series({})],
+      [occurrence(salary, "2026-11", { amountMinor: 110_000 })],
+    );
+
+    expect(recurringMonth(state, "2026-11")).toEqual({
+      month: "2026-11",
+      incomeMinor: 110_000,
+      expenseMinor: 23_000,
+      freeMinor: 87_000,
+      estimated: false,
+    });
+  });
+
+  it("em mês passado conta só o que está gravado, sem a regra somar de novo", () => {
+    const rent = series({});
+    const state = stateWith(
+      [salary, rent],
+      [occurrence(salary, "2026-09"), occurrence(rent, "2026-09", { amountMinor: 25_000 })],
+    );
+
+    expect(recurringMonth(state, "2026-09")).toMatchObject({
+      incomeMinor: 100_000,
+      expenseMinor: 25_000,
+    });
+  });
+
+  it("ocorrência apagada de um mês passado não volta pela regra", () => {
+    const state = stateWith([salary], [occurrence(salary, "2026-09", { deletedAt: DELETED_AT })]);
+
+    expect(recurringMonth(state, "2026-09").incomeMinor).toBe(0);
+  });
+
+  it("série pausada ou apagada depois mantém o que já tinha gravado no mês", () => {
+    // A renda de setembro existiu; pausar a série em novembro não a desfaz.
+    const paused = { ...salary, active: false };
+    const gone = series({ deletedAt: DELETED_AT });
+    const state = stateWith(
+      [paused, gone],
+      [occurrence(paused, "2026-09"), occurrence(gone, "2026-09")],
+    );
+
+    expect(recurringMonth(state, "2026-09")).toMatchObject({
+      incomeMinor: 100_000,
+      expenseMinor: 23_000,
+    });
+    // Outubro não foi gravado e a série não gera mais: nada.
+    expect(recurringMonth(state, "2026-10").incomeMinor).toBe(0);
+  });
+
+  it("ocorrência vencida ainda sem linha conta pelo valor que a materialização vai gravar", () => {
+    // Aparelho que ficou fechado: setembro venceu e ninguém materializou.
+    expect(recurringMonth(stateWith([salary]), "2026-09").incomeMinor).toBe(100_000);
+  });
+
+  it("mês anterior ao começo da série fica zerado", () => {
+    expect(recurringMonth(stateWith([salary, series({})]), "2026-05")).toMatchObject({
+      incomeMinor: 0,
+      expenseMinor: 0,
+    });
   });
 });
