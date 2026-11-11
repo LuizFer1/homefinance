@@ -35,8 +35,8 @@ export function HeatMap({ month, daily, today, onPickDay }: HeatMapProps) {
   const shown = cells.slice(0, Math.ceil((lastIn + 1) / 7) * 7);
 
   return (
-    <div class="mt-3">
-      <div aria-hidden="true" class="grid grid-cols-7 gap-1 text-center text-[11px] text-fg/50">
+    <div class="mt-4">
+      <div aria-hidden="true" class="grid grid-cols-7 gap-1 text-center text-xs text-fg/50">
         {WEEKDAYS.map((letter, index) => (
           <span key={index}>{letter}</span>
         ))}
@@ -65,12 +65,12 @@ export function HeatMap({ month, daily, today, onPickDay }: HeatMapProps) {
                     }
               }
             >
-              <span aria-hidden="true" class="hf-num text-[11px] leading-none text-fg/70">
+              <span aria-hidden="true" class="hf-num text-xs leading-none text-fg/70">
                 {cell.day}
               </span>
               <span
                 aria-hidden="true"
-                class="hf-num mt-0.5 max-w-full truncate text-[10px] leading-none font-medium"
+                class="hf-num mt-1 max-w-full truncate text-xs leading-none font-medium"
               >
                 {amount === 0 ? "" : shortBRL(amount)}
               </span>

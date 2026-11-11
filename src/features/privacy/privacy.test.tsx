@@ -206,6 +206,79 @@ describe("com a máscara ligada nenhuma tela mostra valor", () => {
     expect(leaks(container)).toEqual([]);
   });
 
+  describe("sheets do Resumo", () => {
+    // Os sheets só montam o corpo quando abrem: o teste da página fechada não os cobre.
+    const MONTHLY = "01J9F3K2M7QX8YB4TVWZ0DCEH4";
+    const series = ["Aluguel", "Luz", "Internet", "Academia"].map((description, index) => ({
+      ...ALIVE,
+      id: `${MONTHLY.slice(0, 25)}${index + 5}`,
+      kind: "expense" as const,
+      description,
+      amountMinor: 23_000 + index,
+      currency: "BRL" as const,
+      categoryId: MOR,
+      paymentMethodId: null,
+      cashbackMinor: null,
+      frequency: "monthly" as const,
+      scheduleType: "dayOfMonth" as const,
+      scheduleN: 21 + index,
+      startOn: "2026-06-21",
+      endOn: null,
+      active: true,
+      variable: index === 1,
+    }));
+    const others = ["A", "B", "C", "D", "E"].map((id, index) =>
+      tx(`x${id}`, "expense", 1_000 + index, `2026-09-1${index}`, null, { description: id }),
+    );
+    const categories = Object.fromEntries(
+      ["A", "B", "C", "D", "E"].map((id) => [
+        id,
+        { ...state.categories[MOR], id, name: `Cat ${id}` },
+      ]),
+    );
+    const full = {
+      ...state,
+      categories: { ...state.categories, ...categories },
+      recurrences: Object.fromEntries(series.map((row) => [row.id, row])),
+      budgets: { b: { ...ALIVE, id: "b", categoryId: MOR, limitMinor: 100_000 } },
+    };
+    const all = [
+      ...items,
+      ...others.map((row, index) => ({ ...row, categoryId: ["A", "B", "C", "D", "E"][index] })),
+    ] as typeof items;
+
+    it.each([
+      ["Saídas por dia", "Saídas por dia"],
+      ["Últimos 6 meses", "Últimos 6 meses"],
+      ["Ver todas as 6", "Todas as categorias"],
+      ["Ver todas as 4", "Recorrentes a caminho"],
+    ])("%s", (button, title) => {
+      setHideValues(true);
+      const { container } = render(<DashboardPage items={all} state={full} today="2026-09-20" />);
+
+      expect(leaks(container)).toEqual([]);
+      fireEvent.click(screen.getByRole("button", { name: button }));
+
+      const sheet = Array.from(container.querySelectorAll("dialog")).find((item) => item.open);
+      expect(sheet?.getAttribute("aria-label")).toBe(title);
+      expect(
+        sheet?.querySelectorAll("li, [data-testid^='heat-day-'], [data-testid^='bar-']").length,
+      ).toBeGreaterThan(0);
+      expect(leaks(container)).toEqual([]);
+    });
+
+    it("o dia aberto pelo calendário também não mostra valor", () => {
+      setHideValues(true);
+      const { container } = render(<DashboardPage items={all} state={full} today="2026-09-20" />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Saídas por dia" }));
+      fireEvent.click(screen.getByTestId("heat-day-8"));
+
+      expect(screen.getByText(/1 saída/)).toBeDefined();
+      expect(leaks(container)).toEqual([]);
+    });
+  });
+
   it("estado vazio não quebra", () => {
     setHideValues(true);
     const { container } = render(

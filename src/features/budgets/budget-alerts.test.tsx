@@ -145,21 +145,23 @@ describe("aviso de meta em risco na Início", () => {
   });
 });
 
-describe("card de metas no Dashboard", () => {
-  it("lista as metas do mês com uso e leva ao Orçamento", () => {
+describe("metas nas categorias do Resumo", () => {
+  // O card "Metas" saiu: a meta agora é a barra da própria categoria em "Para onde foi".
+  it("mostra o uso de cada meta na linha da categoria e leva ao Orçamento", () => {
     const onOpen = vi.fn();
     dashboard(withBudgets, onOpen);
 
-    const card = within(screen.getByRole("region", { name: "Metas" }));
+    expect(screen.queryByRole("region", { name: "Metas" })).toBeNull();
+    const card = within(screen.getByRole("region", { name: "Para onde foi" }));
     expect(card.getByRole("progressbar", { name: "Meta de Lazer" })).toBeDefined();
     expect(card.getByRole("progressbar", { name: "Meta de Alimentação" })).toBeDefined();
-    expect(card.getByText("175%")).toBeDefined();
+    expect(card.getByText("175% da meta")).toBeDefined();
 
     fireEvent.click(card.getByRole("button", { name: "Ver orçamento" }));
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
-  it("mostra só as mais usadas", () => {
+  it("meta de categoria sem gasto no mês não vira linha: fica no Orçamento", () => {
     const many = {
       ...withBudgets,
       categories: { ...categories, X: category("X", "Extra") },
@@ -169,13 +171,27 @@ describe("card de metas no Dashboard", () => {
       },
     };
     dashboard(many, vi.fn());
-    const card = within(screen.getByRole("region", { name: "Metas" }));
+    const card = within(screen.getByRole("region", { name: "Para onde foi" }));
     expect(card.getAllByRole("progressbar")).toHaveLength(3);
     expect(card.queryByRole("progressbar", { name: "Meta de Extra" })).toBeNull();
   });
 
-  it("sem metas, o card não existe", () => {
+  it("sem metas, as barras são só a fatia e o link do Orçamento some", () => {
     dashboard(withoutBudgets, vi.fn());
-    expect(screen.queryByRole("region", { name: "Metas" })).toBeNull();
+    const card = within(screen.getByRole("region", { name: "Para onde foi" }));
+    expect(card.queryByRole("progressbar")).toBeNull();
+    expect(card.queryByRole("button", { name: "Ver orçamento" })).toBeNull();
+    expect(card.getByText("68%")).toBeDefined();
+  });
+
+  it("ocultar valores: a linha com meta não carrega valor algum, nem para o leitor de tela", () => {
+    hideValues.value = true;
+    dashboard(withBudgets, vi.fn());
+    const card = screen.getByRole("region", { name: "Para onde foi" });
+    expect(card.textContent).not.toMatch(/R\$\s?\d|\d\d\d,\d\d/);
+    for (const bar of within(card).getAllByRole("progressbar")) {
+      expect(bar.getAttribute("aria-valuetext")).toMatch(/^(Meta estourada: )?\d+% /);
+      expect(bar.getAttribute("aria-label")).not.toMatch(/\d/);
+    }
   });
 });
