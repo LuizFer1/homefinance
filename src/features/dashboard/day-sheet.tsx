@@ -44,7 +44,7 @@ export function DaySheet({
         <p class="mt-4 text-sm text-fg/60">Nenhuma saída neste dia.</p>
       ) : (
         <>
-          <p class="mt-1 text-[13px] text-fg/60">
+          <p class="mt-1 text-sm text-fg/60">
             {items.length} {items.length === 1 ? "saída" : "saídas"} · {brl(total)}
           </p>
           <TransactionList

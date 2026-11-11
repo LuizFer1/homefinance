@@ -29,7 +29,7 @@ export const HELP_TOPIC_LABELS_PT: Record<HelpTopic, string> = {
   states: "Estados de um lançamento",
   budgets: "Metas por categoria",
   cards: "Cartões e faturas",
-  dashboard: "Dashboard",
+  dashboard: "Resumo",
   reserves: "Reservas",
   import: "Importar PDF",
   sync: "Sincronizar com o hub",
@@ -98,7 +98,7 @@ export const HELP_TEXT_PT: Record<string, HelpText> = {
   "start-tabs": {
     question: "Para que serve cada aba?",
     answer: [
-      "Início mostra o saldo do mês, o que falta confirmar e a lista de lançamentos, com busca e filtros. Dashboard mostra os gráficos do mês. Reservas guarda a reserva de emergência e as caixinhas. Ajustes reúne cadastros, metas, aparência, sincronização e esta ajuda.",
+      "Início mostra o saldo do mês, o que falta confirmar e a lista de lançamentos, com busca e filtros. Resumo mostra como o mês está indo, para onde o dinheiro foi e o que vem pela frente. Reservas guarda a reserva de emergência e as caixinhas. Ajustes reúne cadastros, metas, aparência, sincronização e esta ajuda.",
       "Você também pode arrastar para o lado para trocar de aba.",
     ],
   },
@@ -188,7 +188,7 @@ export const HELP_TEXT_PT: Record<string, HelpText> = {
   "budgets-levels": {
     question: "Quando uma meta fica em atenção ou estourada?",
     answer: [
-      "A meta passa a Atenção quando o gasto chega a 80% do limite, e a Estourou quando o ultrapassa. É só um aviso, na aba Início e no Dashboard: o app nunca impede um gasto.",
+      "A meta passa a Atenção quando o gasto chega a 80% do limite, e a Estourou quando o ultrapassa. É só um aviso, na aba Início e no Resumo: o app nunca impede um gasto.",
     ],
   },
   "cards-register": {
@@ -231,9 +231,9 @@ export const HELP_TEXT_PT: Record<string, HelpText> = {
   "dashboard-heatmap": {
     question: "Como leio o mapa de calor Saídas por dia?",
     answer: [
-      "No Dashboard, o cartão Saídas por dia mostra o calendário do mês, com um quadrado por dia. Quanto mais forte a cor, maior a saída daquele dia, em quatro degraus relativos ao maior dia do mês: um mês barato também mostra onde foi o pico. Dia sem saída fica sem cor. O cartão só aparece se o mês tem despesa.",
+      "No Resumo, toque em Saídas por dia, no fim do cartão Saldo do mês, para abrir o calendário do mês, com um quadrado por dia. Quanto mais forte a cor, maior a saída daquele dia, em quatro degraus relativos ao maior dia do mês: um mês barato também mostra onde foi o pico. Dia sem saída fica sem cor. A opção só aparece se o mês tem despesa.",
       "Acima do calendário ficam Média por dia, Maior dia (com o número do dia) e Dias sem saída. No mês em curso, a média e os dias sem saída contam só até hoje: os dias que ainda não chegaram não entram na média nem viram dia sem saída. Em meses passados, vale o mês inteiro.",
-      "Toque num dia para ver os lançamentos dele e o total, e toque num lançamento para editá-lo. Transferências e lançamentos ocultos não entram, como no saldo. Com os valores escondidos (o olho), o mapa mostra a distribuição sem os números.",
+      "Toque num dia para ver os lançamentos dele e o total, e toque num lançamento para editá-lo. Fechar a lista do dia volta ao calendário. Transferências e lançamentos ocultos não entram, como no saldo. Com os valores escondidos (o olho), o mapa mostra a distribuição sem os números.",
     ],
   },
   "reserves-kinds": {

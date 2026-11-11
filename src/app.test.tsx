@@ -201,8 +201,8 @@ describe("App", () => {
 
     await addTransaction("Mercado", "12,34");
 
-    // Os totais moraram no Inicio ate a reestruturacao; agora sao do Dashboard.
-    fireEvent.click(naBarra().getByRole("button", { name: "Dashboard" }));
+    // Os totais moraram no Inicio ate a reestruturacao; agora sao do Resumo.
+    fireEvent.click(naBarra().getByRole("button", { name: "Resumo" }));
     expect(screen.getByTestId("total-expense").textContent).toContain("12,34");
   });
 
@@ -422,7 +422,7 @@ describe("navegacao", () => {
     );
   });
 
-  it("arrastar para a direita vai de Inicio para Dashboard", async () => {
+  it("arrastar para a direita vai de Inicio para Resumo", async () => {
     render(
       <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
     );
@@ -434,8 +434,8 @@ describe("navegacao", () => {
     expect(main).not.toBeNull();
     arrastarHorizontal(main as Element, 100, 220);
 
-    await waitFor(() => expect(screen.getByRole("region", { name: "Dashboard" })).toBeDefined());
-    expect(naBarra().getByRole("button", { name: "Dashboard" }).getAttribute("aria-current")).toBe(
+    await waitFor(() => expect(screen.getByRole("region", { name: "Resumo" })).toBeDefined());
+    expect(naBarra().getByRole("button", { name: "Resumo" }).getAttribute("aria-current")).toBe(
       "page",
     );
   });
@@ -741,25 +741,25 @@ describe("as quatro telas", () => {
     );
   });
 
-  it("o saldo total mora no Início e o Dashboard traz o do mês", async () => {
-    // O redesign tirou o cabeçalho fixo: Dashboard e Ajustes têm título próprio,
+  it("o saldo total mora no Início e o Resumo traz o do mês", async () => {
+    // O redesign tirou o cabeçalho fixo: Resumo e Ajustes têm título próprio,
     // e cada tela diz qual recorte é o seu número.
     await pronto();
     expect(screen.getByTestId("total-balance")).toBeDefined();
 
-    fireEvent.click(naBarra().getByRole("button", { name: "Dashboard" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Resumo" }));
     expect(screen.queryByTestId("total-balance")).toBeNull();
-    expect(screen.getByRole("heading", { name: "Dashboard" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Resumo" })).toBeDefined();
   });
 
-  it("o Dashboard mostra os totais e diz quando não há nada", async () => {
+  it("o Resumo mostra os totais e diz quando não há nada", async () => {
     await pronto();
-    fireEvent.click(naBarra().getByRole("button", { name: "Dashboard" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Resumo" }));
     expect(screen.getByText(/O resumo de agosto aparece aqui/)).toBeDefined();
 
     fireEvent.click(naBarra().getByRole("button", { name: "Início" }));
     await addTransaction("Mercado", "12,34");
-    fireEvent.click(naBarra().getByRole("button", { name: "Dashboard" }));
+    fireEvent.click(naBarra().getByRole("button", { name: "Resumo" }));
 
     expect(screen.getByTestId("total-expense").textContent).toContain("12,34");
     expect(screen.getByText(/1 lançamento/)).toBeDefined();
@@ -849,7 +849,7 @@ describe("as quatro telas", () => {
 
   it("não existe mais botão flutuante em tela nenhuma", async () => {
     await pronto();
-    for (const aba of ["Dashboard", "Início", "Reservas", "Ajustes"]) {
+    for (const aba of ["Resumo", "Início", "Reservas", "Ajustes"]) {
       fireEvent.click(naBarra().getByRole("button", { name: aba }));
       expect(screen.queryByRole("button", { name: "Novo lançamento" })).toBeNull();
     }
@@ -1072,12 +1072,12 @@ describe("reservas", () => {
     return stores;
   }
 
-  it("barra tem quatro abas na ordem Dashboard · Início · Reservas · Ajustes", async () => {
+  it("barra tem quatro abas na ordem Resumo · Início · Reservas · Ajustes", async () => {
     await pronto();
     const nomes = naBarra()
       .getAllByRole("button")
       .map((b) => b.textContent?.trim());
-    expect(nomes).toEqual(["Dashboard", "Início", "Reservas", "Ajustes"]);
+    expect(nomes).toEqual(["Resumo", "Início", "Reservas", "Ajustes"]);
   });
 
   it("Reservas vazia cria a emergência e abre o detalhe ao tocar", async () => {

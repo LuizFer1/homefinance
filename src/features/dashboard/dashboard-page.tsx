@@ -1,4 +1,3 @@
-import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import { budgetReport } from "../../domain/budgets/status";
 import { shiftMonth } from "../../domain/dates/calendar";
@@ -7,36 +6,27 @@ import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
 import { filterByMonth, monthlyTotals } from "../../domain/projections/breakdown";
 import { dailyExpenses, expensesOn } from "../../domain/projections/daily-expenses";
-import { type FreeMoney, nextMonthFreeMoney } from "../../domain/projections/free-money";
+import { nextMonthFreeMoney } from "../../domain/projections/free-money";
 import {
-  averageSurplus,
   cashbackSummary,
   categoryBreakdown,
   monthComparison,
   spendingPace,
 } from "../../domain/projections/insights";
-import {
-  daysBetween,
-  lastMonths,
-  monthLabelLong,
-  monthLabelShort,
-  monthOf,
-  shortDate,
-} from "../../domain/projections/periods";
-import { findCategory } from "../../domain/projections/selectors";
+import { lastMonths, monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { upcomingRecurrences } from "../../domain/recurrence/upcoming";
-import { cssVarForToken } from "../colors/color-token";
-import { Icon } from "../icons/icon";
-import { BudgetBar } from "../ui/budget-bar";
 import { Button } from "../ui/button";
-import { brl, Money, signedBRL, wholeBRL } from "../ui/money";
 import { MonthPicker } from "../ui/month-picker";
 import { PageHeader } from "../ui/page-header";
-import { IconTile } from "../ui/tile";
-import { BarChart } from "./bar-chart";
+import { CalendarSheet } from "./calendar-sheet";
+import { CategoryRows, visibleRows, withBudgets } from "./category-rows";
 import { DaySheet } from "./day-sheet";
-import { HeatMap } from "./heat-map";
-import { PaceChart } from "./pace-chart";
+import { FreeMoneyCard } from "./free-money";
+import { HistorySheet } from "./history-sheet";
+import { ListSheet } from "./list-sheet";
+import { Block, monthWord, TextLink } from "./parts";
+import { SummaryCard } from "./summary-card";
+import { UPCOMING_PREVIEW, UpcomingList } from "./upcoming-list";
 
 export interface DashboardPageProps {
   /** Já filtrados por `listTransactions`: o App calcula uma vez e reusa. */
@@ -47,7 +37,7 @@ export interface DashboardPageProps {
   today: string;
   /** Botão do estado vazio. */
   onGoHome?: () => void;
-  /** Abre o Orçamento. Sem ele, o card de metas não tem para onde levar e some. */
+  /** Abre o Orçamento. Sem ele, o link "Ver orçamento" não tem para onde levar e some. */
   onOpenBudgets?: () => void;
   /** Perfil deste aparelho, para o "Você" nas linhas do dia. */
   currentUserId?: Ulid | null;
@@ -56,123 +46,28 @@ export interface DashboardPageProps {
 }
 
 /**
- * Quantos meses a série de barras compara. Mudar este número obriga a mudar a
- * frase "últimos seis meses" do vazio — por extenso, não dá para compor daqui.
+ * Quantos meses a série de barras compara. Mudar este número obriga a mudar o
+ * título "Últimos 6 meses" e a frase "últimos seis meses" do vazio (em
+ * `history-sheet` e no card do saldo) — por extenso, não dá para compor daqui.
  */
-const WINDOW = 6;
-/** Metas no card do Dashboard: as mais usadas; o resto fica na tela de Orçamento. */
-const BUDGET_CARD_ROWS = 3;
+const HISTORY_MONTHS = 6;
 /** Janela dos "Recorrentes a caminho". */
 const UPCOMING_DAYS = 30;
 
-function Card({
-  title,
-  aside,
-  children,
-}: {
-  title: string;
-  aside?: ComponentChildren;
-  children: ComponentChildren;
-}) {
-  return (
-    <section aria-label={title} class="rounded-lg bg-surface p-4">
-      <div class="flex items-baseline justify-between gap-3">
-        <h2 class="text-base font-medium">{title}</h2>
-        {aside !== undefined && <span class="text-xs text-fg/55">{aside}</span>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-/**
- * "Dinheiro livre mês que vem": o que sobra das entradas recorrentes depois das
- * saídas recorrentes. A barra mostra a parte já comprometida das entradas.
- */
-function FreeMoneyCard({ free }: { free: FreeMoney }) {
-  const committed = free.incomeMinor > 0 ? Math.min(1, free.expenseMinor / free.incomeMinor) : 1;
-  const negative = free.freeMinor < 0;
-  const approx = free.estimated && (
-    <>
-      <span class="sr-only">aproximadamente </span>
-      <span aria-hidden="true">~</span>
-    </>
-  );
-  return (
-    <section aria-label="Dinheiro livre mês que vem" class="rounded-lg bg-surface p-4">
-      <div class="flex items-baseline justify-between gap-3">
-        <h2 class="hf-label">Dinheiro livre mês que vem</h2>
-        <span class="text-xs text-fg/55">{monthWord(free.month)}</span>
-      </div>
-      <p class="mt-2 flex flex-wrap items-baseline gap-x-2">
-        {approx}
-        <Money
-          minor={free.freeMinor}
-          size={28}
-          testId="free-money"
-          class={negative ? "text-expense-fg" : ""}
-        />
-        {free.incomeMinor > 0 && (
-          <span data-testid="free-money-of" class="hf-num text-sm text-fg/55">
-            de {brl(free.incomeMinor)}
-          </span>
-        )}
-      </p>
-      <div
-        role="img"
-        aria-label={`${Math.round(committed * 100)}% das entradas recorrentes já comprometidos`}
-        class="mt-4 h-1.5 overflow-hidden rounded-full bg-income/70"
-      >
-        <span
-          class="block h-full rounded-full bg-expense"
-          style={{ width: `${committed * 100}%` }}
-        />
-      </div>
-      <div class="mt-3 grid grid-cols-2 gap-3">
-        <div>
-          <p class="flex items-center gap-1.5 text-xs text-fg/55">
-            <span aria-hidden="true" class="size-2 rounded-full bg-income" />
-            Entradas recorrentes
-          </p>
-          <p data-testid="free-money-income" class="hf-num mt-1 text-[15px] font-medium">
-            {brl(free.incomeMinor)}
-          </p>
-        </div>
-        <div>
-          <p class="flex items-center gap-1.5 text-xs text-fg/55">
-            <span aria-hidden="true" class="size-2 rounded-full bg-expense" />
-            Já comprometido
-          </p>
-          <p data-testid="free-money-expense" class="hf-num mt-1 text-[15px] font-medium">
-            {brl(free.expenseMinor)}
-          </p>
-        </div>
-      </div>
-      {free.estimated && (
-        <p class="mt-3 text-xs text-fg/55 text-pretty">
-          Inclui a estimativa de contas com valor variável.
-        </p>
-      )}
-    </section>
-  );
-}
-
-/** Nome do mês sem o ano ("agosto"), para as frases de comparação. */
-function monthWord(month: string): string {
-  return monthLabelLong(month).split(" ")[0] ?? "";
-}
+/** Os sheets de consulta. O do dia fica à parte: ele guarda qual dia, não só "aberto". */
+type Sheet = "calendar" | "history" | "categories" | "upcoming";
 
 /** Esqueleto do vazio: rosca-fantasma e barras tracejadas sobre a régua. */
 function EmptyDashboard({ month, onGoHome }: { month: string; onGoHome?: () => void }) {
   return (
     <div class="mt-8">
       <div aria-hidden="true" class="flex items-end justify-between gap-6">
-        <span class="mb-3 size-[130px] shrink-0 rounded-full border-[14px] border-neutral-800/70" />
-        <span class="flex h-[112px] flex-1 items-end justify-end gap-2">
+        <span class="mb-3 size-32 shrink-0 rounded-full border-[12px] border-neutral-800/70" />
+        <span class="flex h-28 flex-1 items-end justify-end gap-2">
           {[48, 78, 35, 100, 66].map((height) => (
             <span
               key={height}
-              class="max-w-8 flex-1 rounded-t-[3px] border border-b-0 border-dashed border-neutral-700"
+              class="max-w-8 flex-1 rounded-t-[4px] border border-b-0 border-dashed border-neutral-700"
               style={{ height: `${height}%` }}
             />
           ))}
@@ -180,7 +75,7 @@ function EmptyDashboard({ month, onGoHome }: { month: string; onGoHome?: () => v
       </div>
       <div aria-hidden="true" class="hf-rule-both" />
       <h2 class="mt-8 text-xl font-medium">O resumo de {monthWord(month)} aparece aqui</h2>
-      <p class="mt-2 max-w-[20rem] text-sm leading-normal text-fg/62 text-pretty">
+      <p class="mt-2 max-w-80 text-sm leading-normal text-fg/62 text-pretty">
         Registre o primeiro lançamento em Início para ver saldo do mês, ritmo de gastos e para onde
         vai o dinheiro.
       </p>
@@ -194,11 +89,14 @@ function EmptyDashboard({ month, onGoHome }: { month: string; onGoHome?: () => v
 }
 
 /**
- * Dashboard: "como estou indo", não só "quanto".
+ * Resumo: "como estou indo", não só "quanto". (O arquivo e o componente seguem
+ * `dashboard`: é o `id` da aba e o nome da feature; só o título visível mudou.)
  *
- * Cada card responde uma pergunta: o saldo compara com o mês anterior, o ritmo
- * compara no mesmo dia, "para onde foi" ordena as categorias, "a caminho"
- * antecipa o que a recorrência vai lançar. O seletor de mês recalcula tudo.
+ * Três blocos, um por pergunta: **Como estou** (saldo com o ritmo colado),
+ * **Para onde foi** (categorias com a meta na própria linha) e **O que vem**
+ * (dinheiro livre e recorrentes, só no mês corrente). O que é consulta —
+ * calendário, seis meses, listas inteiras — fica a um toque, num sheet, em vez
+ * de ocupar a rolagem. O seletor de mês recalcula tudo.
  */
 export function DashboardPage({
   items,
@@ -211,186 +109,77 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const current = monthOf(today);
   const [month, setMonth] = useState(current);
+  const [sheet, setSheet] = useState<Sheet | null>(null);
   const [pickedDay, setPickedDay] = useState<string | null>(null);
 
   const header = (
     <PageHeader
-      title="Dashboard"
+      title="Resumo"
       action={<MonthPicker month={month} current={current} onChange={setMonth} />}
     />
   );
 
   if (items.length === 0) {
     return (
-      <section aria-label="Dashboard">
+      <section aria-label="Resumo">
         {header}
         <EmptyDashboard month={month} onGoHome={onGoHome} />
       </section>
     );
   }
 
+  const isCurrent = month === current;
   const monthItems = filterByMonth(items, month);
   const comparison = monthComparison(items, month);
-  const summary = comparison.current;
   const previous = shiftMonth(month, -1);
-  const hadPrevious = filterByMonth(items, previous).length > 0;
   const pace = spendingPace(items, month, today);
   // Médias só sobre os dias que já aconteceram: o mesmo corte do ritmo de gastos.
   const daily = dailyExpenses(items, month, pace.cutoff);
-  const categories = categoryBreakdown(monthItems, state);
-  const biggest = categories[0]?.amountMinor ?? 0;
-  const bars = monthlyTotals(items, lastMonths(`${month}-01`, WINDOW));
-  const upcoming = month === current ? upcomingRecurrences(state, today, UPCOMING_DAYS) : [];
-  // Só no mês corrente: "mês que vem" de um mês passado já aconteceu e está no extrato.
-  const free = month === current ? nextMonthFreeMoney(state, today) : null;
-  const cashback = cashbackSummary(monthItems, state);
   const budgets = budgetReport(items, state, month).rows;
-  const moved = summary.incomeMinor + summary.expenseMinor;
+  const categories = withBudgets(categoryBreakdown(monthItems, state), budgets);
+  const shown = visibleRows(categories);
+  const bars = monthlyTotals(items, lastMonths(`${month}-01`, HISTORY_MONTHS));
+  const upcoming = isCurrent ? upcomingRecurrences(state, today, UPCOMING_DAYS) : [];
+  // Só no mês corrente: "mês que vem" de um mês passado já aconteceu e está no extrato.
+  const free = isCurrent ? nextMonthFreeMoney(state, today) : null;
+  const showFree = free !== null && (free.incomeMinor > 0 || free.expenseMinor > 0);
+  const hasExpense = comparison.current.expenseMinor > 0;
   const label = monthLabelLong(month);
-  const up = comparison.deltaMinor >= 0;
+
+  // O `close` nativo do <dialog> dispara também quando o sheet fecha por prop. Sem
+  // conferir quem está aberto, o evento atrasado de um sheet fecharia o seguinte.
+  const close = (name: Sheet) => () => setSheet((open) => (open === name ? null : open));
+
+  function closeDay() {
+    // Mesma razão do `close` acima: depois de fechado, o evento nativo chega de
+    // novo e reabriria o calendário por baixo de quem foi editar um lançamento.
+    if (pickedDay === null) return;
+    setPickedDay(null);
+    setSheet("calendar");
+  }
 
   return (
-    <section aria-label="Dashboard">
+    <section aria-label="Resumo">
       {header}
       {/* O seletor já diz o mês; a forma por extenso fica para o leitor de tela. */}
       <p class="sr-only">{label}</p>
 
-      <div class="mt-5 space-y-3.5">
-        <section aria-label="Saldo do mês" class="rounded-lg bg-surface p-4">
-          <h2 class="hf-label">Saldo do mês</h2>
-          <p class="mt-2">
-            <Money
-              minor={summary.balanceMinor}
-              size={36}
-              testId="dashboard-balance"
-              class={summary.balanceMinor < 0 ? "text-expense-fg" : ""}
-            />
-          </p>
-          {hadPrevious && (
-            <p
-              class={`mt-2 flex items-center gap-1.5 text-[13px] ${
-                up ? "text-income-fg" : "text-expense-fg"
-              }`}
-            >
-              <Icon name={up ? "trend-up" : "trend-down"} size={16} />
-              {comparison.deltaMinor === 0
-                ? `Igual a ${monthWord(previous)}`
-                : `${brl(Math.abs(comparison.deltaMinor))} a ${up ? "mais" : "menos"} que ${monthWord(previous)}`}
-            </p>
-          )}
-          <div
-            aria-hidden="true"
-            class="mt-4 flex h-1.5 gap-[3px] overflow-hidden rounded-full bg-neutral-800"
-          >
-            {moved > 0 && (
-              <>
-                <span class="rounded-full bg-income" style={{ flexGrow: summary.incomeMinor }} />
-                <span class="rounded-full bg-expense" style={{ flexGrow: summary.expenseMinor }} />
-              </>
-            )}
-          </div>
-          <div class="mt-3 grid grid-cols-2 gap-3">
-            <div>
-              <p class="flex items-center gap-1.5 text-xs text-fg/55">
-                <span aria-hidden="true" class="size-2 rounded-full bg-income" />
-                Receitas
-              </p>
-              <p data-testid="total-income" class="hf-num mt-1 text-[15px] font-medium">
-                {brl(summary.incomeMinor)}
-              </p>
-            </div>
-            <div>
-              <p class="flex items-center gap-1.5 text-xs text-fg/55">
-                <span aria-hidden="true" class="size-2 rounded-full bg-expense" />
-                Despesas
-              </p>
-              <p data-testid="total-expense" class="hf-num mt-1 text-[15px] font-medium">
-                {brl(summary.expenseMinor)}
-              </p>
-            </div>
-          </div>
-          <p class="sr-only">
-            {comparison.count} {comparison.count === 1 ? "lançamento" : "lançamentos"} no mês.
-          </p>
-        </section>
+      <div class="mt-5 space-y-8">
+        <Block title="Como estou">
+          <SummaryCard
+            month={month}
+            previous={previous}
+            hadPrevious={filterByMonth(items, previous).length > 0}
+            isCurrent={isCurrent}
+            comparison={comparison}
+            pace={pace}
+            cashback={cashbackSummary(monthItems, state)}
+            onOpenCalendar={hasExpense ? () => setSheet("calendar") : undefined}
+            onOpenHistory={() => setSheet("history")}
+          />
+        </Block>
 
-        {free !== null && (free.incomeMinor > 0 || free.expenseMinor > 0) && (
-          <FreeMoneyCard free={free} />
-        )}
-
-        {summary.expenseMinor > 0 && (
-          <Card
-            title="Ritmo de gastos"
-            aside={
-              <span class="flex items-center gap-3">
-                <span class="flex items-center gap-1.5">
-                  <span aria-hidden="true" class="h-0.5 w-3 rounded-full bg-accent" />
-                  {monthLabelShort(month)}
-                </span>
-                <span class="flex items-center gap-1.5">
-                  <span
-                    aria-hidden="true"
-                    class="w-3 border-t-[1.5px] border-dashed border-neutral-600"
-                  />
-                  {monthLabelShort(previous)}
-                </span>
-              </span>
-            }
-          >
-            <p class="mt-2 text-[13px] leading-normal text-fg/70 text-pretty">
-              {brl(pace.spentMinor)} até o dia {pace.cutoff}
-              {pace.change !== null && (
-                <>
-                  {" — "}
-                  <strong
-                    class={`font-medium ${pace.change <= 0 ? "text-income-fg" : "text-expense-fg"}`}
-                  >
-                    {Math.round(Math.abs(pace.change) * 100)}%{" "}
-                    {pace.change <= 0 ? "abaixo" : "acima"}
-                  </strong>{" "}
-                  do mesmo ponto de {monthWord(previous)}
-                </>
-              )}
-              .
-            </p>
-            <PaceChart
-              pace={pace}
-              showToday={month === current}
-              monthShort={monthLabelShort(month)}
-            />
-          </Card>
-        )}
-
-        {summary.expenseMinor > 0 && (
-          <Card title="Saídas por dia" aside={monthLabelShort(month)}>
-            <div class="mt-3 grid grid-cols-3 gap-3">
-              <div>
-                <p class="text-xs text-fg/55">Média por dia</p>
-                <p data-testid="heat-average" class="hf-num mt-1 text-[15px] font-medium">
-                  {wholeBRL(daily.averageMinor)}
-                </p>
-              </div>
-              <div>
-                <p class="text-xs text-fg/55">Maior dia</p>
-                <p data-testid="heat-peak" class="hf-num mt-1 text-[15px] font-medium">
-                  {wholeBRL(daily.maxMinor)}
-                </p>
-                {daily.peakDay !== null && (
-                  <p class="hf-num text-xs text-fg/55">dia {daily.peakDay}</p>
-                )}
-              </div>
-              <div>
-                <p class="text-xs text-fg/55">Dias sem saída</p>
-                <p data-testid="heat-empty" class="hf-num mt-1 text-[15px] font-medium">
-                  {daily.emptyDays}
-                </p>
-              </div>
-            </div>
-            <HeatMap month={month} daily={daily} today={today} onPickDay={setPickedDay} />
-          </Card>
-        )}
-
-        <Card
+        <Block
           title="Para onde foi"
           aside={
             categories.length > 0
@@ -398,185 +187,96 @@ export function DashboardPage({
               : undefined
           }
         >
-          {categories.length === 0 ? (
-            <p class="mt-3 text-sm text-fg/55">Nenhuma despesa em {label}.</p>
-          ) : (
-            <ul class="mt-3 space-y-3">
-              {categories.map((row) => (
-                <li key={row.id ?? "sem-categoria"}>
-                  <div class="flex items-center gap-2.5">
-                    <IconTile icon={row.icon} color={row.color} size={28} iconSize={15} />
-                    <span class="min-w-0 flex-1 truncate text-sm">{row.name}</span>
-                    <span class="hf-num text-sm font-medium">{brl(row.amountMinor)}</span>
-                    <span class="hf-num w-9 text-right text-xs text-fg/50">
-                      {Math.round(row.share * 100)}%
-                    </span>
-                  </div>
-                  <div class="mt-1.5 ml-[38px] h-1 overflow-hidden rounded-full bg-neutral-900">
-                    <span
-                      class="block h-full rounded-full"
-                      style={{
-                        width: `${Math.max(3, (row.amountMinor / biggest) * 100)}%`,
-                        backgroundColor: cssVarForToken(row.color),
-                      }}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+          <div class="rounded-lg bg-surface p-4">
+            {categories.length === 0 ? (
+              <p class="text-sm text-fg/55">Nenhuma despesa em {label}</p>
+            ) : (
+              <CategoryRows rows={shown} />
+            )}
+            {(categories.length > shown.length ||
+              (onOpenBudgets !== undefined && budgets.length > 0)) && (
+              <div class="mt-2 -mb-2 flex items-center justify-between gap-3">
+                {categories.length > shown.length ? (
+                  <TextLink caret onClick={() => setSheet("categories")}>
+                    Ver todas as {categories.length}
+                  </TextLink>
+                ) : (
+                  <span />
+                )}
+                {onOpenBudgets !== undefined && budgets.length > 0 && (
+                  <TextLink onClick={onOpenBudgets}>Ver orçamento</TextLink>
+                )}
+              </div>
+            )}
+          </div>
+        </Block>
 
-        {onOpenBudgets !== undefined && budgets.length > 0 && (
-          <Card
-            title="Metas"
-            aside={`${budgets.length} ${budgets.length === 1 ? "categoria" : "categorias"}`}
-          >
-            <ul class="mt-3 space-y-3.5">
-              {budgets.slice(0, BUDGET_CARD_ROWS).map((row) => (
-                <li key={row.budget.id}>
-                  <div class="flex items-center gap-2.5">
-                    <IconTile
-                      icon={row.category.icon}
-                      color={row.category.color}
-                      size={28}
-                      iconSize={15}
-                    />
-                    <span class="min-w-0 flex-1 truncate text-sm">{row.category.name}</span>
-                    <span class="hf-num text-xs text-fg/60">
-                      {brl(row.spentMinor)} de {brl(row.limitMinor)}
-                    </span>
-                    <span
-                      class={`hf-num w-10 text-right text-xs font-medium ${
-                        row.level === "over" ? "text-expense-fg" : "text-fg/60"
-                      }`}
-                    >
-                      {Math.floor(row.usedRatio * 100)}%
-                    </span>
-                  </div>
-                  <div class="mt-1.5 ml-[38px]">
-                    <BudgetBar
-                      ratio={row.usedRatio}
-                      level={row.level}
-                      label={`Meta de ${row.category.name}`}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              onClick={onOpenBudgets}
-              class="hf-press mt-3 text-[13px] font-medium text-accent-300"
-            >
-              Ver orçamento
-            </button>
-          </Card>
-        )}
-
-        {upcoming.length > 0 && (
-          <Card title="Recorrentes a caminho" aside={`próximos ${UPCOMING_DAYS} dias`}>
-            <ul class="mt-2">
-              {upcoming.map((item, index) => {
-                const category = findCategory(state, item.categoryId);
-                const income = item.kind === "income";
-                const inDays = daysBetween(today, item.date);
-                return (
-                  <li
-                    key={`${item.recurrenceId}-${item.date}`}
-                    class="relative flex h-[58px] items-center gap-3"
-                  >
-                    {index > 0 && (
-                      <span aria-hidden="true" class="hf-rule absolute top-0 right-0 left-11" />
-                    )}
-                    <IconTile
-                      icon={category?.icon ?? "repeat"}
-                      color={category?.color ?? null}
-                      size={32}
-                      iconSize={16}
-                    />
-                    <span class="min-w-0 flex-1">
-                      <span class="block truncate text-sm font-medium">{item.description}</span>
-                      <span class="mt-0.5 block text-xs text-fg/55">
-                        {shortDate(item.date, today)} · em {inDays} {inDays === 1 ? "dia" : "dias"}
-                      </span>
-                    </span>
-                    <span class={`hf-num text-sm font-medium ${income ? "text-income-fg" : ""}`}>
-                      {item.estimated && (
-                        <>
-                          <span class="sr-only">aproximadamente </span>
-                          <span aria-hidden="true">~</span>
-                        </>
-                      )}
-                      {signedBRL(income ? item.amountMinor : -item.amountMinor, "always")}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
-        )}
-
-        <Card
-          title="Receita × despesa"
-          aside={
-            <span class="flex items-center gap-3">
-              <span class="flex items-center gap-1.5">
-                <span aria-hidden="true" class="size-1.5 rounded-full bg-income" />
-                receita
-              </span>
-              <span class="flex items-center gap-1.5">
-                <span aria-hidden="true" class="size-1.5 rounded-full bg-expense" />
-                despesa
-              </span>
-            </span>
-          }
-        >
-          {bars.every((item) => item.incomeMinor === 0 && item.expenseMinor === 0) ? (
-            <p class="mt-3 text-sm text-fg/55">Sem movimento nos últimos seis meses.</p>
-          ) : (
-            <>
-              <p class="mt-2 text-[13px] text-fg/70">
-                Sobrou em média {wholeBRL(averageSurplus(bars))} por mês desde{" "}
-                {monthWord(bars[0]?.month ?? month)}.
-              </p>
-              <BarChart data={bars} />
-            </>
-          )}
-        </Card>
-
-        {cashback.purchases > 0 && (
-          <section
-            aria-label="Cashback"
-            class="flex items-center gap-3.5 rounded-lg bg-surface p-4"
-          >
-            <span
-              aria-hidden="true"
-              class="grid size-10 shrink-0 place-items-center rounded-lg text-accent-300
-                shadow-[inset_0_0_0_1px_var(--color-accent)]"
-            >
-              <Icon name="coins" size={20} />
-            </span>
-            <span class="min-w-0">
-              <span class="block text-[15px] font-medium">
-                {brl(cashback.totalMinor)} de cashback
-              </span>
-              <span class="mt-0.5 block text-xs text-fg/55">
-                Em {monthWord(month)} · {cashback.purchases}{" "}
-                {cashback.purchases === 1 ? "compra" : "compras"} no crédito e débito
-              </span>
-            </span>
-          </section>
+        {(showFree || upcoming.length > 0) && (
+          <Block title="O que vem">
+            {showFree && <FreeMoneyCard free={free} />}
+            {upcoming.length > 0 && (
+              <section aria-label="Próximas recorrentes" class="rounded-lg bg-surface px-4 py-2">
+                <div class="flex min-h-9 items-center justify-between gap-3">
+                  <h3 class="text-sm text-fg/60">Próximas recorrentes</h3>
+                  <span class="text-xs text-fg/55">próximos {UPCOMING_DAYS} dias</span>
+                </div>
+                <UpcomingList
+                  items={upcoming.slice(0, UPCOMING_PREVIEW)}
+                  state={state}
+                  today={today}
+                />
+                {upcoming.length > UPCOMING_PREVIEW && (
+                  <TextLink caret onClick={() => setSheet("upcoming")}>
+                    Ver todas as {upcoming.length}
+                  </TextLink>
+                )}
+              </section>
+            )}
+          </Block>
         )}
       </div>
+
+      <CalendarSheet
+        open={sheet === "calendar"}
+        month={month}
+        daily={daily}
+        today={today}
+        onPickDay={(date) => {
+          // Um <dialog> modal por vez: o do dia por cima deixaria o calendário aberto
+          // por baixo, com dois grabbers e dois backdrops.
+          setSheet(null);
+          setPickedDay(date);
+        }}
+        onClose={close("calendar")}
+      />
+      <HistorySheet open={sheet === "history"} bars={bars} onClose={close("history")} />
+      <ListSheet
+        open={sheet === "categories"}
+        title="Todas as categorias"
+        note={label}
+        onClose={close("categories")}
+      >
+        <CategoryRows rows={categories} />
+      </ListSheet>
+      <ListSheet
+        open={sheet === "upcoming"}
+        title="Recorrentes a caminho"
+        note={`próximos ${UPCOMING_DAYS} dias`}
+        onClose={close("upcoming")}
+      >
+        <UpcomingList items={upcoming} state={state} today={today} />
+      </ListSheet>
       <DaySheet
         date={pickedDay}
         items={pickedDay === null ? [] : expensesOn(items, pickedDay, state)}
         state={state}
         today={today}
         currentUserId={currentUserId}
-        onEdit={(record) => onEdit?.(record)}
-        onClose={() => setPickedDay(null)}
+        onEdit={(record) => {
+          setSheet(null);
+          onEdit?.(record);
+        }}
+        onClose={closeDay}
       />
     </section>
   );

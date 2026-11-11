@@ -100,7 +100,7 @@ export function PaceChart({ pace, showToday, monthShort }: PaceChartProps) {
         )}
       </svg>
       {/* Eixo em HTML, não em <text>: herda a fonte e o tamanho sem escalar com o SVG. */}
-      <div aria-hidden="true" class="relative mt-2 h-4 text-[11px] text-fg/50">
+      <div aria-hidden="true" class="relative mt-2 h-4 text-xs text-fg/50">
         {ticks.map((day) => (
           <span
             key={day}
