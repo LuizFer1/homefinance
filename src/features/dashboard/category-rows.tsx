@@ -45,19 +45,29 @@ const FILL: Record<BudgetLevel, string> = {
 /**
  * Categorias do mês, com a meta fundida na linha.
  *
- * Todas as barras dividem **uma** escala — o maior gasto ou o maior limite
- * entre as linhas mostradas —, senão o traço do limite de uma linha não seria
- * comparável ao da outra e a barra viraria só um enfeite de porcentagem.
+ * Todas as barras dividem **uma** escala, senão o traço do limite de uma linha
+ * não seria comparável ao da outra e a barra viraria só um enfeite de
+ * porcentagem. A escala é `scaleMinor`, as entradas recorrentes do mês: assim a
+ * barra responde "quanto da minha renda fixa foi para isto", e não só "quanto
+ * isto pesa perto da maior categoria" — medida que mudava de linha para linha
+ * e do bloco para o sheet, conforme o que estivesse na lista.
+ *
+ * Sem entrada recorrente no mês (`scaleMinor` zero) não há renda para servir de
+ * régua; a escala volta a ser o maior gasto ou o maior limite entre as linhas
+ * mostradas, para a tela não ficar sem barra. Gasto ou limite acima da renda
+ * trava em 100%: o trilho é a renda inteira, e nada vaza dele.
  *
  * Com meta, a barra é um `progressbar` com o mesmo texto da `BudgetBar`: só a
  * porcentagem, nunca reais, para o leitor de tela não ler o que "Ocultar
  * valores" esconde.
  */
-export function CategoryRows({ rows }: { rows: CategoryRow[] }) {
-  const scale = Math.max(
-    1,
-    ...rows.map((row) => Math.max(row.amountMinor, row.budget?.limitMinor ?? 0)),
-  );
+export function CategoryRows({ rows, scaleMinor }: { rows: CategoryRow[]; scaleMinor: number }) {
+  const scale =
+    scaleMinor > 0
+      ? scaleMinor
+      : Math.max(1, ...rows.map((row) => Math.max(row.amountMinor, row.budget?.limitMinor ?? 0)));
+  // Multiplica antes de dividir: 7000 / 100000 * 100 dá 7,000000000000001 em ponto flutuante.
+  const percentOf = (amountMinor: number) => Math.min(100, (amountMinor * 100) / scale);
 
   return (
     <ul class="space-y-3">
@@ -94,7 +104,7 @@ export function CategoryRows({ rows }: { rows: CategoryRow[] }) {
                     data-testid="category-fill"
                     class={`h-full rounded-full ${FILL[budget?.level ?? "ok"]}`}
                     // Piso de 2%: uma categoria pequena ao lado de uma grande sumiria da barra.
-                    style={{ width: `${Math.max(2, (row.amountMinor / scale) * 100)}%` }}
+                    style={{ width: `${Math.max(2, percentOf(row.amountMinor))}%` }}
                   />
                 </div>
                 {budget !== null && (
@@ -102,7 +112,7 @@ export function CategoryRows({ rows }: { rows: CategoryRow[] }) {
                     data-testid="category-limit"
                     aria-hidden="true"
                     class="absolute inset-y-0 -translate-x-1/2 border-l-2 border-dotted border-fg/80"
-                    style={{ left: `${(budget.limitMinor / scale) * 100}%` }}
+                    style={{ left: `${percentOf(budget.limitMinor)}%` }}
                   />
                 )}
               </div>
