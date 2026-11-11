@@ -573,7 +573,9 @@ export function App({
               update={update}
               onOpen={openSection}
               onReset={onReset}
-              state={state}
+              // O arquivo exporta o banco inteiro (as duas contas): a prévia conta o
+              // estado completo, e não a visão filtrada pela conta ativa.
+              state={session.fullState.value}
               today={today}
               onExport={onExport}
               onImportPrepare={onImportPrepare}
@@ -674,6 +676,7 @@ export function App({
         {importing && (
           <ImportSheet
             state={state}
+            book={session.activeBook.value}
             today={today}
             readPdf={readPdf}
             onCreateCard={registry.addPaymentMethod}
