@@ -79,6 +79,10 @@ describe("stateForBook", () => {
     expect(cross?.categoryId).toBe("P-FOOD");
     // A categoria de destino é pessoal: a visão comercial não a tem.
     expect(findCategory(business, "P-FOOD")).toBeNull();
+    // `resolveCategoryName` trata o destino ausente como referência morta: o rótulo
+    // é "Categoria removida", e não "Sem categoria" (que é de `findCategory`, do
+    // detalhamento, do filtro e de `uncategorized`). Fica registrado para o dono.
+    expect(resolveCategoryName(business, "P-FOOD")).toBe("Categoria removida");
     // E a pessoal segue enxergando a própria categoria, intacta.
     expect(resolveCategoryName(stateForBook(full, "personal"), "P-FOOD")).toBe("Alimentação");
     expect(full.transactions["b-cross"]?.categoryId).toBe("P-FOOD");

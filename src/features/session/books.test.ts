@@ -4,9 +4,8 @@ import type { HomeFinanceDb } from "../../data/db";
 import { buildRow } from "../../data/repository";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
 import { compareHlc } from "../../domain/clock/hlc";
-import { stableEntityId } from "../../domain/ids/stable-id";
 import { bookOf } from "../../domain/model/book";
-import type { BookAccount } from "../../domain/model/book-account";
+import { type BookAccount, BUSINESS_BOOK_ID } from "../../domain/model/book-account";
 import type { Category } from "../../domain/model/category";
 import type { PaymentMethod } from "../../domain/model/payment-method";
 import type { User } from "../../domain/model/user";
@@ -15,7 +14,7 @@ import { ACTIVE_BOOK_KEY, createSession, type Session } from "./session";
 
 const VENDAS = { name: "Vendas", icon: "banknote", color: "emerald", kind: "income" } as const;
 const MERCADO = { name: "Mercado", icon: "utensils", color: "orange", kind: "expense" } as const;
-const BUSINESS_ID = stableEntityId("book:business");
+const BUSINESS_ID = BUSINESS_BOOK_ID;
 
 let db: HomeFinanceDb;
 let session: Session;

@@ -13,9 +13,9 @@ import {
   GENESIS_HLC,
   LEGACY_CREDIT_METHOD_ID,
 } from "../domain/defaults/defaults";
-import { stableEntityId } from "../domain/ids/stable-id";
 import type { RandomChunk } from "../domain/ids/ulid";
 import { bookOf } from "../domain/model/book";
+import { BUSINESS_BOOK_ID } from "../domain/model/book-account";
 import type { PaymentMethod } from "../domain/model/payment-method";
 import { movement, reserve } from "../domain/reserves/fixtures.fake";
 import { createBudgetsStore } from "../features/budgets/store";
@@ -507,7 +507,7 @@ describe("autoria de série entre dois aparelhos", () => {
 });
 
 describe("duas contas, dois aparelhos, um hub", () => {
-  const BUSINESS = stableEntityId("book:business");
+  const BUSINESS = BUSINESS_BOOK_ID;
   const VENDAS = { name: "Vendas", icon: "banknote", color: "emerald", kind: "income" } as const;
 
   function bookRow(d: Device, name: string) {
