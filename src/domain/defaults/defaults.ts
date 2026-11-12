@@ -198,13 +198,122 @@ export interface DefaultCatalog {
 }
 
 /**
- * Padrões por conta. A comercial começa vazia: a semente do comércio (Vendas,
- * Fornecedores, Pix…) entra com a criação da conta, e `buildDefaultRows` e
- * `planDefaultsMerge` já aceitam o `book` para recebê-la sem mudar de forma.
+ * Categorias do comércio, pelo mesmo critério da lista pessoal (curta, cadastros
+ * comuns, apagáveis). Só `income` e `expense`: `both` é da pessoal (investimento e
+ * transferência), e o capital do negócio mora em bens, não em categoria.
+ */
+export const BUSINESS_CATEGORIES: readonly DefaultEntry<CategoryDraft>[] = [
+  entry(
+    "categories",
+    "sales",
+    { name: "Vendas", icon: "shopping-bag", color: "emerald", kind: "income" },
+    "business",
+  ),
+  entry(
+    "categories",
+    "other-income",
+    { name: "Outras receitas", icon: "banknote", color: "teal", kind: "income" },
+    "business",
+  ),
+  entry(
+    "categories",
+    "suppliers",
+    { name: "Fornecedores", icon: "shopping-cart", color: "orange", kind: "expense" },
+    "business",
+  ),
+  entry(
+    "categories",
+    "rent",
+    { name: "Aluguel", icon: "house", color: "amber", kind: "expense" },
+    "business",
+  ),
+  entry(
+    "categories",
+    "taxes",
+    { name: "Impostos", icon: "landmark", color: "slate", kind: "expense" },
+    "business",
+  ),
+  entry(
+    "categories",
+    "staff",
+    { name: "Funcionários", icon: "briefcase", color: "indigo", kind: "expense" },
+    "business",
+  ),
+  entry(
+    "categories",
+    "marketing",
+    { name: "Marketing", icon: "smartphone", color: "fuchsia", kind: "expense" },
+    "business",
+  ),
+  entry(
+    "categories",
+    "equipment",
+    { name: "Equipamentos", icon: "laptop", color: "sky", kind: "expense" },
+    "business",
+  ),
+  // Água, luz e internet: o nome curto cabe no azulejo da grade.
+  entry(
+    "categories",
+    "bills",
+    { name: "Contas", icon: "receipt", color: "slate", kind: "expense" },
+    "business",
+  ),
+  entry(
+    "categories",
+    "other-expense",
+    { name: "Outras despesas", icon: "tag", color: "rose", kind: "expense" },
+    "business",
+  ),
+];
+
+/**
+ * Formas de pagamento do comércio. Boleto não tem tipo próprio (`PAYMENT_KINDS` é
+ * dinheiro, pix, crédito, débito e outro), então é `other`: nenhum tipo afirma
+ * algo errado sobre ele. O crédito sai sem banco nem fechamento, como todo
+ * `credit` genérico: usar pela primeira vez abre "Ajustar cartões".
+ */
+export const BUSINESS_METHODS: readonly DefaultEntry<PaymentMethodDraft>[] = [
+  entry(
+    "paymentMethods",
+    "pix",
+    { name: "Pix", icon: "zap", color: "teal", kind: "pix" },
+    "business",
+  ),
+  entry(
+    "paymentMethods",
+    "cash",
+    { name: "Dinheiro", icon: "banknote", color: "emerald", kind: "cash" },
+    "business",
+  ),
+  entry(
+    "paymentMethods",
+    "debit",
+    { name: "Cartão de débito", icon: "credit-card", color: "sky", kind: "debit" },
+    "business",
+  ),
+  entry(
+    "paymentMethods",
+    "credit",
+    { name: "Cartão de crédito", icon: "credit-card", color: "violet", kind: "credit" },
+    "business",
+  ),
+  entry(
+    "paymentMethods",
+    "boleto",
+    { name: "Boleto", icon: "receipt", color: "amber", kind: "other" },
+    "business",
+  ),
+];
+
+/**
+ * Padrões por conta. O catálogo comercial só vira linha quando a conta é criada
+ * (`buildDefaultRows("business")` no assistente): a pessoal é semeada no primeiro
+ * uso, a comercial nunca é semeada sozinha. `planDefaultsMerge` conhece os dois e
+ * funde cada conta no catálogo dela, sem cruzar.
  */
 export const DEFAULTS_BY_BOOK: Record<Book, DefaultCatalog> = {
   personal: { categories: DEFAULT_CATEGORIES, methods: DEFAULT_METHODS },
-  business: { categories: [], methods: [] },
+  business: { categories: BUSINESS_CATEGORIES, methods: BUSINESS_METHODS },
 };
 
 /** As linhas da semente de uma conta. Sem relógio: não dependem de quando nem de onde. */

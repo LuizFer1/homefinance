@@ -227,3 +227,36 @@ describe("fusão por conta", () => {
     expect(planDefaultsMerge(after, stamper(), catalog)).toBeNull();
   });
 });
+
+describe("planDefaultsMerge com o catálogo comercial", () => {
+  const business = buildDefaultRows("business");
+  const personal = buildDefaultRows("personal");
+
+  it("a semente das duas contas, com nomes em comum, não gera plano", () => {
+    // "Contas", "Pix", "Dinheiro" existem nas duas listas, cada uma com o id da sua conta.
+    const plan = planDefaultsMerge(
+      state(
+        [...personal.categories, ...business.categories],
+        [...personal.paymentMethods, ...business.paymentMethods],
+      ),
+      stamper(),
+    );
+    expect(plan).toBeNull();
+  });
+
+  it("uma cópia comercial de 'Vendas' funde no padrão comercial; a homônima pessoal fica", () => {
+    const sales = business.categories.find((row) => row.name === "Vendas");
+    if (sales === undefined) throw new Error("catálogo comercial mudou");
+    const copy: Category = { ...sales, id: "COPIA-COMERCIAL", updatedAt: hlc(500) };
+    const { book: _book, ...personalSales } = sales;
+    const mine: Category = { ...personalSales, id: "VENDAS-PESSOAL", updatedAt: hlc(500) };
+
+    const plan = planDefaultsMerge(
+      state([...personal.categories, ...business.categories, copy, mine]),
+      stamper(),
+    );
+    const rows = byId(plan?.rows.categories ?? []);
+    expect(rows["COPIA-COMERCIAL"]).toMatchObject({ mergedInto: sales.id, book: "business" });
+    expect(rows["VENDAS-PESSOAL"]).toBeUndefined();
+  });
+});

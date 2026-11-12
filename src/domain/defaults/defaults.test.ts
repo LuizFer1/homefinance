@@ -68,8 +68,47 @@ describe("padrões por conta", () => {
     expect(business).not.toBe(defaultId("categories", "food"));
   });
 
-  it("a semente da conta comercial ainda é vazia (entra com a criação da conta)", () => {
-    expect(buildDefaultRows("business")).toEqual({ categories: [], paymentMethods: [] });
+  it("a semente comercial traz as categorias e formas de pagamento do comércio, todas da conta", () => {
+    const { categories, paymentMethods } = buildDefaultRows("business");
+    expect(categories.map((c) => c.name)).toEqual([
+      "Vendas",
+      "Outras receitas",
+      "Fornecedores",
+      "Aluguel",
+      "Impostos",
+      "Funcionários",
+      "Marketing",
+      "Equipamentos",
+      "Contas",
+      "Outras despesas",
+    ]);
+    expect(categories.filter((c) => c.kind === "income").map((c) => c.name)).toEqual([
+      "Vendas",
+      "Outras receitas",
+    ]);
+    expect(paymentMethods.map((m) => m.name)).toEqual([
+      "Pix",
+      "Dinheiro",
+      "Cartão de débito",
+      "Cartão de crédito",
+      "Boleto",
+    ]);
+    for (const row of [...categories, ...paymentMethods]) {
+      expect(row.book).toBe("business");
+      expect(row.updatedAt).toBe(GENESIS_HLC);
+    }
+  });
+
+  it("os ids comerciais são estáveis, únicos e nunca colidem com os da pessoal", () => {
+    const first = buildDefaultRows("business");
+    const again = buildDefaultRows("business");
+    expect(again).toEqual(first);
+
+    const personal = buildDefaultRows("personal");
+    const business = [...first.categories, ...first.paymentMethods].map((r) => r.id);
+    const mine = [...personal.categories, ...personal.paymentMethods].map((r) => r.id);
+    expect(new Set(business).size).toBe(business.length);
+    expect(business.filter((id) => mine.includes(id))).toEqual([]);
   });
 
   it("aceita um catálogo e estampa o book nas linhas da semente", () => {
