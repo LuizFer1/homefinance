@@ -14,9 +14,11 @@ import type { PaymentMethod } from "./domain/model/payment-method";
 import type { Reserve } from "./domain/model/reserve";
 import type { Transaction } from "./domain/model/transaction";
 import type { User } from "./domain/model/user";
+import { createAssetsStore } from "./features/assets/store";
 import { createBooksStore } from "./features/books/store";
 import { createBudgetsStore } from "./features/budgets/store";
 import { createCardsStore } from "./features/cards/store";
+import { createDebtsStore } from "./features/debts/store";
 import { createImportStore } from "./features/import/store";
 import { createOnboardingStore } from "./features/onboarding/store";
 import { createProfileStore } from "./features/profile/store";
@@ -87,6 +89,8 @@ function buildStores(db: HomeFinanceDb) {
     importer: createImportStore(session, recurrence),
     reserves: createReservesStore(session),
     budgets: createBudgetsStore(session),
+    assets: createAssetsStore(session),
+    debts: createDebtsStore(session),
     books: createBooksStore(session),
     cards: createCardsStore(session, db),
     // Sem service worker: nenhum aviso de versão nova, como no primeiro acesso.
@@ -1506,5 +1510,166 @@ describe("conta comercial", () => {
     expect(await screen.findByRole("button", { name: "Ir para a conta comercial" })).toBeDefined();
     expect((await db.meta.get(ACTIVE_BOOK_KEY))?.value).toBe("personal");
     expect(screen.queryByTestId("business-accent")).toBeNull();
+  });
+});
+
+describe("painel comercial", () => {
+  async function comercialAtiva(): Promise<HomeFinanceDb> {
+    const db = await cadastrado();
+    await db.books.put(
+      buildRow<BookAccount>(
+        seedClock(),
+        { kind: "business", name: "Padaria do Zé", color: "amber", icon: "store" },
+        BUSINESS_BOOK_ID,
+        "business",
+      ),
+    );
+    await db.meta.put({ key: ACTIVE_BOOK_KEY, value: "business" });
+    return db;
+  }
+
+  const abasNaBarra = () =>
+    naBarra()
+      .getAllByRole("button")
+      .map((b) => b.textContent);
+  const aba = (nome: string) => fireEvent.click(naBarra().getByRole("button", { name: nome }));
+  const proxima = () => fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+  const digitar = (rotulo: string, valor: string) =>
+    fireEvent.input(screen.getByLabelText(rotulo), { target: { value: valor } });
+  const texto = (node: HTMLElement) => (node.textContent ?? "").replace(/\u00a0/g, " ");
+
+  async function abrirComercial() {
+    const stores = buildStores(await comercialAtiva());
+    render(<App {...stores} today="2026-11-11" hour={9} theme={fakeTheme()} />);
+    await screen.findByTestId("business-title");
+    return stores;
+  }
+
+  it("na conta pessoal a barra segue com as quatro abas e o Resumo não tem o bloco", async () => {
+    render(
+      <App {...buildStores(await cadastrado())} today="2026-11-11" hour={9} theme={fakeTheme()} />,
+    );
+    await waitFor(() => expect(screen.getByTestId("total-balance")).toBeDefined());
+
+    expect(abasNaBarra()).toEqual(["Resumo", "Início", "Reservas", "Ajustes"]);
+    expect(naBarra().queryByRole("button", { name: "Negócio" })).toBeNull();
+
+    aba("Resumo");
+    expect(screen.queryByRole("heading", { level: 2, name: "Negócio" })).toBeNull();
+  });
+
+  it("na comercial aparece a aba Negócio entre Início e Reservas", async () => {
+    await abrirComercial();
+
+    expect(abasNaBarra()).toEqual(["Resumo", "Início", "Negócio", "Reservas", "Ajustes"]);
+    aba("Negócio");
+    expect(screen.getByRole("heading", { level: 1, name: "Negócio" })).toBeDefined();
+    expect(naBarra().getByRole("button", { name: "Negócio" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+    expect(screen.getByText(/Nenhum bem ainda/)).toBeDefined();
+    expect(screen.getByText(/Nenhuma dívida cadastrada/)).toBeDefined();
+  });
+
+  it("cadastra um bem pelo sheet, que aparece na lista e no bloco Negócio do Resumo", async () => {
+    const stores = await abrirComercial();
+    aba("Negócio");
+
+    fireEvent.click(screen.getByRole("button", { name: "Novo bem" }));
+    const sheet = await screen.findByRole("dialog", { name: "Novo bem" });
+    digitar("Nome do bem", "Forno industrial");
+    proxima();
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Equipamento" }));
+    digitar("Valor atual", "450000");
+    proxima();
+    proxima();
+    fireEvent.click(within(sheet).getByRole("button", { name: "Salvar bem" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Novo bem" })).toBeNull());
+    expect(screen.getByRole("button", { name: /Forno industrial/ })).toBeDefined();
+    const rows = Object.values(stores.session.fullState.value.assets);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "equipment", valueMinor: 450_000, book: "business" });
+
+    aba("Resumo");
+    expect(texto(screen.getByTestId("business-equipment"))).toBe("R$ 4.500,00");
+    expect(texto(screen.getByTestId("business-capital"))).toBe("R$ 4.500,00");
+    // Patrimônio não é receita nem despesa.
+    expect(texto(screen.getByTestId("business-income"))).toBe("R$ 0,00");
+    expect(texto(screen.getByTestId("business-expense"))).toBe("R$ 0,00");
+  });
+
+  it("cadastra, edita o saldo e exclui uma dívida", async () => {
+    const stores = await abrirComercial();
+    aba("Negócio");
+
+    fireEvent.click(screen.getByRole("button", { name: "Nova dívida" }));
+    let sheet = await screen.findByRole("dialog", { name: "Nova dívida" });
+    digitar("Nome da dívida", "Financiamento");
+    digitar("Credor (opcional)", "Banco");
+    proxima();
+    digitar("Valor original", "900000");
+    digitar("Saldo atual", "700000");
+    proxima();
+    proxima();
+    fireEvent.click(within(sheet).getByRole("button", { name: "Salvar dívida" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Nova dívida" })).toBeNull());
+    expect(texto(screen.getByTestId("business-debt-total"))).toBe("R$ 7.000,00");
+
+    // Edição reaproveita o sheet: saldo menor atualiza o total.
+    fireEvent.click(screen.getByRole("button", { name: /Financiamento/ }));
+    sheet = await screen.findByRole("dialog", { name: "Editar dívida" });
+    proxima();
+    digitar("Saldo atual", "500000");
+    proxima();
+    proxima();
+    fireEvent.click(within(sheet).getByRole("button", { name: "Salvar dívida" }));
+    await waitFor(() =>
+      expect(texto(screen.getByTestId("business-debt-total"))).toBe("R$ 5.000,00"),
+    );
+
+    // Excluir exige segurar.
+    fireEvent.click(screen.getByRole("button", { name: /Financiamento/ }));
+    await screen.findByRole("dialog", { name: "Editar dívida" });
+    vi.useFakeTimers();
+    fireEvent.pointerDown(screen.getByRole("button", { name: /excluir dívida/i }));
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS);
+    });
+    vi.useRealTimers();
+    await waitFor(() => expect(texto(screen.getByTestId("business-debt-total"))).toBe("R$ 0,00"));
+    expect(Object.values(stores.session.fullState.value.debts)[0]?.deletedAt).not.toBeNull();
+  });
+
+  it("voltar para a pessoal tira a aba e o bloco; ao voltar para a comercial tudo reaparece", async () => {
+    const stores = await abrirComercial();
+    aba("Negócio");
+    fireEvent.click(screen.getByRole("button", { name: "Novo bem" }));
+    await screen.findByRole("dialog", { name: "Novo bem" });
+    digitar("Nome do bem", "CDB");
+    proxima();
+    digitar("Valor atual", "100000");
+    proxima();
+    proxima();
+    fireEvent.click(screen.getByRole("button", { name: "Salvar bem" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Novo bem" })).toBeNull());
+
+    // Estando na aba Negócio, a conta ativa volta para a pessoal por baixo (reparo, sync):
+    // a tela cai na Início, em vez de ficar em branco.
+    await act(async () => {
+      await stores.session.setActiveBook("personal");
+    });
+    expect(abasNaBarra()).toEqual(["Resumo", "Início", "Reservas", "Ajustes"]);
+    expect(naBarra().getByRole("button", { name: "Início" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+    aba("Resumo");
+    expect(screen.queryByRole("heading", { level: 2, name: "Negócio" })).toBeNull();
+
+    await act(async () => {
+      await stores.session.setActiveBook("business");
+    });
+    expect(abasNaBarra()).toContain("Negócio");
+    expect(texto(screen.getByTestId("business-capital"))).toBe("R$ 1.000,00");
   });
 });

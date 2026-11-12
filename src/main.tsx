@@ -3,9 +3,11 @@ import { render } from "preact";
 import { App } from "./app";
 import { HomeFinanceDb } from "./data/db";
 import { cryptoRandomChunk } from "./domain/ids/ulid";
+import { createAssetsStore } from "./features/assets/store";
 import { createBooksStore } from "./features/books/store";
 import { createBudgetsStore } from "./features/budgets/store";
 import { createCardsStore } from "./features/cards/store";
+import { createDebtsStore } from "./features/debts/store";
 import { consumeHelpLink, pendingHelp } from "./features/help/deep-link";
 import { createReadPdf } from "./features/import/read-pdf";
 import { createImportStore } from "./features/import/store";
@@ -86,6 +88,8 @@ const onboarding = createOnboardingStore(session);
 const importer = createImportStore(session, recurrence);
 const reserves = createReservesStore(session);
 const budgets = createBudgetsStore(session);
+const assets = createAssetsStore(session);
+const debts = createDebtsStore(session);
 const books = createBooksStore(session);
 const cards = createCardsStore(session, db);
 
@@ -177,6 +181,8 @@ render(
     recurrence={recurrence}
     reserves={reserves}
     budgets={budgets}
+    assets={assets}
+    debts={debts}
     books={books}
     cards={cards}
     onboarding={onboarding}
