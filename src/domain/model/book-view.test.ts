@@ -7,6 +7,15 @@ import { twoBooksState } from "./books.fake";
 
 const ids = (rows: Record<string, unknown>) => Object.keys(rows).sort();
 
+function must<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error("fixture mudou");
+  return value;
+}
+const BASE = twoBooksState();
+const FOOD = must(BASE.categories["P-FOOD"]);
+const SALARY = must(BASE.transactions["p-salary"]);
+const SALE = must(BASE.transactions["b-sale"]);
+
 describe("stateForBook", () => {
   const full = twoBooksState();
 
@@ -46,10 +55,10 @@ describe("stateForBook", () => {
     const state: AppState = {
       ...EMPTY_APP_STATE,
       categories: {
-        A: { ...full.categories["P-FOOD"]!, id: "A" },
-        B: { ...full.categories["P-FOOD"]!, id: "B", book: null },
-        C: { ...full.categories["P-FOOD"]!, id: "C", book: "franchise" as never },
-        D: { ...full.categories["P-FOOD"]!, id: "D", book: "business" },
+        A: { ...FOOD, id: "A" },
+        B: { ...FOOD, id: "B", book: null },
+        C: { ...FOOD, id: "C", book: "franchise" as never },
+        D: { ...FOOD, id: "D", book: "business" },
       },
     };
     expect(ids(stateForBook(state, "personal").categories)).toEqual(["A", "B", "C"]);
@@ -59,7 +68,7 @@ describe("stateForBook", () => {
   it("sem linha de outra conta, devolve a mesma tabela (identidade preservada)", () => {
     const onlyPersonal: AppState = {
       ...EMPTY_APP_STATE,
-      transactions: { "p-salary": full.transactions["p-salary"]! },
+      transactions: { "p-salary": SALARY },
     };
     expect(stateForBook(onlyPersonal, "personal").transactions).toBe(onlyPersonal.transactions);
   });
@@ -93,7 +102,7 @@ describe("createBookView", () => {
       ...full,
       transactions: {
         ...full.transactions,
-        extra: { ...full.transactions["b-sale"]!, id: "extra" },
+        extra: { ...SALE, id: "extra" },
       },
     };
     const next = view(edited, "business");
