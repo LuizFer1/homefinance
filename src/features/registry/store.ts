@@ -40,7 +40,9 @@ export function createRegistryStore(session: Session): RegistryStore {
     removePaymentMethod: (id) => session.mutate("paymentMethods", (repo) => repo.remove(id)),
     async mergeLegacyDefaults() {
       const clock = session.clock();
-      const plan = planDefaultsMerge(session.state.value, () => clock.stamp().hlc);
+      // Estado completo: o plano roda por conta (cada uma com os seus padrões) e
+      // inclui a inativa; nunca funde linha de uma conta no padrão da outra.
+      const plan = planDefaultsMerge(session.fullState.value, () => clock.stamp().hlc);
       if (plan === null) return;
       // `IfCurrent`: o plano regrava linhas inteiras a partir do state, que pode
       // estar velho (outra aba, sync). Divergiu, nada é gravado; o próximo boot

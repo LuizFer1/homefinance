@@ -5,6 +5,7 @@ import type { RowClock } from "../../domain/clock/row-clock";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState, RowsByTable } from "../../domain/model/app-state";
 import { isAlive } from "../../domain/model/base";
+import { bookOf } from "../../domain/model/book";
 import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
 import type { Recurrence } from "../../domain/model/recurrence";
 import { COLOR_TOKENS, type ColorToken } from "../../domain/model/tokens";
@@ -144,7 +145,14 @@ function resolveDestination(
 ): { row: PaymentMethod; created: boolean } {
   if (choice.kind === "existing") {
     const card = state.paymentMethods[choice.cardId];
-    if (!isAlive(card) || !isCompleteCard(card) || card.id === group.source.id) {
+    // Cartão de outra conta é destino inválido: a compra mudaria de conta sem
+    // ninguém pedir (o plano roda sobre o estado completo, as duas contas).
+    if (
+      !isAlive(card) ||
+      !isCompleteCard(card) ||
+      card.id === group.source.id ||
+      bookOf(card) !== bookOf(group.source)
+    ) {
       throw new Error("O cartão escolhido não existe mais ou está sem dados. Escolha outro.");
     }
     return { row: card, created: false };
@@ -152,5 +160,9 @@ function resolveDestination(
 
   const problem = newCardProblem(choice.card);
   if (problem !== null) throw new Error(problem);
-  return { row: buildRow<PaymentMethod>(clock, cardDraft(choice.card)), created: true };
+  // O cartão novo nasce na conta do genérico que ele substitui, e não na ativa.
+  return {
+    row: buildRow<PaymentMethod>(clock, cardDraft(choice.card), undefined, bookOf(group.source)),
+    created: true,
+  };
 }

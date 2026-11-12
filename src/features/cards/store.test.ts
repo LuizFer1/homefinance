@@ -316,3 +316,38 @@ describe("adiamento local ('Depois')", () => {
     }
   });
 });
+
+describe("migração de cartões com duas contas", () => {
+  it("lê o estado completo: com a conta comercial ativa o cartão novo nasce na conta do genérico", async () => {
+    await seed({
+      methods: [legacyCard(OLD, { name: "Cartão de crédito" })],
+      transactions: [purchase("a", OLD, "2026-10-02")],
+    });
+    const { session, store } = await open();
+    await session.setActiveBook("business");
+    // O genérico é da conta pessoal: a visão comercial nem o vê.
+    expect(pendingCardGroups(session.state.value)).toEqual([]);
+
+    const moved = await store.migrate({ [OLD]: { kind: "new", card: NEW_CARD } });
+
+    expect(moved).toBe(1);
+    const created = (await db.paymentMethods.toArray()).find((m) => m.id !== OLD);
+    expect(created?.book).toBe("personal");
+  });
+
+  it("cartão de destino de outra conta é recusado, e nada é gravado", async () => {
+    await seed({
+      methods: [
+        legacyCard(OLD, { name: "Cartão de crédito" }),
+        card("NUBANK-COMERCIAL", { book: "business" }),
+      ],
+      transactions: [purchase("a", OLD, "2026-10-02")],
+    });
+    const { store } = await open();
+
+    await expect(
+      store.migrate({ [OLD]: { kind: "existing", cardId: "NUBANK-COMERCIAL" } }),
+    ).rejects.toThrow("não existe mais");
+    expect((await db.transactions.get("a"))?.paymentMethodId).toBe(OLD);
+  });
+});
