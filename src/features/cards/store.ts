@@ -49,7 +49,9 @@ export function createCardsStore(
     },
     async migrate(choices) {
       try {
-        const plan = planCardMigration(session.state.value, choices, session.clock());
+        // Estado completo: a migração é sobre o banco, não sobre a conta ativa; o
+        // plano mantém cada coisa na sua conta (destino e cartão novo, mesmo `book`).
+        const plan = planCardMigration(session.fullState.value, choices, session.clock());
         if (plan.moved === 0 && (plan.rows.paymentMethods?.length ?? 0) === 0) return 0;
         await session.putRowsIfCurrent(plan.rows, plan.expected);
         return plan.moved;

@@ -17,6 +17,7 @@ export const HELP_TOPICS = [
   "cards",
   "dashboard",
   "reserves",
+  "accounts",
   "import",
   "sync",
   "privacy",
@@ -31,6 +32,7 @@ export const HELP_TOPIC_LABELS_PT: Record<HelpTopic, string> = {
   cards: "Cartões e faturas",
   dashboard: "Resumo",
   reserves: "Reservas",
+  accounts: "Conta comercial",
   import: "Importar PDF",
   sync: "Sincronizar com o hub",
   privacy: "Privacidade",
@@ -66,6 +68,16 @@ export const HELP_STRUCTURE: readonly HelpEntryShape[] = [
   { id: "reserves-kinds", topic: "reserves" },
   { id: "reserves-move", topic: "reserves" },
   { id: "reserves-monthly", topic: "reserves" },
+  { id: "accounts-what", topic: "accounts" },
+  { id: "accounts-create", topic: "accounts" },
+  { id: "accounts-switch", topic: "accounts" },
+  { id: "accounts-separate", topic: "accounts" },
+  { id: "accounts-assets", topic: "accounts" },
+  { id: "accounts-debts", topic: "accounts" },
+  { id: "accounts-capital", topic: "accounts" },
+  { id: "accounts-panel", topic: "accounts" },
+  { id: "accounts-not-spending", topic: "accounts" },
+  { id: "accounts-update-first", topic: "accounts" },
   { id: "import-how", topic: "import" },
   { id: "import-installments", topic: "import" },
   { id: "import-password", topic: "import" },
@@ -254,6 +266,76 @@ export const HELP_TEXT_PT: Record<string, HelpText> = {
     question: "Dá para guardar um valor fixo todo mês?",
     answer: [
       "Sim. Na caixinha, defina um depósito mensal com valor e dia. O app registra o guardado sozinho a cada mês, a partir do saldo do mês, depois de gerar as receitas recorrentes, como o salário.",
+    ],
+  },
+  "accounts-what": {
+    question: "O que é a conta comercial?",
+    answer: [
+      "É uma segunda conta, no mesmo aparelho, para o seu negócio. Ela tem lançamentos, categorias, formas de pagamento, metas e reservas próprios. Só o seu perfil (nome e foto) vale nas duas.",
+      "A conta pessoal continua como estava, e a comercial começa vazia. Há uma conta comercial por aparelho.",
+    ],
+  },
+  "accounts-create": {
+    question: "Como crio a conta comercial?",
+    answer: [
+      "Na aba Início, toque no ícone de loja ao lado da sua foto. O assistente pede o nome do negócio, a cor e o ícone, e mostra uma prévia antes de criar.",
+      "Ao criar, o app já traz categorias de comércio (Vendas, Fornecedores, Aluguel e outras) e formas de pagamento (Pix, Dinheiro, cartões e Boleto). Você pode renomear, trocar cor e ícone ou apagar, como em qualquer cadastro.",
+    ],
+  },
+  "accounts-switch": {
+    question: "Como troco entre a conta pessoal e a comercial?",
+    answer: [
+      "No mesmo ícone, ao lado da sua foto na aba Início. Na conta pessoal ele é uma loja e leva à comercial. Na comercial ele vira uma pessoa e volta à pessoal.",
+      "Na conta comercial, o nome do negócio aparece no topo e um fio fino na cor do negócio marca a tela. O app abre na conta em que você parou.",
+    ],
+  },
+  "accounts-separate": {
+    question: "Os dados das duas contas se misturam?",
+    answer: [
+      "Não. Lançamentos, categorias, formas de pagamento, metas, reservas e faturas de cada conta aparecem só nela, e o saldo e os totais de uma nunca somam os da outra. Apagar uma categoria de uma conta não mexe na outra.",
+      "Ao exportar, o arquivo leva as duas contas, e ao importar cada linha volta para a conta de onde saiu.",
+    ],
+  },
+  "accounts-assets": {
+    question: "Como cadastro os bens do negócio?",
+    answer: [
+      "Na conta comercial, abra a aba Negócio e toque em Novo bem. O assistente pede o nome, o tipo (Investimento, Estoque ou Equipamento), o valor atual e a data, e mostra uma prévia antes de salvar.",
+      'Cada bem é um valor total, sem itens nem quantidades: "Farinha" em Estoque com o valor parado hoje, por exemplo. Para corrigir o valor, toque no bem e salve de novo. Para excluir, segure a lixeira na edição.',
+    ],
+  },
+  "accounts-debts": {
+    question: "Como registro uma dívida do negócio?",
+    answer: [
+      "Na aba Negócio, toque em Nova dívida. O assistente pede o nome e o credor (opcional), o valor original e o saldo atual, e o vencimento (opcional), e mostra uma prévia antes de salvar.",
+      "O saldo é o que ainda falta pagar: começa igual ao valor original, não pode ser maior que ele, e vazio (zero) marca a dívida como quitada. Não há parcelas nem juros calculados: ao pagar, toque na dívida e atualize o saldo.",
+    ],
+  },
+  "accounts-capital": {
+    question: "O que é o capital total aplicado?",
+    answer: [
+      "É a soma dos seus bens: investimentos, capital em estoque e capital em equipamento. Mostra quanto o negócio tem aplicado hoje, e não depende do mês escolhido.",
+      "As dívidas aparecem à parte, em dívidas totais (a soma dos saldos que ainda faltam pagar). O app não desconta uma coisa da outra.",
+    ],
+  },
+  "accounts-panel": {
+    question: "O que mostra o bloco Negócio no Resumo?",
+    answer: [
+      "Na conta comercial, o Resumo ganha o bloco Negócio acima dos demais. Ele traz as receitas, as despesas e o resultado do mês escolhido, e também investimentos, capital em estoque, capital em equipamento, capital total aplicado e dívidas totais.",
+      "Com o hub ligado, o painel dele mostra os mesmos números para a conta comercial.",
+    ],
+  },
+  "accounts-not-spending": {
+    question: "Bens e dívidas contam como receita ou despesa?",
+    answer: [
+      "Não. Cadastrar um bem ou uma dívida não lança nada: eles são patrimônio, como as reservas, e nunca entram em receitas, despesas nem no resultado do mês.",
+      "Se quiser que a compra de um equipamento ou o pagamento de uma parcela pese no resultado, lance a despesa em Início e depois atualize o valor do bem ou o saldo da dívida na aba Negócio.",
+    ],
+  },
+  "accounts-update-first": {
+    question: "Uso o hub ou mais de um aparelho. O que faço antes de criar a conta?",
+    answer: [
+      "Atualize o app em todos os aparelhos e o hub antes de criar a conta comercial. Uma versão antiga não conhece as contas: ela mostraria os lançamentos comerciais misturados aos pessoais e criaria os novos sempre na conta pessoal.",
+      "Depois de atualizar tudo, crie a conta em um aparelho. Os outros a recebem na próxima sincronização e passam a mostrar o ícone de troca.",
     ],
   },
   "import-how": {

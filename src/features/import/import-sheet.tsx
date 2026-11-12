@@ -18,6 +18,7 @@ import {
 } from "../../domain/import/plan";
 import { buildCategoryIndex, suggestCategory } from "../../domain/import/suggest-category";
 import type { AppState } from "../../domain/model/app-state";
+import type { Book } from "../../domain/model/book";
 import type { PaymentMethod, PaymentMethodDraft } from "../../domain/model/payment-method";
 import { pendingEstimates } from "../../domain/projections/estimates";
 import { listCategoriesFor, listPaymentMethods } from "../../domain/projections/selectors";
@@ -35,6 +36,8 @@ import type { ImportResult } from "./store";
 
 export interface ImportSheetProps {
   state: AppState;
+  /** Conta de destino da importação; ausente vale a pessoal. */
+  book?: Book;
   /** 'YYYY-MM-DD', injetado como no resto do app. */
   today: string;
   readPdf: ReadPdf;
@@ -101,6 +104,7 @@ function readError(cause: unknown): string {
  */
 export function ImportSheet({
   state,
+  book,
   today,
   readPdf,
   onCreateCard,
@@ -130,7 +134,7 @@ export function ImportSheet({
 
   function buildRows(source: string[], month: string): { rows: Row[]; skipped: SkippedLine[] } {
     const { entries, skipped: dropped } = parseStatement(source, doc, month);
-    const ctx: ImportContext = { paymentMethodId: methodId, referenceMonth: month };
+    const ctx: ImportContext = { paymentMethodId: methodId, referenceMonth: month, book };
     const ids = identify(entries, ctx);
     // Uma linha que confirmou uma estimativa não criou transação com o próprio
     // id: sem olhar `importKey`, ela voltaria aqui como nova.
@@ -235,7 +239,7 @@ export function ImportSheet({
     setSaving(true);
     setError(null);
     try {
-      const plan = planImport(rows, { paymentMethodId: methodId, referenceMonth });
+      const plan = planImport(rows, { paymentMethodId: methodId, referenceMonth, book });
       const result = await onImport(plan);
       setPhase({
         step: "done",

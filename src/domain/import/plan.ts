@@ -2,6 +2,7 @@ import { dayOfMonthClamped } from "../dates/business-day";
 import { shiftMonth } from "../dates/calendar";
 import { stableEntityId } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
+import { type Book, DEFAULT_BOOK } from "../model/book";
 import type { RecurrenceDraft } from "../model/recurrence";
 import type { TransactionDraft } from "../model/transaction";
 import { installmentDescription, installmentRule } from "../recurrence/installments";
@@ -32,6 +33,13 @@ export interface ImportContext {
   paymentMethodId: Ulid | null;
   /** 'YYYY-MM' do vencimento. */
   referenceMonth: string;
+  /**
+   * Conta de destino. Entra no id das contas que não são a pessoal: sem forma de
+   * pagamento (`-`), o mesmo extrato importado nas duas contas daria os mesmos
+   * ids, e o `insertMissing` da segunda os pularia em silêncio. Ausente e
+   * `personal` não mudam o id (os já importados seguem iguais).
+   */
+  book?: Book;
 }
 
 export interface ImportPlan {
@@ -75,6 +83,7 @@ export function installmentAnchor(date: string, k: number, referenceMonth: strin
  */
 export function identify(entries: readonly ParsedEntry[], ctx: ImportContext): Ulid[] {
   const method = ctx.paymentMethodId ?? "-";
+  const salt = ctx.book === undefined || ctx.book === DEFAULT_BOOK ? "" : `${ctx.book}:`;
   const seen = new Map<string, number>();
 
   return entries.map((entry) => {
@@ -82,10 +91,10 @@ export function identify(entries: readonly ParsedEntry[], ctx: ImportContext): U
     if (entry.installment !== null) {
       const anchor = installmentAnchor(entry.date, entry.installment.k, ctx.referenceMonth);
       return stableEntityId(
-        `import:parcel:${method}:${name}:${entry.installment.n}:${entry.amountMinor}:${anchor}`,
+        `import:${salt}parcel:${method}:${name}:${entry.installment.n}:${entry.amountMinor}:${anchor}`,
       );
     }
-    const base = `import:tx:${method}:${entry.date}:${name}:${entry.amountMinor}:${entry.kind}`;
+    const base = `import:${salt}tx:${method}:${entry.date}:${name}:${entry.amountMinor}:${entry.kind}`;
     const ordinal = seen.get(base) ?? 0;
     seen.set(base, ordinal + 1);
     return stableEntityId(`${base}:${ordinal}`);

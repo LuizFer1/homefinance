@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ACCOUNT_IDS } from "./accounts.fake";
 import { buildHelpEntries, searchHelp } from "./search";
 
 const entries = buildHelpEntries();
@@ -52,5 +53,17 @@ describe("searchHelp", () => {
   it("pula chave sem texto em vez de quebrar", () => {
     const partial = buildHelpEntries([{ id: "x", topic: "start" }], {});
     expect(partial).toEqual([]);
+  });
+
+  it("acha as respostas da conta comercial", () => {
+    expect(ids("conta comercial")).toEqual(expect.arrayContaining([...ACCOUNT_IDS]));
+    expect(ids("icone de loja")).toContain("accounts-create");
+    expect(ids("atualize hub aparelhos")).toContain("accounts-update-first");
+    expect(ids("somam")).toContain("accounts-separate");
+    expect(ids("bem equipamento")).toContain("accounts-assets");
+    expect(ids("divida saldo quitada")).toContain("accounts-debts");
+    expect(ids("capital aplicado")).toContain("accounts-capital");
+    expect(ids("bloco negocio resumo")).toContain("accounts-panel");
+    expect(ids("bens dividas receita despesa")).toContain("accounts-not-spending");
   });
 });

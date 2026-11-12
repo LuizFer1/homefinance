@@ -1,4 +1,4 @@
-import { batch, type Signal, signal } from "@preact/signals";
+import { batch, computed, type ReadonlySignal, type Signal, signal } from "@preact/signals";
 import type { Table } from "dexie";
 import type { HomeFinanceDb } from "../../data/db";
 import { createRepository, type Repository } from "../../data/repository";
@@ -9,12 +9,15 @@ import { createUlidFactory, type RandomChunk, type Ulid } from "../../domain/ids
 import {
   type AppState,
   EMPTY_APP_STATE,
+  isBookScoped,
   type RowOf,
   type RowsByTable,
   TABLE_NAMES,
   type TableName,
 } from "../../domain/model/app-state";
 import type { BaseRow } from "../../domain/model/base";
+import { type Book, DEFAULT_BOOK, isBook } from "../../domain/model/book";
+import { createBookView } from "../../domain/model/book-view";
 
 const DEVICE_ID_KEY = "deviceId";
 
@@ -24,6 +27,12 @@ const DEVICE_ID_KEY = "deviceId";
  * derivar o primeiro uso de "existe algum user" pularia o cadastro.
  */
 export const LOCAL_USER_ID_KEY = "localUserId";
+
+/**
+ * Conta ativa neste aparelho (`personal` | `business`). Estado de dispositivo,
+ * nunca sincronizado: cada aparelho abre na conta em que a pessoa o deixou.
+ */
+export const ACTIVE_BOOK_KEY = "activeBook";
 
 /**
  * Formato de `meta` aceito por `putRows`: só `localUserId`, nunca `deviceId`.
@@ -64,7 +73,24 @@ export interface SessionDeps {
  * Grava primeiro, publica depois: se o banco rejeitar, a tela não muda.
  */
 export interface Session {
-  state: Signal<AppState>;
+  /**
+   * A visão da **conta ativa**: tabelas por conta só com as linhas dela, `users`
+   * e `books` inteiras. Telas, stores e projeções leem isto sem saber que existe
+   * filtro. Só `session.ts` publica (por isso `ReadonlySignal`).
+   */
+  state: ReadonlySignal<AppState>;
+  /**
+   * O espelho completo do disco, as duas contas. Para quem opera sobre o banco
+   * inteiro e não pode enxergar só a conta ativa: relógio (`latestHlc`), prévia da
+   * exportação e o que planeja por conta (materialização, fusão de padrões).
+   */
+  fullState: ReadonlySignal<AppState>;
+  activeBook: ReadonlySignal<Book>;
+  /**
+   * Troca a conta ativa. Grava na `meta` antes de publicar (como as escritas da
+   * sessão): se o banco rejeitar, a tela continua na conta de antes.
+   */
+  setActiveBook: (book: Book) => Promise<void>;
   status: Signal<SessionStatus>;
   error: Signal<string | null>;
   /** Nulo enquanto o primeiro uso não concluiu **neste** aparelho. */
@@ -186,7 +212,10 @@ function withRows(state: AppState, rows: RowsByTable): AppState {
 }
 
 export function createSession(deps: SessionDeps): Session {
-  const state = signal<AppState>(EMPTY_APP_STATE);
+  const fullState = signal<AppState>(EMPTY_APP_STATE);
+  const activeBook = signal<Book>(DEFAULT_BOOK);
+  const view = createBookView();
+  const state = computed(() => view(fullState.value, activeBook.value));
   const status = signal<SessionStatus>("loading");
   const error = signal<string | null>(null);
   const localUserId = signal<Ulid | null>(null);
@@ -217,6 +246,9 @@ export function createSession(deps: SessionDeps): Session {
       reserves,
       reserveMovements,
       budgets,
+      books,
+      assets,
+      debts,
     ] = await deps.db.transaction("r", tables, () =>
       Promise.all([
         deps.db.users.toArray(),
@@ -228,6 +260,9 @@ export function createSession(deps: SessionDeps): Session {
         deps.db.reserves.toArray(),
         deps.db.reserveMovements.toArray(),
         deps.db.budgets.toArray(),
+        deps.db.books.toArray(),
+        deps.db.assets.toArray(),
+        deps.db.debts.toArray(),
       ]),
     );
     return resolveMerged({
@@ -240,6 +275,9 @@ export function createSession(deps: SessionDeps): Session {
       reserves: toRecord(reserves),
       reserveMovements: toRecord(reserveMovements),
       budgets: toRecord(budgets),
+      books: toRecord(books),
+      assets: toRecord(assets),
+      debts: toRecord(debts),
     });
   }
 
@@ -257,7 +295,7 @@ export function createSession(deps: SessionDeps): Session {
     if (latest !== null) rowClock?.observe(latest);
     // `error` fica como está: ele é de uma escrita da pessoa, que a tela ainda
     // mostra, e um reload bem-sucedido não diz nada sobre ela.
-    state.value = loaded;
+    fullState.value = loaded;
   }
 
   async function init(): Promise<void> {
@@ -267,6 +305,8 @@ export function createSession(deps: SessionDeps): Session {
       if (stored === undefined) await deps.db.meta.put({ key: DEVICE_ID_KEY, value: deviceId });
 
       const perfil = (await deps.db.meta.get(LOCAL_USER_ID_KEY))?.value ?? null;
+      // Valor desconhecido (versão futura, dado corrompido) abre na pessoal.
+      const storedBook = (await deps.db.meta.get(ACTIVE_BOOK_KEY))?.value;
       const loaded = await loadAll();
 
       rowClock = createRowClock({
@@ -279,7 +319,8 @@ export function createSession(deps: SessionDeps): Session {
       // Uma atualização só: `ready` com estado vazio faria a tela piscar
       // "Nenhum lançamento ainda" antes dos dados do disco.
       batch(() => {
-        state.value = loaded;
+        fullState.value = loaded;
+        activeBook.value = isBook(storedBook) ? storedBook : DEFAULT_BOOK;
         localUserId.value = perfil;
         status.value = "ready";
       });
@@ -301,7 +342,13 @@ export function createSession(deps: SessionDeps): Session {
       // erro de uso, mas ainda precisa preencher `error` como qualquer outra
       // falha de escrita — quem só observa o signal não pode perder o motivo.
       const table$ = tableOf(table);
-      const repo = createRepository(table$, clock());
+      // A conta ativa é carimbada aqui, na porta de escrita, e não nas stores.
+      // `users` e `books` não pertencem a uma conta e saem sem `book`.
+      const repo = createRepository(
+        table$,
+        clock(),
+        isBookScoped(table) ? activeBook.value : undefined,
+      );
       // A transação torna `op` atômico: se ela gravar e depois lançar, o
       // Dexie desfaz a gravação. `repository.update`/`remove` reaproveitam
       // esta mesma transação em vez de abrir uma própria.
@@ -312,7 +359,7 @@ export function createSession(deps: SessionDeps): Session {
     }
     batch(() => {
       error.value = null;
-      state.value = withRows(state.value, { [table]: [row] } as RowsByTable);
+      fullState.value = withRows(fullState.value, { [table]: [row] } as RowsByTable);
     });
     return row;
   }
@@ -343,7 +390,7 @@ export function createSession(deps: SessionDeps): Session {
     const perfil = meta[LOCAL_USER_ID_KEY];
     batch(() => {
       error.value = null;
-      state.value = withRows(state.value, rows);
+      fullState.value = withRows(fullState.value, rows);
       if (perfil !== undefined) localUserId.value = perfil;
     });
   }
@@ -385,14 +432,14 @@ export function createSession(deps: SessionDeps): Session {
     } catch (cause) {
       batch(() => {
         error.value = describeError(cause);
-        if (stale) state.value = withRows(state.value, actual);
+        if (stale) fullState.value = withRows(fullState.value, actual);
       });
       throw cause;
     }
 
     batch(() => {
       error.value = null;
-      state.value = withRows(state.value, rows);
+      fullState.value = withRows(fullState.value, rows);
     });
   }
 
@@ -425,13 +472,28 @@ export function createSession(deps: SessionDeps): Session {
     // realmente tem, em vez de continuar sem saber da linha.
     batch(() => {
       error.value = null;
-      state.value = withRows(state.value, { [table]: [...inserted, ...existing] } as RowsByTable);
+      fullState.value = withRows(fullState.value, {
+        [table]: [...inserted, ...existing],
+      } as RowsByTable);
     });
     return inserted;
   }
 
+  async function setActiveBook(book: Book): Promise<void> {
+    try {
+      await deps.db.meta.put({ key: ACTIVE_BOOK_KEY, value: book });
+    } catch (cause) {
+      error.value = describeError(cause);
+      throw cause;
+    }
+    activeBook.value = book;
+  }
+
   return {
     state,
+    fullState,
+    activeBook,
+    setActiveBook,
     status,
     error,
     localUserId,

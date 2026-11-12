@@ -2,8 +2,10 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/pre
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { stableEntityId } from "../../domain/ids/stable-id";
 import { type AppState, EMPTY_APP_STATE } from "../../domain/model/app-state";
+import type { Asset } from "../../domain/model/asset";
 import type { Budget } from "../../domain/model/budget";
 import type { Category } from "../../domain/model/category";
+import type { Debt } from "../../domain/model/debt";
 import type { PaymentMethod } from "../../domain/model/payment-method";
 import type { Recurrence } from "../../domain/model/recurrence";
 import { ALIVE } from "../../domain/model/row.fake";
@@ -862,5 +864,96 @@ describe("DashboardPage", () => {
         ).not.toContain("−");
       });
     });
+  });
+});
+
+describe("DashboardPage: bloco Negócio", () => {
+  const asset = (id: string, kind: Asset["kind"], valueMinor: number): Asset => ({
+    ...ALIVE,
+    id,
+    kind,
+    name: id,
+    valueMinor,
+    acquiredOn: "2026-07-01",
+    book: "business",
+  });
+  const debt = (id: string, balanceMinor: number): Debt => ({
+    ...ALIVE,
+    id,
+    name: id,
+    principalMinor: 9_999_999,
+    balanceMinor,
+    book: "business",
+  });
+  const withPatrimony: AppState = {
+    ...stateWith(),
+    assets: Object.fromEntries(
+      [
+        asset("a1", "investment", 1_000_000),
+        asset("a2", "inventory", 300_000),
+        asset("a3", "equipment", 450_000),
+        {
+          ...asset("a4", "equipment", 7_777_777),
+          deletedAt: "1754568000001-0000-01J9F3K2M7QX8YB4TVWZ0DCEHZ",
+        },
+      ].map((a) => [a.id, a]),
+    ),
+    debts: Object.fromEntries([debt("d1", 700_000), debt("d2", 20_000)].map((d) => [d.id, d])),
+  };
+  const sales = record({ id: "s", kind: "income", description: "Venda", amountMinor: 200_000 });
+  const supply = record({ id: "f", amountMinor: 80_000 });
+
+  const blockText = (testId: string) =>
+    (screen.getByTestId(testId).textContent ?? "").replace(/ /g, " ");
+
+  it("na conta comercial mostra o bloco com resultado, capital por tipo, total aplicado e dívidas", () => {
+    render(<DashboardPage items={[sales, supply]} state={withPatrimony} today={TODAY} business />);
+
+    expect(screen.getByRole("heading", { level: 2, name: "Negócio" })).toBeDefined();
+    expect(blockText("business-income")).toBe("R$ 2.000,00");
+    expect(blockText("business-expense")).toBe("R$ 800,00");
+    expect(blockText("business-investment")).toBe("R$ 10.000,00");
+    expect(blockText("business-inventory")).toBe("R$ 3.000,00");
+    expect(blockText("business-equipment")).toBe("R$ 4.500,00");
+    expect(blockText("business-capital")).toBe("R$ 17.500,00");
+    expect(blockText("business-debt")).toBe("R$ 7.200,00");
+    expect(screen.getByText("Capital total aplicado")).toBeDefined();
+    expect(screen.getByText("Dívidas totais")).toBeDefined();
+  });
+
+  it("o resultado é o mesmo número do card do saldo e bens e dívidas não o mexem", () => {
+    render(<DashboardPage items={[sales, supply]} state={withPatrimony} today={TODAY} business />);
+    expect(blockText("business-result")).toBe(blockText("dashboard-balance"));
+    expect(blockText("business-result")).toContain("R$ 1.200,00");
+    expect(blockText("total-income")).toBe("R$ 2.000,00");
+    expect(blockText("total-expense")).toBe("R$ 800,00");
+  });
+
+  it('fica acima de "Como estou"', () => {
+    render(<DashboardPage items={[sales]} state={withPatrimony} today={TODAY} business />);
+    const negocio = screen.getByRole("heading", { level: 2, name: "Negócio" });
+    const como = screen.getByRole("heading", { level: 2, name: "Como estou" });
+    expect(negocio.compareDocumentPosition(como) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("sem lançamento nenhum, o patrimônio continua aparecendo acima do vazio", () => {
+    render(<DashboardPage items={[]} state={withPatrimony} today={TODAY} business />);
+    expect(blockText("business-capital")).toBe("R$ 17.500,00");
+    expect(blockText("business-debt")).toBe("R$ 7.200,00");
+    expect(blockText("business-result")).toContain("R$ 0,00");
+    expect(screen.getByRole("heading", { name: "O resumo de agosto aparece aqui" })).toBeDefined();
+  });
+
+  it("conta comercial recém-criada, sem bem nem dívida, mostra o bloco zerado", () => {
+    render(<DashboardPage items={[sales]} state={stateWith()} today={TODAY} business />);
+    expect(blockText("business-capital")).toBe("R$ 0,00");
+    expect(blockText("business-debt")).toBe("R$ 0,00");
+  });
+
+  it("na conta pessoal o Resumo não tem o bloco, mesmo com bens no estado", () => {
+    render(<DashboardPage items={[sales, supply]} state={withPatrimony} today={TODAY} />);
+    expect(screen.queryByRole("heading", { level: 2, name: "Negócio" })).toBeNull();
+    expect(screen.queryByTestId("business-capital")).toBeNull();
+    expect(screen.queryByText("Dívidas totais")).toBeNull();
   });
 });

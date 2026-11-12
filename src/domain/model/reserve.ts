@@ -1,5 +1,6 @@
 import type { Ulid } from "../ids/ulid";
 import type { BaseRow, Draft } from "./base";
+import type { BookScoped } from "./book";
 import type { ColorToken, IconKey } from "./tokens";
 
 export const RESERVE_KINDS = ["emergency", "goal"] as const;
@@ -59,7 +60,7 @@ export interface RecurringDeposit {
   since: string;
 }
 
-export interface Reserve extends BaseRow {
+export interface Reserve extends BaseRow, BookScoped {
   kind: ReserveKind;
   name: string;
   icon: IconKey;
@@ -79,7 +80,7 @@ export interface Reserve extends BaseRow {
 
 export type ReserveDraft = Draft<Reserve>;
 
-export interface ReserveMovement extends BaseRow {
+export interface ReserveMovement extends BaseRow, BookScoped {
   reserveId: Ulid;
   /** + guardar, − retirar. Nunca 0. */
   amountMinor: number;

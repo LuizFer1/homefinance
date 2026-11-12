@@ -1,8 +1,10 @@
+import type { Signal } from "@preact/signals";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
 import { floorHlc } from "../../domain/clock/hlc";
 import { stableEntityId } from "../../domain/ids/stable-id";
+import type { AppState } from "../../domain/model/app-state";
 import { isAlive } from "../../domain/model/base";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
 import type { TransactionDraft } from "../../domain/model/transaction";
@@ -182,7 +184,12 @@ describe("createRecurrenceStore", () => {
     // Precisa de uma série pendente no `state` para `materializeDue` chegar
     // até o `clock()` — sem plano, a função retorna cedo.
     const withSeries = await session.mutate("recurrences", (repo) => repo.create(seriesDraft));
-    cru.state.value = { ...cru.state.value, recurrences: { [withSeries.id]: withSeries } };
+    // `fullState` é só leitura na interface; o teste planta a série no estado de uma
+    // sessão sem `init` para `materializeDue` chegar até o `clock()`.
+    (cru.fullState as Signal<AppState>).value = {
+      ...cru.fullState.value,
+      recurrences: { [withSeries.id]: withSeries },
+    };
 
     await expect(storeCru.materializeDue("2026-08-10")).rejects.toThrow("Sessão não inicializada");
     expect(cru.error.value).toBe("Sessão não inicializada");

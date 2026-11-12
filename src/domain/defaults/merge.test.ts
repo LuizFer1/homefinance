@@ -8,6 +8,8 @@ import {
   buildDefaultRows,
   DEFAULT_CATEGORIES,
   DEFAULT_METHODS,
+  type DefaultCatalog,
+  defaultId,
   LEGACY_CREDIT_METHOD_ID,
 } from "./defaults";
 import { planDefaultsMerge } from "./merge";
@@ -142,5 +144,119 @@ describe("cartão de crédito genérico (já não semeado)", () => {
     const rows = byId(plan?.rows.paymentMethods ?? []);
     expect(rows[LEGACY_CREDIT_METHOD_ID]).toMatchObject({ deletedAt: null, kind: "credit" });
     expect(rows.COPIA).toMatchObject({ mergedInto: LEGACY_CREDIT_METHOD_ID });
+  });
+});
+
+describe("fusão por conta", () => {
+  const SALES = defaultId("categories", "sales", "business");
+  const business: DefaultCatalog = {
+    categories: [
+      {
+        id: SALES,
+        draft: { name: "Vendas", icon: "banknote", color: "emerald", kind: "income" },
+      },
+      {
+        id: defaultId("categories", "food", "business"),
+        draft: { name: "Alimentação", icon: "utensils", color: "orange", kind: "expense" },
+      },
+    ],
+    methods: [],
+  };
+  const catalog = {
+    personal: { categories: DEFAULT_CATEGORIES, methods: DEFAULT_METHODS },
+    business,
+  };
+
+  it("categoria pessoal e comercial homônimas jamais se fundem", () => {
+    const pessoal = legacyFood("P1");
+    const comercial: Category = {
+      ...legacyFood("B1"),
+      book: "business",
+    };
+    const plan = planDefaultsMerge(state([pessoal, comercial]), stamper(), catalog);
+
+    const rows = byId(plan?.rows.categories ?? []);
+    // A cópia pessoal vai para o padrão pessoal; a comercial, para o padrão comercial.
+    expect(rows.P1).toMatchObject({ mergedInto: FOOD.id });
+    expect(rows.B1).toMatchObject({ mergedInto: defaultId("categories", "food", "business") });
+    // Os dois padrões estáveis, cada um na sua conta, e nenhum cruza.
+    expect(rows[FOOD.id]?.book).not.toBe("business");
+    expect(rows[defaultId("categories", "food", "business")]?.book).toBe("business");
+  });
+
+  it("o padrão da conta pessoal nunca absorve uma cópia comercial", () => {
+    const comercial: Category = { ...legacyFood("B1"), book: "business" };
+    // Sem padrão de Alimentação no catálogo comercial: a cópia fica como está.
+    const semAlimentacao = { ...catalog, business: { categories: [], methods: [] } };
+    expect(planDefaultsMerge(state([comercial]), stamper(), semAlimentacao)).toBeNull();
+    // E com o catálogo padrão de hoje (comercial vazio) idem.
+    expect(planDefaultsMerge(state([comercial]), stamper())).toBeNull();
+  });
+
+  it("padrão comercial só funde cópia comercial", () => {
+    const vendasComercial: Category = {
+      ...ALIVE,
+      id: "B1",
+      name: "Vendas",
+      icon: "banknote",
+      color: "emerald",
+      kind: "income",
+      book: "business",
+    };
+    const vendasPessoal: Category = { ...vendasComercial, id: "P1", book: "personal" };
+    const plan = planDefaultsMerge(state([vendasComercial, vendasPessoal]), stamper(), catalog);
+
+    const rows = byId(plan?.rows.categories ?? []);
+    expect(rows.B1).toMatchObject({ mergedInto: SALES });
+    expect(rows.P1).toBeUndefined();
+    expect(rows[SALES]).toMatchObject({ book: "business", deletedAt: null });
+  });
+
+  it("planejar de novo depois de aplicar não gera outro plano (por conta)", () => {
+    const a: Category = { ...legacyFood("B1"), book: "business" };
+    const b = legacyFood("P1");
+    const plan = planDefaultsMerge(state([a, b]), stamper(), catalog);
+    const after = state(
+      [a, b, ...(plan?.rows.categories ?? [])].reduce<Category[]>((acc, row) => {
+        const i = acc.findIndex((x) => x.id === row.id);
+        if (i >= 0) acc[i] = row;
+        else acc.push(row);
+        return acc;
+      }, []),
+    );
+    expect(planDefaultsMerge(after, stamper(), catalog)).toBeNull();
+  });
+});
+
+describe("planDefaultsMerge com o catálogo comercial", () => {
+  const business = buildDefaultRows("business");
+  const personal = buildDefaultRows("personal");
+
+  it("a semente das duas contas, com nomes em comum, não gera plano", () => {
+    // "Contas", "Pix", "Dinheiro" existem nas duas listas, cada uma com o id da sua conta.
+    const plan = planDefaultsMerge(
+      state(
+        [...personal.categories, ...business.categories],
+        [...personal.paymentMethods, ...business.paymentMethods],
+      ),
+      stamper(),
+    );
+    expect(plan).toBeNull();
+  });
+
+  it("uma cópia comercial de 'Vendas' funde no padrão comercial; a homônima pessoal fica", () => {
+    const sales = business.categories.find((row) => row.name === "Vendas");
+    if (sales === undefined) throw new Error("catálogo comercial mudou");
+    const copy: Category = { ...sales, id: "COPIA-COMERCIAL", updatedAt: hlc(500) };
+    const { book: _book, ...personalSales } = sales;
+    const mine: Category = { ...personalSales, id: "VENDAS-PESSOAL", updatedAt: hlc(500) };
+
+    const plan = planDefaultsMerge(
+      state([...personal.categories, ...business.categories, copy, mine]),
+      stamper(),
+    );
+    const rows = byId(plan?.rows.categories ?? []);
+    expect(rows["COPIA-COMERCIAL"]).toMatchObject({ mergedInto: sales.id, book: "business" });
+    expect(rows["VENDAS-PESSOAL"]).toBeUndefined();
   });
 });

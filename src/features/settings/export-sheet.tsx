@@ -23,6 +23,9 @@ export const TABLE_LABELS: Record<TableName, string> = {
   reserves: "Reservas",
   reserveMovements: "Movimentos de reserva",
   budgets: "Metas por categoria",
+  books: "Contas",
+  assets: "Bens do negócio",
+  debts: "Dívidas do negócio",
 };
 
 export interface ExportSheetProps {

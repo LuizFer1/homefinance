@@ -2,6 +2,8 @@ import { buildRow } from "../../data/repository";
 import { floorHlc } from "../../domain/clock/hlc";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { Draft } from "../../domain/model/base";
+import { BOOKS, bookOf } from "../../domain/model/book";
+import { stateForBook } from "../../domain/model/book-view";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
 import type { RecurrenceAdjustment } from "../../domain/model/recurrence-adjustment";
 import type { Transaction, TransactionDraft } from "../../domain/model/transaction";
@@ -59,7 +61,12 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
     // um erro de uso, mas ainda tem que preencher `error` como qualquer outra
     // falha — quem só observa o signal não pode perder o motivo.
     try {
-      const plans = planOccurrences(session.state.value, today);
+      // Uma conta por vez, incluindo a inativa: o aluguel do comércio vence
+      // mesmo com a pessoa na conta pessoal. Cada ocorrência herda a conta da
+      // série (`plan.book`), nunca a ativa.
+      const plans = BOOKS.flatMap((book) =>
+        planOccurrences(stateForBook(session.fullState.value, book), today),
+      );
       if (plans.length === 0) return;
 
       const clock = session.clock();
@@ -74,7 +81,12 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         // O autor é o da série, não o deste aparelho: o mês que nasce no telefone
         // de outra pessoa continua sendo lançamento de quem criou a série.
         const userId = plan.userId ?? localUserId;
-        const row = buildRow<Transaction>(clock, { ...plan.draft, userId }, plan.entityId);
+        const row = buildRow<Transaction>(
+          clock,
+          { ...plan.draft, userId },
+          plan.entityId,
+          plan.book,
+        );
         // Estimativa nasce "velha" (ver `floorHlc`): se outro aparelho já
         // confirmou esta competência e o sync ainda não trouxe, a confirmação
         // tem que vencer esta linha no LWW, e não o contrário.
@@ -126,6 +138,8 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
                 amountMinor: input.amountMinor,
               },
               plan.adjustmentId,
+              // O reajuste é filho da série: herda a conta dela.
+              bookOf(state.recurrences[input.recurrenceId]),
             )
           : {
               ...existing,
@@ -167,7 +181,14 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
 
   async function repairAuthors(): Promise<void> {
     try {
-      const plan = planAuthorRepair(session.state.value);
+      // As duas contas, cada uma na sua visão: a autoria da série e a das
+      // ocorrências moram na mesma conta, e o reparo preserva `book` (spread).
+      const plan = BOOKS.map((book) =>
+        planAuthorRepair(stateForBook(session.fullState.value, book)),
+      ).reduce((all, one) => ({
+        recurrences: [...all.recurrences, ...one.recurrences],
+        transactions: [...all.transactions, ...one.transactions],
+      }));
       if (plan.recurrences.length === 0 && plan.transactions.length === 0) return;
 
       const clock = session.clock();

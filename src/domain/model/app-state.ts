@@ -1,6 +1,9 @@
 import type { Ulid } from "../ids/ulid";
+import type { Asset } from "./asset";
+import type { BookAccount } from "./book-account";
 import type { Budget } from "./budget";
 import type { Category } from "./category";
+import type { Debt } from "./debt";
 import type { PaymentMethod } from "./payment-method";
 import type { Recurrence } from "./recurrence";
 import type { RecurrenceAdjustment } from "./recurrence-adjustment";
@@ -19,6 +22,9 @@ export interface RowMap {
   reserves: Reserve;
   reserveMovements: ReserveMovement;
   budgets: Budget;
+  books: BookAccount;
+  assets: Asset;
+  debts: Debt;
 }
 
 export type TableName = keyof RowMap;
@@ -45,9 +51,37 @@ const TABLES: Record<TableName, true> = {
   reserves: true,
   reserveMovements: true,
   budgets: true,
+  books: true,
+  assets: true,
+  debts: true,
 };
 
 export const TABLE_NAMES: readonly TableName[] = Object.keys(TABLES) as TableName[];
+
+/**
+ * Tabelas cujas linhas pertencem a uma conta (`book`). `users` é a pessoa, e
+ * `books` descreve as próprias contas: as duas valem nas duas contas e nunca
+ * levam `book`. `Record`, e não uma lista, pelo mesmo motivo de `TABLES`: uma
+ * tabela nova obriga a decidir se ela é de uma conta ou compartilhada.
+ */
+const BOOK_SCOPED: Record<TableName, boolean> = {
+  users: false,
+  categories: true,
+  paymentMethods: true,
+  transactions: true,
+  recurrences: true,
+  recurrenceAdjustments: true,
+  reserves: true,
+  reserveMovements: true,
+  budgets: true,
+  books: false,
+  assets: true,
+  debts: true,
+};
+
+export function isBookScoped(table: TableName): boolean {
+  return BOOK_SCOPED[table];
+}
 
 /**
  * Estado vazio compartilhado por toda sessão nova. Congelado (um nível abaixo
@@ -65,4 +99,7 @@ export const EMPTY_APP_STATE: AppState = Object.freeze({
   reserves: Object.freeze({}),
   reserveMovements: Object.freeze({}),
   budgets: Object.freeze({}),
+  books: Object.freeze({}),
+  assets: Object.freeze({}),
+  debts: Object.freeze({}),
 }) as AppState;

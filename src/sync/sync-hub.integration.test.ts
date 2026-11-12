@@ -14,6 +14,8 @@ import {
   LEGACY_CREDIT_METHOD_ID,
 } from "../domain/defaults/defaults";
 import type { RandomChunk } from "../domain/ids/ulid";
+import { bookOf } from "../domain/model/book";
+import { BUSINESS_BOOK_ID } from "../domain/model/book-account";
 import type { PaymentMethod } from "../domain/model/payment-method";
 import { movement, reserve } from "../domain/reserves/fixtures.fake";
 import { createBudgetsStore } from "../features/budgets/store";
@@ -501,5 +503,113 @@ describe("autoria de série entre dois aparelhos", () => {
         ["2026-08-15", 3_333, ANA],
       ]);
     }
+  });
+});
+
+describe("duas contas, dois aparelhos, um hub", () => {
+  const BUSINESS = BUSINESS_BOOK_ID;
+  const VENDAS = { name: "Vendas", icon: "banknote", color: "emerald", kind: "income" } as const;
+
+  function bookRow(d: Device, name: string) {
+    return {
+      ...({
+        kind: "business",
+        name,
+        color: "amber",
+        icon: "storefront",
+        id: BUSINESS,
+        createdAt: "2026-11-11T00:00:00.000Z",
+        deletedAt: null,
+      } as const),
+      book: "business" as const,
+      updatedAt: d.session.clock().stamp().hlc,
+      dirty: 1 as const,
+    };
+  }
+
+  it("as duas contas chegam ao outro aparelho, cada uma só na sua visão", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+
+    const pessoal = await a.registry.addCategory(MERCADO);
+    await a.session.setActiveBook("business");
+    const comercial = await a.registry.addCategory(VENDAS);
+    await a.session.putRows({ books: [bookRow(a, "Padaria")] });
+    const bem = await a.session.mutate("assets", (repo) =>
+      repo.create({
+        kind: "equipment",
+        name: "Forno",
+        valueMinor: 500_000,
+        acquiredOn: "2026-10-01",
+      }),
+    );
+    const divida = await a.session.mutate("debts", (repo) =>
+      repo.create({ name: "Financiamento", principalMinor: 400_000, balanceMinor: 300_000 }),
+    );
+    await a.sync.sync();
+    await b.sync.sync();
+
+    // O hub guarda a linha inteira, com o `book` dela.
+    const noHub = (table: string, id: string) =>
+      hub.rows().find((r) => r.table === table && r.id === id)?.row;
+    expect(noHub("categories", pessoal.id)?.book).toBe("personal");
+    expect(noHub("categories", comercial.id)?.book).toBe("business");
+    expect(noHub("assets", bem.id)?.book).toBe("business");
+    expect(noHub("debts", divida.id)?.book).toBe("business");
+
+    // B abre na conta pessoal: só a pessoal aparece, mas a conta comercial passa a existir.
+    expect(Object.keys(b.session.state.value.categories)).toEqual([pessoal.id]);
+    expect(b.session.state.value.books[BUSINESS]?.name).toBe("Padaria");
+    expect(b.session.state.value.assets).toEqual({});
+
+    await b.session.setActiveBook("business");
+    expect(Object.keys(b.session.state.value.categories)).toEqual([comercial.id]);
+    expect(Object.keys(b.session.state.value.assets)).toEqual([bem.id]);
+    expect(Object.keys(b.session.state.value.debts)).toEqual([divida.id]);
+    for (const row of Object.values(b.session.fullState.value.categories)) {
+      expect(bookOf(row)).toBe(row.id === pessoal.id ? "personal" : "business");
+    }
+  });
+
+  it("a linha books criada nos dois aparelhos converge para uma só (id estável)", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+
+    await a.session.putRows({ books: [bookRow(a, "Padaria A")] });
+    await b.session.putRows({ books: [bookRow(b, "Padaria B")] });
+    await a.sync.sync();
+    await b.sync.sync();
+    await a.sync.sync();
+
+    for (const d of [a, b]) {
+      expect(Object.keys(d.session.fullState.value.books)).toEqual([BUSINESS]);
+      // B escreveu depois (relógio adiantado): vence nos dois.
+      expect(d.session.fullState.value.books[BUSINESS]?.name).toBe("Padaria B");
+    }
+  });
+
+  it("edição da mesma conta em aparelhos diferentes não mistura nem perde o book", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+    await a.session.setActiveBook("business");
+    const cat = await a.registry.addCategory(VENDAS);
+    await a.sync.sync();
+    await b.sync.sync();
+
+    await b.session.setActiveBook("business");
+    await b.registry.editCategory(cat.id, { ...VENDAS, name: "Vendas do balcão" });
+    await b.sync.sync();
+    await a.sync.sync();
+
+    for (const d of [a, b]) {
+      const row = d.session.fullState.value.categories[cat.id];
+      expect(row).toMatchObject({ name: "Vendas do balcão", book: "business" });
+    }
+    // Nenhuma linha comercial vazou para a visão pessoal de A.
+    await a.session.setActiveBook("personal");
+    expect(a.session.state.value.categories[cat.id]).toBeUndefined();
   });
 });

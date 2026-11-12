@@ -303,3 +303,23 @@ describe("planOccurrences semanal e quinzenal", () => {
     expect(plans.map((p) => p.draft.amountMinor)).toEqual([3_334, 3_333, 3_333]);
   });
 });
+
+describe("planOccurrences e a conta da série", () => {
+  it("a ocorrência herda a conta da série (comercial), não a ativa", () => {
+    const comercial: Recurrence = { ...SALARIO, id: "SERIE-B", book: "business" };
+    const plans = planOccurrences(stateWith(comercial), "2026-06-10");
+    expect(plans).toHaveLength(1);
+    expect(plans[0]?.book).toBe("business");
+  });
+
+  it("série sem book (antiga) gera ocorrência pessoal", () => {
+    const plans = planOccurrences(stateWith(SALARIO), "2026-06-10");
+    expect(plans[0]?.book).toBe("personal");
+  });
+
+  it("o draft do plano nunca carrega book (quem grava decide pelo plano)", () => {
+    const comercial: Recurrence = { ...SALARIO, id: "SERIE-B", book: "business" };
+    const plans = planOccurrences(stateWith(comercial), "2026-06-10");
+    expect(plans[0]?.draft).not.toHaveProperty("book");
+  });
+});

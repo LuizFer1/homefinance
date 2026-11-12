@@ -2,6 +2,8 @@ import { buildRow } from "../../data/repository";
 import { shiftMonth } from "../../domain/dates/calendar";
 import type { Ulid } from "../../domain/ids/ulid";
 import { isAlive } from "../../domain/model/base";
+import { BOOKS, bookOf } from "../../domain/model/book";
+import { stateForBook } from "../../domain/model/book-view";
 import {
   EMERGENCY_COLOR,
   EMERGENCY_ICON,
@@ -153,7 +155,11 @@ export function createReservesStore(session: Session): ReservesStore {
     };
   }
 
-  /** Autor decidido aqui, nunca pelo formulário; nenhum update o reescreve. */
+  /**
+   * Autor decidido aqui, nunca pelo formulário; nenhum update o reescreve. A
+   * conta é a da reserva (o movimento é filho dela), e não a ativa: quem chama já
+   * validou a reserva com `aliveReserve`, que só a enxerga na conta ativa.
+   */
   function movementDraft(
     reserveId: Ulid,
     signed: number,
@@ -166,6 +172,7 @@ export function createReservesStore(session: Session): ReservesStore {
       amountMinor: signed,
       occurredOn: input.occurredOn,
       userId: session.localUserId.value,
+      book: bookOf(session.state.value.reserves[reserveId]),
       description: input.description?.trim() || null,
       reason,
       recurring,
@@ -174,7 +181,12 @@ export function createReservesStore(session: Session): ReservesStore {
 
   async function materializeDue(today: string): Promise<void> {
     await guarded(async () => {
-      const plans = planDeposits(session.state.value, today);
+      // Uma conta por vez, incluindo a inativa: o saldo do mês que paga o depósito
+      // é o da conta da reserva, e nunca soma receita da outra conta.
+      const plans = BOOKS.flatMap((book) => {
+        const view = stateForBook(session.fullState.value, book);
+        return planDeposits(view, today).map((plan) => ({ ...plan, book }));
+      });
       if (plans.length === 0) return;
       const clock = session.clock();
       const userId = session.localUserId.value;
@@ -195,6 +207,8 @@ export function createReservesStore(session: Session): ReservesStore {
               recurring: true,
             },
             p.id,
+            // O depósito é filho da reserva: herda a conta dela.
+            p.book,
           ),
         ),
       );

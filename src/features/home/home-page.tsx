@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { type BudgetStatus, budgetAlerts, budgetReport } from "../../domain/budgets/status";
 import type { AppState } from "../../domain/model/app-state";
+import type { Book } from "../../domain/model/book";
 import type { Transaction, TransactionKind } from "../../domain/model/transaction";
 import type { User } from "../../domain/model/user";
 import { filterByMonth } from "../../domain/projections/breakdown";
@@ -11,6 +12,7 @@ import { monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { totals } from "../../domain/projections/selectors";
 import { uncategorized } from "../../domain/projections/uncategorized";
 import { availableBalance, savedInMonth } from "../../domain/reserves/balances";
+import { BookSwitchButton } from "../books/book-switch";
 import { cssVarForToken } from "../colors/color-token";
 import { Icon } from "../icons/icon";
 import { Avatar } from "../profile/avatar-view";
@@ -41,6 +43,15 @@ export interface HomePageProps {
   onOpenBudgets?: () => void;
   /** Abre as faturas dos cartões. Sem ele, a legenda da barra não leva a lugar nenhum. */
   onOpenInvoices?: () => void;
+  /** A conta em que a pessoa está. Sem ele vale a pessoal. */
+  book?: Book;
+  /** Nome do negócio, que substitui a saudação no cabeçalho da conta comercial. */
+  businessName?: string | null;
+  /**
+   * Troca de conta (ou abre o assistente, se ainda não há conta comercial). Sem ele,
+   * o botão não aparece.
+   */
+  onSwitchBook?: () => void;
 }
 
 /** "Setembro" — nome do mês, sem o ano, com inicial maiúscula. */
@@ -321,6 +332,9 @@ export function HomePage({
   onClassify,
   onOpenBudgets,
   onOpenInvoices,
+  book = "personal",
+  businessName = null,
+  onSwitchBook,
 }: HomePageProps) {
   // O que está nas reservas não é para gastar: contá-lo aqui de novo mostraria
   // o mesmo dinheiro em dois lugares (saldo e reserva) e o saldo pareceria maior
@@ -339,18 +353,32 @@ export function HomePage({
 
   return (
     <>
-      <header class="flex items-center justify-between gap-4">
-        <h1 class="min-w-0 truncate text-sm text-fg/65">{greetingFor(hour, profile?.name)}</h1>
-        {profile !== null && (
-          <button
-            type="button"
-            aria-label="Editar perfil"
-            onClick={onOpenProfile}
-            class="hf-press shrink-0 rounded-full"
-          >
-            <Avatar name={profile.name} color={profile.color} avatar={profile.avatar} size={36} />
-          </button>
+      <header class="flex items-center justify-between gap-2">
+        {book === "business" && businessName !== null ? (
+          <h1 data-testid="business-title" class="min-w-0 truncate text-sm font-medium text-fg/85">
+            {businessName}
+          </h1>
+        ) : (
+          <h1 class="min-w-0 truncate text-sm text-fg/65">{greetingFor(hour, profile?.name)}</h1>
         )}
+        {/*
+          Troca de conta e avatar juntos, nesta ordem, nas duas contas: o botão fica no
+          mesmo lugar, e o avatar (36px) não encolhe o alvo de toque do botão (44px).
+          O botão não depende do perfil: sem ele a pessoa ainda precisa voltar.
+        */}
+        <div class="flex shrink-0 items-center gap-1">
+          {onSwitchBook !== undefined && <BookSwitchButton book={book} onSwitch={onSwitchBook} />}
+          {profile !== null && (
+            <button
+              type="button"
+              aria-label="Editar perfil"
+              onClick={onOpenProfile}
+              class="hf-press shrink-0 rounded-full"
+            >
+              <Avatar name={profile.name} color={profile.color} avatar={profile.avatar} size={36} />
+            </button>
+          )}
+        </div>
       </header>
 
       <p class="hf-label mt-5">Saldo total</p>
