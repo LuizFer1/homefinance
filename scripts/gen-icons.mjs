@@ -91,6 +91,9 @@ const REGULAR = [
   "warning-circle",
   "wave-sine",
   "x",
+  // Troca de conta (Início): loja leva à comercial, pessoa volta à pessoal.
+  "storefront",
+  "user",
   // Reservas.
   "vault",
   "lifebuoy",

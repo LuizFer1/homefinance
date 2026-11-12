@@ -46,6 +46,7 @@ export const ICON_SET = {
   "shopping-bag": "shopping-bag",
   "shopping-cart": "shopping-cart",
   smartphone: "device-mobile",
+  store: "storefront",
   tag: "tag",
   utensils: "fork-knife",
   wallet: "wallet",
@@ -108,4 +109,31 @@ export const PICKABLE_ICONS: readonly IconKey[] = [
   "paw-print",
   "laptop",
   "plane-tilt",
+];
+
+/**
+ * Ícones que o assistente "Criar conta comercial" oferece para o negócio, só
+ * chaves que o mapa já resolve. `store` (a loja) não está em `PICKABLE_ICONS` de
+ * propósito: é a cara da conta comercial, não de uma categoria ou forma de
+ * pagamento, e o seletor delas não deve oferecê-la.
+ */
+export const BUSINESS_ICONS: readonly IconKey[] = [
+  "store",
+  "shopping-bag",
+  "shopping-cart",
+  "briefcase",
+  "coffee",
+  "utensils",
+  "scissors",
+  "shirt",
+  "car",
+  "laptop",
+  "house",
+  "wallet",
+  "gift",
+  "health",
+  "dumbbell",
+  "music",
+  "paw-print",
+  "tag",
 ];
