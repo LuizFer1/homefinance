@@ -127,7 +127,8 @@ describe("DebtSheet", () => {
 
     expect(stepNow()).toBe("Prévia");
     expect(screen.getByText("Empréstimo")).toBeDefined();
-    expect(screen.queryByText(/vence/)).toBeNull();
+    expect(screen.queryByText(/Vence:/)).toBeNull();
+    expect(screen.getByText(/Sem vencimento./)).toBeDefined();
     expect(screen.getByRole("button", { name: "Salvar dívida" })).toBeDefined();
   });
 
@@ -142,7 +143,8 @@ describe("DebtSheet", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /tem data de vencimento/i }));
     next();
     expect(screen.getByText(/Saldo de .*600,00 sobre .*1\.000,00 originais/)).toBeDefined();
-    expect(screen.getByText(/Banco · vence/)).toBeDefined();
+    expect(screen.getByText(/Banco/)).toBeDefined();
+    expect(screen.getByText(/Vence: Hoje./)).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Salvar dívida" }));
 
     await waitFor(() => expect(onClose).toHaveBeenCalled());

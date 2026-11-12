@@ -172,17 +172,13 @@ export function DebtSheet({ editing, today, onSubmit, onDelete, onClose }: DebtS
               <SummaryChip
                 leading={<IconTile icon="bank" color="rose" size={32} iconSize={18} />}
                 title={trimmed}
-                context={[
-                  trimmedCreditor === "" ? null : trimmedCreditor,
-                  hasDue ? `vence ${dayLabel(dueOn, today).toLocaleLowerCase("pt-BR")}` : null,
-                ]
-                  .filter((part) => part !== null)
-                  .join(" · ")}
+                context={trimmedCreditor === "" ? undefined : trimmedCreditor}
                 trailing={brl(balanceMinor)}
               />
               <p class={HINT}>
-                Saldo de {brl(balanceMinor)} sobre {brl(principalMinor)} originais. Entra nas
-                dívidas totais do negócio e não muda receitas, despesas nem o resultado do mês.
+                Saldo de {brl(balanceMinor)} sobre {brl(principalMinor)} originais.{" "}
+                {hasDue ? `Vence: ${dayLabel(dueOn, today)}.` : "Sem vencimento."} Entra nas dívidas
+                totais do negócio e não muda receitas, despesas nem o resultado do mês.
               </p>
             </>
           )}

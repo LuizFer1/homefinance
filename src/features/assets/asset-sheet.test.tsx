@@ -98,7 +98,8 @@ describe("AssetSheet", () => {
 
     expect(stepNow()).toBe("Prévia");
     expect(screen.getByText("Forno industrial")).toBeDefined();
-    expect(screen.getByText(/Equipamento · Hoje/)).toBeDefined();
+    expect(screen.getByText(/Equipamento/)).toBeDefined();
+    expect(screen.getByText(/Data: Hoje./)).toBeDefined();
     expect(screen.getByText(/4\.500,00/)).toBeDefined();
     expect(screen.getByText(/Não muda receitas, despesas nem o resultado do mês/)).toBeDefined();
     expect(screen.getByRole("button", { name: "Salvar bem" })).toBeDefined();

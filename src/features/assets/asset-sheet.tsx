@@ -128,12 +128,13 @@ export function AssetSheet({ editing, today, onSubmit, onDelete, onClose }: Asse
               <SummaryChip
                 leading={<IconTile icon={meta.icon} color={meta.color} size={32} iconSize={18} />}
                 title={trimmed}
-                context={`${meta.label} · ${dayLabel(acquiredOn, today)}`}
+                context={meta.label}
                 trailing={brl(valueMinor)}
               />
               <p class={HINT}>
-                Entra no capital aplicado do negócio, em {meta.plural.toLocaleLowerCase("pt-BR")}.
-                Não muda receitas, despesas nem o resultado do mês.
+                Data: {dayLabel(acquiredOn, today)}. Entra no capital aplicado do negócio, em{" "}
+                {meta.plural.toLocaleLowerCase("pt-BR")}. Não muda receitas, despesas nem o
+                resultado do mês.
               </p>
             </>
           )}
