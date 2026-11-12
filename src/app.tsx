@@ -18,6 +18,8 @@ import {
   listTransactions,
 } from "./domain/projections/selectors";
 import { findSimilar, type SimilarQuery } from "./domain/transactions/similar";
+import { BusinessWizard } from "./features/books/business-wizard";
+import type { BooksStore } from "./features/books/store";
 import { BrandMark } from "./features/brand/brand-mark";
 import { BudgetsPage } from "./features/budgets/budgets-page";
 import type { BudgetsStore } from "./features/budgets/store";
@@ -76,6 +78,8 @@ export interface AppProps {
   recurrence: RecurrenceStore;
   reserves: ReservesStore;
   budgets: BudgetsStore;
+  /** Conta comercial: criação e reparo da conta ativa. */
+  books: BooksStore;
   /** Migração dos cartões por completar (adiamento local e gravação em lote). */
   cards: CardsStore;
   onboarding: OnboardingStore;
@@ -169,6 +173,7 @@ export function App({
   recurrence,
   reserves,
   budgets,
+  books,
   cards,
   onboarding,
   importer,
@@ -197,6 +202,8 @@ export function App({
   // Estimativa em confirmação, ou null. Aberta pelo bloco "A confirmar".
   const [confirming, setConfirming] = useState<Transaction | null>(null);
   const [classifying, setClassifying] = useState(false);
+  // Assistente "Criar conta comercial" aberto. Só abre sem conta comercial.
+  const [creatingBusiness, setCreatingBusiness] = useState(false);
   // "Ajustar cartões" aberto à mão (pelas Faturas), mesmo depois de um "Depois".
   const [fixingCards, setFixingCards] = useState(false);
   // O boot (fusão dos padrões, materialização) já rodou. O aviso dos cartões
@@ -285,6 +292,17 @@ export function App({
     setSection("help");
   }, [helpRequest, canPair]);
 
+  // Conta ativa comercial sem linha `books` viva (removida, ou a meta de uma conta que
+  // este aparelho não tem) volta para a pessoal. Efeito e não render: precisa gravar
+  // a meta, e reage também a uma linha apagada que chegue depois pelo sync.
+  const activeBook = session.activeBook.value;
+  const business = books.business.value;
+  const ready = session.status.value === "ready";
+  useEffect(() => {
+    if (!ready || activeBook !== "business" || business !== null) return;
+    void books.repairActiveBook().catch(ignoreHandled);
+  }, [books, ready, activeBook, business]);
+
   // Uma condição só para os dois casos: o modal está aberto para criar
   // (`editing` nulo) ou para editar. Dois estados independentes permitiriam
   // abrir os dois ao mesmo tempo.
@@ -311,6 +329,7 @@ export function App({
       section === null &&
       !modalOpen &&
       !importing &&
+      !creatingBusiness &&
       reserveView.kind === "list" &&
       reserveSheet === null &&
       reserveForm === null,
@@ -363,6 +382,7 @@ export function App({
     adjusting !== null ||
     confirming !== null ||
     classifying ||
+    creatingBusiness ||
     reserveSheet !== null ||
     reserveForm !== null;
   // Não interrompe quem está no meio de um formulário: o aviso espera ele fechar.
@@ -379,6 +399,18 @@ export function App({
   function closeModal() {
     setComposing(null);
     setEditing(null);
+  }
+
+  // Na pessoal: vai para a comercial, ou abre o assistente se ela ainda não existe. Na
+  // comercial: volta para a pessoal. Falha já está em `session.error`.
+  function handleSwitchBook() {
+    if (activeBook === "business") {
+      void session.setActiveBook("personal").catch(ignoreHandled);
+    } else if (business !== null) {
+      void session.setActiveBook("business").catch(ignoreHandled);
+    } else {
+      setCreatingBusiness(true);
+    }
   }
 
   // Escritas fire-and-forget: a falha já aparece pelo `session.error`, no
@@ -509,6 +541,16 @@ export function App({
         O padding inferior reserva a altura da barra mais o safe area. Sem ele o
         último item da lista fica permanentemente sob a barra, inalcançável.
       */}
+      {activeBook === "business" && business !== null && (
+        // Filete da cor do negócio no topo, em todas as abas: o aviso discreto de que
+        // a pessoa está na conta comercial. Token da paleta, nunca hex.
+        <div
+          aria-hidden="true"
+          data-testid="business-accent"
+          class="pointer-events-none fixed inset-x-0 top-0 z-20 h-0.5"
+          style={{ backgroundColor: cssVarForToken(business.color) }}
+        />
+      )}
       <main
         class="hf-swipe mx-auto w-full max-w-md px-5 pt-[max(1.25rem,env(safe-area-inset-top))]
           pb-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+2rem)]"
@@ -543,6 +585,12 @@ export function App({
 
         {screen === "inicio" && (
           <HomePage
+            // `key` pela conta: o recorte da lista (filtro por categoria, busca) é da
+            // conta de onde saiu, e na outra apontaria para uma categoria que não existe.
+            key={activeBook}
+            book={activeBook}
+            businessName={business?.name ?? null}
+            onSwitchBook={handleSwitchBook}
             items={items}
             state={state}
             profile={profile}
@@ -784,6 +832,20 @@ export function App({
             state={state}
             onApply={(ids, categoryId) => store.setCategory(ids, categoryId)}
             onClose={() => setClassifying(false)}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={creatingBusiness}
+        title="Criar conta comercial"
+        onClose={() => setCreatingBusiness(false)}
+      >
+        {/* Montada só enquanto aberta: fechar descarta as escolhas pela metade. */}
+        {creatingBusiness && (
+          <BusinessWizard
+            onCreate={books.createBusiness}
+            onClose={() => setCreatingBusiness(false)}
           />
         )}
       </Modal>

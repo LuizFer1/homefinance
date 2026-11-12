@@ -8,11 +8,13 @@ import { buildRow } from "./data/repository";
 import { openTestDb, TEST_DEVICE_ID, testSessionDeps } from "./data/test-db.fake";
 import { createRowClock } from "./domain/clock/row-clock";
 import { LEGACY_CREDIT_METHOD_ID } from "./domain/defaults/defaults";
+import { type BookAccount, BUSINESS_BOOK_ID } from "./domain/model/book-account";
 import type { Category } from "./domain/model/category";
 import type { PaymentMethod } from "./domain/model/payment-method";
 import type { Reserve } from "./domain/model/reserve";
 import type { Transaction } from "./domain/model/transaction";
 import type { User } from "./domain/model/user";
+import { createBooksStore } from "./features/books/store";
 import { createBudgetsStore } from "./features/budgets/store";
 import { createCardsStore } from "./features/cards/store";
 import { createImportStore } from "./features/import/store";
@@ -21,7 +23,7 @@ import { createProfileStore } from "./features/profile/store";
 import { createRecurrenceStore } from "./features/recurrence/store";
 import { createRegistryStore } from "./features/registry/store";
 import { createReservesStore } from "./features/reserves/store";
-import { createSession, LOCAL_USER_ID_KEY } from "./features/session/session";
+import { ACTIVE_BOOK_KEY, createSession, LOCAL_USER_ID_KEY } from "./features/session/session";
 import { createSyncStore } from "./features/sync/store";
 import { createTransactionsStore } from "./features/transactions/store";
 import { HOLD_MS } from "./features/ui/hold-button";
@@ -85,6 +87,7 @@ function buildStores(db: HomeFinanceDb) {
     importer: createImportStore(session, recurrence),
     reserves: createReservesStore(session),
     budgets: createBudgetsStore(session),
+    books: createBooksStore(session),
     cards: createCardsStore(session, db),
     // Sem service worker: nenhum aviso de versão nova, como no primeiro acesso.
     update: createUpdateStore({ reload: () => {}, now: () => 0 }),
@@ -1341,5 +1344,167 @@ describe("migração de cartões no boot", () => {
 
     expect(await screen.findByRole("heading", { name: "Faturas" })).toBeDefined();
     expect(screen.getByText("Nenhum cartão cadastrado")).toBeDefined();
+  });
+});
+
+describe("conta comercial", () => {
+  /** Aparelho cadastrado que já tem a conta comercial (veio do sync ou foi criada antes). */
+  async function comContaComercial(): Promise<HomeFinanceDb> {
+    const db = await cadastrado();
+    await db.books.put(
+      buildRow<BookAccount>(
+        seedClock(),
+        { kind: "business", name: "Padaria do Zé", color: "amber", icon: "store" },
+        BUSINESS_BOOK_ID,
+        "business",
+      ),
+    );
+    return db;
+  }
+
+  const paraComercial = () => screen.getByRole("button", { name: "Ir para a conta comercial" });
+  const paraPessoal = () => screen.getByRole("button", { name: "Voltar para a conta pessoal" });
+
+  async function esperarHome() {
+    await waitFor(() => expect(screen.getByTestId("total-balance")).toBeDefined());
+  }
+
+  it("na conta pessoal o botão é a loja, ao lado do avatar, e não há filete", async () => {
+    render(
+      <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,
+    );
+    await esperarHome();
+
+    const botao = paraComercial();
+    expect(within(botao).getByTestId("icon-storefront")).toBeDefined();
+    expect(botao.nextElementSibling).toBe(screen.getByRole("button", { name: "Editar perfil" }));
+    expect(screen.queryByTestId("business-accent")).toBeNull();
+    expect(screen.queryByTestId("business-title")).toBeNull();
+  });
+
+  it("sem conta comercial, tocar na loja abre o assistente em vez de trocar", async () => {
+    const stores = buildStores(await cadastrado());
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await esperarHome();
+
+    fireEvent.click(paraComercial());
+
+    expect(await screen.findByRole("dialog", { name: "Criar conta comercial" })).toBeDefined();
+    expect(stores.session.activeBook.value).toBe("personal");
+  });
+
+  it("o assistente cria a conta, as categorias e as formas, e já abre na comercial", async () => {
+    const db = await cadastrado();
+    const stores = buildStores(db);
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await esperarHome();
+
+    fireEvent.click(paraComercial());
+    const sheet = await screen.findByRole("dialog", { name: "Criar conta comercial" });
+    fireEvent.input(within(sheet).getByLabelText("Nome do negócio"), {
+      target: { value: "Padaria do Zé" },
+    });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Continuar" }));
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Violeta" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Continuar" }));
+    expect(within(sheet).getByTestId("business-preview-name").textContent).toBe("Padaria do Zé");
+    fireEvent.click(within(sheet).getByRole("button", { name: "Criar conta comercial" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Criar conta comercial" })).toBeNull(),
+    );
+    // Cabeçalho da comercial: nome do negócio no lugar da saudação, filete e botão de volta.
+    expect((await screen.findByTestId("business-title")).textContent).toBe("Padaria do Zé");
+    expect(screen.queryByText(/Bom dia/)).toBeNull();
+    expect(paraPessoal().nextElementSibling).toBe(
+      screen.getByRole("button", { name: "Editar perfil" }),
+    );
+    expect(within(paraPessoal()).getByTestId("icon-user")).toBeDefined();
+    expect(screen.getByTestId("business-accent").getAttribute("style")).toContain(
+      "--color-tag-violet",
+    );
+
+    expect(await db.books.count()).toBe(1);
+    expect((await db.categories.toArray()).every((c) => c.book === "business")).toBe(true);
+    expect(await db.categories.count()).toBe(10);
+    expect(await db.paymentMethods.count()).toBe(5);
+    expect((await db.meta.get(ACTIVE_BOOK_KEY))?.value).toBe("business");
+  });
+
+  it("com a conta já criada, o botão só troca e não abre o assistente", async () => {
+    const stores = buildStores(await comContaComercial());
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await esperarHome();
+
+    fireEvent.click(paraComercial());
+
+    await waitFor(() => expect(stores.session.activeBook.value).toBe("business"));
+    expect(screen.queryByRole("dialog", { name: "Criar conta comercial" })).toBeNull();
+    expect((await screen.findByTestId("business-title")).textContent).toBe("Padaria do Zé");
+
+    fireEvent.click(paraPessoal());
+    await waitFor(() => expect(stores.session.activeBook.value).toBe("personal"));
+    expect(screen.queryByTestId("business-accent")).toBeNull();
+    expect(screen.getByText(/Bom dia/)).toBeDefined();
+  });
+
+  it("os lançamentos de cada conta não aparecem na outra", async () => {
+    const db = await comContaComercial();
+    const clock = seedClock();
+    const base = {
+      amountMinor: 1_500,
+      occurredOn: "2026-08-05",
+      categoryId: null,
+      paymentMethodId: null,
+      userId: PERFIL_LOCAL,
+      recurrenceId: null,
+    };
+    await db.transactions.bulkPut([
+      buildRow<Transaction>(clock, {
+        ...base,
+        kind: "expense",
+        description: "Padaria pessoal",
+      } as never),
+      buildRow<Transaction>(
+        clock,
+        { ...base, kind: "income", description: "Venda do balcão" } as never,
+        undefined,
+        "business",
+      ),
+    ]);
+    render(<App {...buildStores(db)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await esperarHome();
+    expect(screen.getByText("Padaria pessoal")).toBeDefined();
+    expect(screen.queryByText("Venda do balcão")).toBeNull();
+
+    fireEvent.click(paraComercial());
+    expect(await screen.findByText("Venda do balcão")).toBeDefined();
+    expect(screen.queryByText("Padaria pessoal")).toBeNull();
+  });
+
+  it("lembra a conta ao reabrir o app", async () => {
+    const db = await comContaComercial();
+    const first = buildStores(db);
+    const { unmount } = render(<App {...first} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await esperarHome();
+    fireEvent.click(paraComercial());
+    await waitFor(() => expect(first.session.activeBook.value).toBe("business"));
+    unmount();
+
+    render(<App {...buildStores(db)} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    expect((await screen.findByTestId("business-title")).textContent).toBe("Padaria do Zé");
+    expect(paraPessoal()).toBeDefined();
+  });
+
+  it("conta ativa comercial sem linha viva volta para a pessoal sozinha", async () => {
+    const db = await cadastrado();
+    await db.meta.put({ key: ACTIVE_BOOK_KEY, value: "business" });
+    const stores = buildStores(db);
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    await waitFor(() => expect(stores.session.activeBook.value).toBe("personal"));
+    expect(await screen.findByRole("button", { name: "Ir para a conta comercial" })).toBeDefined();
+    expect((await db.meta.get(ACTIVE_BOOK_KEY))?.value).toBe("personal");
+    expect(screen.queryByTestId("business-accent")).toBeNull();
   });
 });

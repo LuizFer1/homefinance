@@ -3,6 +3,7 @@ import { render } from "preact";
 import { App } from "./app";
 import { HomeFinanceDb } from "./data/db";
 import { cryptoRandomChunk } from "./domain/ids/ulid";
+import { createBooksStore } from "./features/books/store";
 import { createBudgetsStore } from "./features/budgets/store";
 import { createCardsStore } from "./features/cards/store";
 import { consumeHelpLink, pendingHelp } from "./features/help/deep-link";
@@ -85,6 +86,7 @@ const onboarding = createOnboardingStore(session);
 const importer = createImportStore(session, recurrence);
 const reserves = createReservesStore(session);
 const budgets = createBudgetsStore(session);
+const books = createBooksStore(session);
 const cards = createCardsStore(session, db);
 
 // Só referenciar `navigator.serviceWorker` já lança em contexto sandbox.
@@ -175,6 +177,7 @@ render(
     recurrence={recurrence}
     reserves={reserves}
     budgets={budgets}
+    books={books}
     cards={cards}
     onboarding={onboarding}
     importer={importer}
