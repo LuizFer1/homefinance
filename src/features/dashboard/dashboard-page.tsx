@@ -5,6 +5,7 @@ import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
 import { filterByMonth, monthlyTotals } from "../../domain/projections/breakdown";
+import { capitalByKind, debtTotal } from "../../domain/projections/business";
 import { dailyExpenses, expensesOn } from "../../domain/projections/daily-expenses";
 import { nextMonthFreeMoney, recurringMonth } from "../../domain/projections/free-money";
 import {
@@ -18,6 +19,7 @@ import { upcomingRecurrences } from "../../domain/recurrence/upcoming";
 import { Button } from "../ui/button";
 import { MonthPicker } from "../ui/month-picker";
 import { PageHeader } from "../ui/page-header";
+import { BusinessBlock } from "./business-block";
 import { CalendarSheet } from "./calendar-sheet";
 import { CategoryRows, visibleRows, withBudgets } from "./category-rows";
 import { DaySheet } from "./day-sheet";
@@ -43,6 +45,12 @@ export interface DashboardPageProps {
   currentUserId?: Ulid | null;
   /** Abre a edição de um lançamento da lista do dia. Sem ele, tocar na linha não faz nada. */
   onEdit?: (record: Transaction) => void;
+  /**
+   * Conta comercial ativa: o bloco "Negócio" aparece acima dos demais. Vem do App (a
+   * conta ativa), e não de "existem bens": uma conta comercial recém-criada, sem bem
+   * nenhum, também mostra o bloco, e a pessoal nunca.
+   */
+  business?: boolean;
 }
 
 /**
@@ -106,6 +114,7 @@ export function DashboardPage({
   onOpenBudgets,
   currentUserId = null,
   onEdit,
+  business = false,
 }: DashboardPageProps) {
   const current = monthOf(today);
   const [month, setMonth] = useState(current);
@@ -119,10 +128,22 @@ export function DashboardPage({
     />
   );
 
+  // Antes do vazio: um negócio com bens e dívidas e nenhum lançamento ainda precisa
+  // enxergar o patrimônio. Resultado, receitas e despesas saem do mesmo `monthComparison`
+  // do card do saldo, para os dois nunca discordarem.
+  const businessBlock = business ? (
+    <BusinessBlock
+      month={monthComparison(items, month).current}
+      capital={capitalByKind(Object.values(state.assets))}
+      debtMinor={debtTotal(Object.values(state.debts))}
+    />
+  ) : null;
+
   if (items.length === 0) {
     return (
       <section aria-label="Resumo">
         {header}
+        {businessBlock !== null && <div class="mt-5">{businessBlock}</div>}
         <EmptyDashboard month={month} onGoHome={onGoHome} />
       </section>
     );
@@ -167,6 +188,8 @@ export function DashboardPage({
       <p class="sr-only">{label}</p>
 
       <div class="mt-5 space-y-8">
+        {businessBlock}
+
         <Block title="Como estou">
           <SummaryCard
             month={month}
