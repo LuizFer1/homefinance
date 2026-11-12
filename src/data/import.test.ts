@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildExport, serializeExport } from "../domain/export/export-data";
 import { MAX_IMPORT_BYTES } from "../domain/export/import-data";
 import { TABLE_NAMES } from "../domain/model/app-state";
+import { bookOf } from "../domain/model/book";
+import { stateForBook } from "../domain/model/book-view";
 import type { Category } from "../domain/model/category";
 import { createSession, LOCAL_USER_ID_KEY, StaleRowsError } from "../features/session/session";
 import type { HomeFinanceDb } from "./db";
@@ -279,5 +281,84 @@ describe("importar", () => {
 
     expect(Object.keys(session.state.value.categories)).toHaveLength(2);
     expect(Object.keys(session.state.value.budgets)).toHaveLength(1);
+  });
+});
+
+describe("importar com duas contas", () => {
+  async function seedBoth() {
+    const session = await sessionOf(source);
+    const pessoal = await session.mutate("categories", (repo) => repo.create(MERCADO));
+    await session.setActiveBook("business");
+    const comercial = await session.mutate("categories", (repo) => repo.create(LAZER));
+    const bem = await session.mutate("assets", (repo) =>
+      repo.create({
+        kind: "inventory",
+        name: "Estoque",
+        valueMinor: 90_000,
+        acquiredOn: "2026-10-01",
+      }),
+    );
+    const divida = await session.mutate("debts", (repo) =>
+      repo.create({ name: "Forno", principalMinor: 50_000, balanceMinor: 40_000 }),
+    );
+    return { pessoal, comercial, bem, divida };
+  }
+
+  it("a exportação carrega book e as tabelas novas, e importar restaura cada linha na sua conta", async () => {
+    const { pessoal, comercial, bem, divida } = await seedBoth();
+    const text = await exportText(source);
+    const file = JSON.parse(text);
+    expect(file.tables.assets).toHaveLength(1);
+    expect(file.tables.debts).toHaveLength(1);
+    expect(file.tables.books).toEqual([]);
+    expect(file.tables.categories.map((c: { book: string }) => c.book).sort()).toEqual([
+      "business",
+      "personal",
+    ]);
+
+    const { session } = await importInto(target, text);
+
+    expect(await snapshot(target)).toEqual(await snapshot(source));
+    const full = session.fullState.value;
+    expect(bookOf(full.categories[pessoal.id])).toBe("personal");
+    expect(bookOf(full.categories[comercial.id])).toBe("business");
+    expect(full.assets[bem.id]?.book).toBe("business");
+    expect(full.debts[divida.id]?.book).toBe("business");
+    // A visão pessoal do aparelho restaurado não enxerga nada do comércio.
+    const view = stateForBook(full, "personal");
+    expect(Object.keys(view.categories)).toEqual([pessoal.id]);
+    expect(view.assets).toEqual({});
+  });
+
+  it("arquivo antigo (sem book e sem as tabelas novas) importa tudo como pessoal", async () => {
+    await seedSource();
+    const old = JSON.parse(await exportText(source));
+    delete old.tables.books;
+    delete old.tables.assets;
+    delete old.tables.debts;
+    for (const rows of Object.values(old.tables) as Record<string, unknown>[][]) {
+      for (const row of rows) delete row.book;
+    }
+
+    const { session } = await importInto(target, JSON.stringify(old));
+
+    const categories = Object.values(session.fullState.value.categories);
+    expect(categories.length).toBeGreaterThan(0);
+    expect(categories.every((c) => bookOf(c) === "personal")).toBe(true);
+    expect(Object.keys(stateForBook(session.fullState.value, "personal").categories)).toHaveLength(
+      categories.length,
+    );
+    expect(stateForBook(session.fullState.value, "business").categories).toEqual({});
+  });
+
+  it("book desconhecido num arquivo de versão futura degrada para pessoal, sem derrubar", async () => {
+    const { pessoal } = await seedBoth();
+    const file = JSON.parse(await exportText(source));
+    for (const row of file.tables.categories) if (row.id === pessoal.id) row.book = "franchise";
+
+    const { session } = await importInto(target, JSON.stringify(file));
+
+    expect(session.fullState.value.categories[pessoal.id]?.book).toBe("franchise");
+    expect(Object.keys(session.state.value.categories)).toContain(pessoal.id);
   });
 });
