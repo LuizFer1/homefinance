@@ -60,5 +60,10 @@ describe("searchHelp", () => {
     expect(ids("icone de loja")).toContain("accounts-create");
     expect(ids("atualize hub aparelhos")).toContain("accounts-update-first");
     expect(ids("somam")).toContain("accounts-separate");
+    expect(ids("bem equipamento")).toContain("accounts-assets");
+    expect(ids("divida saldo quitada")).toContain("accounts-debts");
+    expect(ids("capital aplicado")).toContain("accounts-capital");
+    expect(ids("bloco negocio resumo")).toContain("accounts-panel");
+    expect(ids("bens dividas receita despesa")).toContain("accounts-not-spending");
   });
 });

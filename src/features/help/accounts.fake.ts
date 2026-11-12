@@ -4,5 +4,10 @@ export const ACCOUNT_IDS = [
   "accounts-create",
   "accounts-switch",
   "accounts-separate",
+  "accounts-assets",
+  "accounts-debts",
+  "accounts-capital",
+  "accounts-panel",
+  "accounts-not-spending",
   "accounts-update-first",
 ] as const;

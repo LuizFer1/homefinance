@@ -44,4 +44,16 @@ describe("conteúdo da ajuda", () => {
     expect(text("accounts-separate")).toContain("nunca somam");
     expect(text("accounts-update-first")).toContain("todos os aparelhos e o hub");
   });
+
+  it("o tema da conta comercial explica bens, dívidas, capital, o bloco Negócio e que não são receita nem despesa", () => {
+    const text = (id: string) => (HELP_TEXT_PT[id]?.answer ?? []).join(" ");
+    expect(text("accounts-assets")).toContain("Novo bem");
+    expect(text("accounts-assets")).toContain("Investimento, Estoque ou Equipamento");
+    expect(text("accounts-debts")).toContain("Nova dívida");
+    expect(text("accounts-debts")).toContain("não pode ser maior");
+    expect(text("accounts-capital")).toContain("capital em estoque");
+    expect(text("accounts-capital")).toContain("dívidas totais");
+    expect(text("accounts-panel")).toContain("capital total aplicado");
+    expect(text("accounts-not-spending")).toContain("nunca entram em receitas, despesas");
+  });
 });
