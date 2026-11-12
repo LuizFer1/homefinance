@@ -24,6 +24,18 @@ describe("installmentAnchor", () => {
 });
 
 describe("identify", () => {
+  it("o mesmo extrato sem forma de pagamento tem ids diferentes em cada conta", () => {
+    const lines = ["12/09 IFOOD 45,90", "15/07 LOJA 03/10 150,00"];
+    const entries = reviewed(lines, "2026-10");
+    const ctx = { paymentMethodId: null, referenceMonth: "2026-10" };
+    const personal = identify(entries, { ...ctx, book: "personal" });
+    const business = identify(entries, { ...ctx, book: "business" });
+    // Sem o sal, o `insertMissing` da segunda conta pularia tudo em silêncio.
+    expect(business.every((id, i) => id !== personal[i])).toBe(true);
+    // A pessoal (e a ausência de conta) mantém o id de antes: o que já foi importado segue igual.
+    expect(identify(entries, ctx)).toEqual(personal);
+  });
+
   it("é estável para o mesmo PDF", () => {
     const lines = ["12/09 IFOOD 45,90", "15/07 LOJA 03/10 150,00"];
     const a = identify(reviewed(lines, "2026-10"), {

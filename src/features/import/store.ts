@@ -38,10 +38,12 @@ export function createImportStore(session: Session, recurrence: RecurrenceStore)
       try {
         const clock = session.clock();
         const userId = session.localUserId.value;
+        // O PDF é importado na conta ativa; as linhas nascem nela.
+        const book = session.activeBook.value;
 
         if (plan.transactions.length > 0) {
           const rows = plan.transactions.map(({ id, draft }) =>
-            buildRow<Transaction>(clock, { ...draft, userId }, id),
+            buildRow<Transaction>(clock, { ...draft, userId }, id, book),
           );
           transactions = (await session.insertMissing("transactions", rows)).length;
         }
@@ -50,7 +52,7 @@ export function createImportStore(session: Session, recurrence: RecurrenceStore)
           // A série guarda quem importou: as parcelas seguintes podem nascer no
           // telefone de outra pessoa e têm de continuar com este autor.
           const rows = plan.series.map(({ id, draft }) =>
-            buildRow<Recurrence>(clock, { ...draft, userId }, id),
+            buildRow<Recurrence>(clock, { ...draft, userId }, id, book),
           );
           series = (await session.insertMissing("recurrences", rows)).length;
         }

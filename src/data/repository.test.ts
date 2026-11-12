@@ -145,3 +145,62 @@ describe("createRepository", () => {
     expect(await db.categories.count()).toBe(0);
   });
 });
+
+describe("book (conta pessoal ou comercial)", () => {
+  it("create carimba a conta do contexto", async () => {
+    const business = createRepository(db.categories, clock, "business");
+    const row = await business.create(MERCADO);
+    expect(row.book).toBe("business");
+    expect((await db.categories.get(row.id))?.book).toBe("business");
+  });
+
+  it("sem conta no contexto (users, books) a linha sai sem o campo", async () => {
+    const row = await repo.create(MERCADO);
+    expect(row).not.toHaveProperty("book");
+  });
+
+  it("um book já no draft (filha herdando do pai) vence o do contexto", async () => {
+    const personal = createRepository(db.categories, clock, "personal");
+    const row = await personal.create({ ...MERCADO, book: "business" });
+    expect(row.book).toBe("business");
+  });
+
+  it("um book desconhecido no draft é ignorado: vale o do contexto", async () => {
+    const business = createRepository(db.categories, clock, "business");
+    const row = await business.create({ ...MERCADO, book: "franchise" as never });
+    expect(row.book).toBe("business");
+  });
+
+  it("update nunca altera o book, nem por spread de uma linha inteira", async () => {
+    const business = createRepository(db.categories, clock, "business");
+    const created = await business.create(MERCADO);
+
+    const updated = await business.update(created.id, {
+      ...created,
+      name: "Feira",
+      book: "personal",
+    });
+
+    expect(updated.name).toBe("Feira");
+    expect(updated.book).toBe("business");
+    expect((await db.categories.get(created.id))?.book).toBe("business");
+  });
+
+  it("update só com book no changes não escreve nada", async () => {
+    const business = createRepository(db.categories, clock, "business");
+    const created = await business.create(MERCADO);
+    const same = await business.update(created.id, { book: "personal" });
+    expect(same).toEqual(created);
+  });
+
+  it("update preserva o book gravado (linha antiga sem book continua sem)", async () => {
+    const old = await repo.create(MERCADO);
+    const updated = await repo.update(old.id, { name: "Feira" });
+    expect(updated).not.toHaveProperty("book");
+  });
+
+  it("buildRow estampa o book recebido", () => {
+    expect(buildRow<Category>(clock, MERCADO, undefined, "business").book).toBe("business");
+    expect(buildRow<Category>(clock, MERCADO)).not.toHaveProperty("book");
+  });
+});

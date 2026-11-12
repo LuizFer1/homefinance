@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it } from "vitest";
 import { Icon } from "./icon";
-import { ICON_KEYS, PICKABLE_ICONS } from "./icon-set";
+import { BUSINESS_ICONS, ICON_KEYS, PICKABLE_ICONS } from "./icon-set";
 
 afterEach(cleanup);
 
@@ -29,6 +29,17 @@ describe("Icon", () => {
     ]) {
       const { container, unmount } = render(<Icon name={name} />);
       expect(container.querySelector(`[data-testid="icon-${name}"]`)).not.toBeNull();
+      unmount();
+    }
+  });
+
+  it("resolve os glifos da troca de conta e a chave da loja", () => {
+    // Loja e pessoa são nomes de interface (o botão da Home os usa direto); a chave
+    // `store` é o ícone do negócio gravado na linha `books`.
+    for (const name of ["storefront", "user", "store"]) {
+      const { container, unmount } = render(<Icon name={name} />);
+      expect(container.querySelector(`[data-testid="icon-${name}"]`)).not.toBeNull();
+      expect(container.querySelector("path")?.getAttribute("d")).toBeTruthy();
       unmount();
     }
   });
@@ -92,6 +103,13 @@ describe("Icon", () => {
     // lifebuoy é a identidade fixa da emergência: resolve, mas não é escolhível.
     expect(PICKABLE_ICONS).not.toContain("lifebuoy");
     expect(new Set(PICKABLE_ICONS).size).toBe(37);
+  });
+
+  it("os ícones do negócio são chaves do mapa e a loja não vaza para categorias", () => {
+    expect(BUSINESS_ICONS.every((key) => ICON_KEYS.includes(key))).toBe(true);
+    expect(new Set(BUSINESS_ICONS).size).toBe(BUSINESS_ICONS.length);
+    expect(BUSINESS_ICONS[0]).toBe("store");
+    expect(PICKABLE_ICONS).not.toContain("store");
   });
 
   it("peso preenchido troca o desenho quando o glifo tem variante", () => {

@@ -1,5 +1,6 @@
 import type { Ulid } from "../ids/ulid";
 import type { BaseRow, Draft } from "./base";
+import type { BookScoped } from "./book";
 
 /**
  * Meta mensal de gasto de uma categoria: vale todo mês, até ser editada ou apagada.
@@ -10,7 +11,7 @@ import type { BaseRow, Draft } from "./base";
  * escrevem a **mesma** linha, e o LWW por linha as converge, em vez de o sync trazer
  * duas metas.
  */
-export interface Budget extends BaseRow {
+export interface Budget extends BaseRow, BookScoped {
   categoryId: Ulid;
   /** Teto mensal em centavos, inteiro e positivo. */
   limitMinor: number;

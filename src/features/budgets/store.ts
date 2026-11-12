@@ -2,6 +2,7 @@ import { buildRow } from "../../data/repository";
 import { budgetIdFor } from "../../domain/budgets/budget-id";
 import type { Ulid } from "../../domain/ids/ulid";
 import { isAlive } from "../../domain/model/base";
+import { bookOf } from "../../domain/model/book";
 import type { Budget } from "../../domain/model/budget";
 import { MAX_MINOR } from "../../domain/money/mask";
 import { findCategory } from "../../domain/projections/selectors";
@@ -34,7 +35,8 @@ export function createBudgetsStore(session: Session): BudgetsStore {
           throw new Error("Valor da meta inválido");
         }
         const state = session.state.value;
-        if (findCategory(state, categoryId) === null) throw new Error("Categoria não existe");
+        const category = findCategory(state, categoryId);
+        if (category === null) throw new Error("Categoria não existe");
 
         const id = budgetIdFor(categoryId);
         const existing = state.budgets[id];
@@ -44,7 +46,8 @@ export function createBudgetsStore(session: Session): BudgetsStore {
         // derrubaria o lote.
         const row: Budget =
           existing === undefined
-            ? buildRow<Budget>(clock, { categoryId, limitMinor }, id)
+            ? // A meta é filha da categoria: herda a conta dela.
+              buildRow<Budget>(clock, { categoryId, limitMinor }, id, bookOf(category))
             : {
                 ...existing,
                 categoryId,

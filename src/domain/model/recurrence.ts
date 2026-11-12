@@ -1,5 +1,6 @@
 import type { Ulid } from "../ids/ulid";
 import type { BaseRow, Draft } from "./base";
+import type { BookScoped } from "./book";
 import type { TransactionKind } from "./transaction";
 
 /**
@@ -30,7 +31,7 @@ export const SCHEDULE_TYPES = ["dayOfMonth", "nthBusinessDay"] as const;
 export type ScheduleType = (typeof SCHEDULE_TYPES)[number];
 
 /** A regra. As ocorrências são `Transaction` com `recurrenceId` e `occurrenceKey`. */
-export interface Recurrence extends BaseRow {
+export interface Recurrence extends BaseRow, BookScoped {
   kind: TransactionKind;
   description: string;
   amountMinor: number;

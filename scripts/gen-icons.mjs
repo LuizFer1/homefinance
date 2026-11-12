@@ -91,6 +91,9 @@ const REGULAR = [
   "warning-circle",
   "wave-sine",
   "x",
+  // Troca de conta (Início): loja leva à comercial, pessoa volta à pessoal.
+  "storefront",
+  "user",
   // Reservas.
   "vault",
   "lifebuoy",
@@ -110,7 +113,7 @@ const REGULAR = [
 ];
 
 /** Peso preenchido: aba ativa e "Escuro" selecionado. */
-const FILL = ["chart-pie-slice", "house", "gear-six", "moon", "vault"];
+const FILL = ["chart-pie-slice", "house", "gear-six", "moon", "vault", "briefcase"];
 
 function pathsOf(file) {
   const svg = readFileSync(file, "utf8");

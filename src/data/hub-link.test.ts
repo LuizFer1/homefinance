@@ -122,3 +122,10 @@ describe("hub-link", () => {
     expect(await db.meta.count()).toBe(1);
   });
 });
+
+describe("tableSetKey", () => {
+  it("inclui as tabelas da conta comercial: um aparelho que acabou de atualizar puxa tudo de novo", () => {
+    const tables = tableSetKey().split(",");
+    expect(tables).toEqual(expect.arrayContaining(["books", "assets", "debts"]));
+  });
+});

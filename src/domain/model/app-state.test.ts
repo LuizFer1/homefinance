@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_APP_STATE, TABLE_NAMES } from "./app-state";
+import { EMPTY_APP_STATE, isBookScoped, TABLE_NAMES } from "./app-state";
 
 describe("TABLE_NAMES", () => {
-  it("lista as nove tabelas de RowMap", () => {
+  it("lista as doze tabelas de RowMap", () => {
     expect(TABLE_NAMES).toEqual([
       "users",
       "categories",
@@ -13,7 +13,17 @@ describe("TABLE_NAMES", () => {
       "reserves",
       "reserveMovements",
       "budgets",
+      "books",
+      "assets",
+      "debts",
     ]);
+  });
+});
+
+describe("isBookScoped", () => {
+  it("só users e books valem nas duas contas; o resto pertence a uma conta", () => {
+    const shared = TABLE_NAMES.filter((table) => !isBookScoped(table));
+    expect(shared).toEqual(["users", "books"]);
   });
 });
 

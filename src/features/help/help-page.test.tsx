@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ACCOUNT_IDS } from "./accounts.fake";
 import { pendingHelp } from "./deep-link";
 import { HelpPage } from "./help-page";
 import { PHASE_3_IDS } from "./phase-3.fake";
@@ -48,6 +49,19 @@ describe("HelpPage", () => {
       const open = container.querySelectorAll('button[aria-expanded="true"]');
       expect(open.length, id).toBe(1);
       expect(pendingHelp.value).toBeNull();
+      unmount();
+    }
+  });
+
+  it("lista o tema Conta comercial e o link #ajuda abre cada pergunta dele", () => {
+    render(<HelpPage onBack={() => {}} />);
+    expect(screen.getByRole("heading", { name: "Conta comercial" })).toBeTruthy();
+    cleanup();
+
+    for (const id of ACCOUNT_IDS) {
+      pendingHelp.value = id;
+      const { container, unmount } = render(<HelpPage onBack={() => {}} />);
+      expect(container.querySelectorAll('button[aria-expanded="true"]').length, id).toBe(1);
       unmount();
     }
   });

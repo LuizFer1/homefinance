@@ -89,4 +89,36 @@ describe("HomeFinanceDb", () => {
     expect(await db.reserveMovements.count()).toBe(0);
     await db.delete();
   });
+
+  it("upgrade da v5 cria books, assets e debts e mantém as linhas (sem book = pessoal)", async () => {
+    const name = `homefinance-v5-${Date.now()}`;
+    const v5 = new Dexie(name);
+    v5.version(5).stores({
+      users: "id, dirty",
+      categories: "id, dirty",
+      paymentMethods: "id, dirty",
+      transactions: "id, occurredOn, recurrenceId, dirty",
+      recurrences: "id, dirty",
+      recurrenceAdjustments: "id, recurrenceId, dirty",
+      reserves: "id, dirty",
+      reserveMovements: "id, reserveId, dirty",
+      budgets: "id, dirty",
+      meta: "key",
+    });
+    await v5
+      .table("transactions")
+      .put({ id: "T1", occurredOn: "2026-08-05", recurrenceId: null, dirty: 0 });
+    v5.close();
+
+    const db = new HomeFinanceDb(name);
+    await db.open();
+
+    const antiga = await db.transactions.get("T1");
+    expect(antiga).toMatchObject({ id: "T1" });
+    expect(antiga).not.toHaveProperty("book");
+    expect(await db.books.count()).toBe(0);
+    expect(await db.assets.count()).toBe(0);
+    expect(await db.debts.count()).toBe(0);
+    await db.delete();
+  });
 });

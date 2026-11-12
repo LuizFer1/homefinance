@@ -1,5 +1,6 @@
 import type { Ulid } from "../ids/ulid";
 import type { BaseRow, Draft } from "./base";
+import type { BookScoped } from "./book";
 import type { ColorToken, IconKey } from "./tokens";
 
 /**
@@ -9,7 +10,7 @@ import type { ColorToken, IconKey } from "./tokens";
 export const PAYMENT_KINDS = ["cash", "pix", "credit", "debit", "other"] as const;
 export type PaymentKind = (typeof PAYMENT_KINDS)[number];
 
-export interface PaymentMethod extends BaseRow {
+export interface PaymentMethod extends BaseRow, BookScoped {
   name: string;
   icon: IconKey;
   color: ColorToken;

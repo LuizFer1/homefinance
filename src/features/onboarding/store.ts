@@ -29,7 +29,9 @@ export function createOnboardingStore(session: Session): OnboardingStore {
     const { rows, meta } = buildOnboardingRows(draft, session.clock());
     // O padrão tem id fixo: se ele já está aqui (veio do hub antes do primeiro
     // uso), regravar a semente por cima desfaria a edição que chegou.
-    const { categories, paymentMethods } = session.state.value;
+    // Estado completo: a pergunta é "o id já está no banco?", e o padrão pode ter
+    // chegado em qualquer conta.
+    const { categories, paymentMethods } = session.fullState.value;
     rows.categories = rows.categories?.filter((row) => categories[row.id] === undefined);
     rows.paymentMethods = rows.paymentMethods?.filter(
       (row) => paymentMethods[row.id] === undefined,

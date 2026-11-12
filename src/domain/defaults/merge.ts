@@ -2,9 +2,11 @@ import { compareHlc } from "../clock/hlc";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
+import { BOOKS } from "../model/book";
+import { stateForBook } from "../model/book-view";
 import type { Category } from "../model/category";
 import type { PaymentMethod } from "../model/payment-method";
-import { DEFAULT_CATEGORIES, DEFAULT_METHODS, type DefaultEntry, GENESIS_HLC } from "./defaults";
+import { DEFAULTS_BY_BOOK, type DefaultCatalog, type DefaultEntry, GENESIS_HLC } from "./defaults";
 
 type Row = Category | PaymentMethod;
 
@@ -76,23 +78,35 @@ function planTable<T extends Row>(
  * Cópia é linha viva com nome e tipo exatos de um padrão: um padrão renomeado
  * antes da correção já é cadastro da pessoa e fica como está.
  *
+ * **Roda por conta** sobre a visão de cada `book`, com o catálogo de padrões
+ * daquela conta (`catalog`): uma "Alimentação" pessoal e uma comercial homônima
+ * nunca se fundem, e o padrão de uma conta nunca absorve linha da outra. Recebe o
+ * estado completo e cuida das duas contas, para a inativa também ser fundida.
+ *
  * Pura e idempotente: o estado depois do plano não gera outro plano. Roda no
  * boot e depois de cada pull, porque um aparelho ainda na versão velha pode
  * mandar cópia nova a qualquer momento.
  */
-export function planDefaultsMerge(state: AppState, stamp: () => string): DefaultsMerge | null {
-  const categories = planTable(state.categories, DEFAULT_CATEGORIES, stamp);
-  const methods = planTable(state.paymentMethods, DEFAULT_METHODS, stamp);
-  if (categories.rows.length === 0 && methods.rows.length === 0) return null;
-
+export function planDefaultsMerge(
+  full: AppState,
+  stamp: () => string,
+  catalog: Record<string, DefaultCatalog> = DEFAULTS_BY_BOOK,
+): DefaultsMerge | null {
   const plan: DefaultsMerge = { rows: {}, expected: {} };
-  if (categories.rows.length > 0) {
-    plan.rows.categories = categories.rows;
-    plan.expected.categories = categories.expected;
+  for (const book of BOOKS) {
+    const defaults = catalog[book];
+    if (defaults === undefined) continue;
+    const view = stateForBook(full, book);
+    const categories = planTable(view.categories, defaults.categories, stamp);
+    const methods = planTable(view.paymentMethods, defaults.methods, stamp);
+    if (categories.rows.length > 0) {
+      plan.rows.categories = [...(plan.rows.categories ?? []), ...categories.rows];
+      plan.expected.categories = { ...plan.expected.categories, ...categories.expected };
+    }
+    if (methods.rows.length > 0) {
+      plan.rows.paymentMethods = [...(plan.rows.paymentMethods ?? []), ...methods.rows];
+      plan.expected.paymentMethods = { ...plan.expected.paymentMethods, ...methods.expected };
+    }
   }
-  if (methods.rows.length > 0) {
-    plan.rows.paymentMethods = methods.rows;
-    plan.expected.paymentMethods = methods.expected;
-  }
-  return plan;
+  return plan.rows.categories === undefined && plan.rows.paymentMethods === undefined ? null : plan;
 }

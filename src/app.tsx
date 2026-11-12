@@ -7,7 +7,10 @@ import { listPickableMethods, pendingCardGroups } from "./domain/cards/migration
 import type { ImportPlan } from "./domain/export/import-data";
 import type { Ulid } from "./domain/ids/ulid";
 import { buildCategoryIndex } from "./domain/import/suggest-category";
+import type { Asset } from "./domain/model/asset";
 import { isAlive } from "./domain/model/base";
+import type { Book } from "./domain/model/book";
+import type { Debt } from "./domain/model/debt";
 import type { RecurrenceRule } from "./domain/model/recurrence";
 import type { ReserveKind, ReserveMovement } from "./domain/model/reserve";
 import type { Transaction, TransactionDraft, TransactionKind } from "./domain/model/transaction";
@@ -18,14 +21,21 @@ import {
   listTransactions,
 } from "./domain/projections/selectors";
 import { findSimilar, type SimilarQuery } from "./domain/transactions/similar";
+import { AssetSheet } from "./features/assets/asset-sheet";
+import type { AssetsStore } from "./features/assets/store";
+import { BusinessWizard } from "./features/books/business-wizard";
+import type { BooksStore } from "./features/books/store";
 import { BrandMark } from "./features/brand/brand-mark";
 import { BudgetsPage } from "./features/budgets/budgets-page";
 import type { BudgetsStore } from "./features/budgets/store";
+import { BusinessPage } from "./features/business/business-page";
 import { InvoicesPage } from "./features/cards/invoices-page";
 import { MigrationSheet } from "./features/cards/migration-sheet";
 import type { CardsStore } from "./features/cards/store";
 import { cssVarForToken } from "./features/colors/color-token";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
+import { DebtSheet } from "./features/debts/debt-sheet";
+import type { DebtsStore } from "./features/debts/store";
 import { pendingHelp } from "./features/help/deep-link";
 import { HelpPage } from "./features/help/help-page";
 import { HomePage } from "./features/home/home-page";
@@ -76,6 +86,11 @@ export interface AppProps {
   recurrence: RecurrenceStore;
   reserves: ReservesStore;
   budgets: BudgetsStore;
+  /** Bens e dívidas do negócio: só a conta comercial grava. */
+  assets: AssetsStore;
+  debts: DebtsStore;
+  /** Conta comercial: criação e reparo da conta ativa. */
+  books: BooksStore;
   /** Migração dos cartões por completar (adiamento local e gravação em lote). */
   cards: CardsStore;
   onboarding: OnboardingStore;
@@ -123,14 +138,30 @@ const SHELL = "hf-backdrop min-h-dvh text-fg";
 const SCREENS = [
   { id: "dashboard", label: "Resumo", icon: "chart-pie-slice" },
   { id: "inicio", label: "Início", icon: "house" },
+  // Só na conta comercial (ver `screensFor`): na pessoal a barra segue com quatro abas.
+  { id: "negocio", label: "Negócio", icon: "briefcase" },
   { id: "reservas", label: "Reservas", icon: "vault" },
   { id: "config", label: "Ajustes", icon: "gear-six" },
 ] as const;
 
 type ScreenId = (typeof SCREENS)[number]["id"];
 
-/** Ordem esquerda → direita do arraste (Resumo · Início · Reservas · Ajustes). */
-const SCREEN_IDS: readonly ScreenId[] = SCREENS.map((s) => s.id);
+/**
+ * As abas da conta ativa, na ordem esquerda → direita do arraste (Resumo · Início ·
+ * [Negócio] · Reservas · Ajustes). A lista é a mesma da barra: com o Negócio só na
+ * comercial, a pessoal mantém exatamente as quatro abas de antes.
+ */
+function screensFor(book: Book): readonly (typeof SCREENS)[number][] {
+  return book === "business" ? SCREENS : SCREENS.filter((s) => s.id !== "negocio");
+}
+
+/** Sheet de bem ou dívida aberto: `editing` nulo é um cadastro novo. */
+interface AssetTarget {
+  editing: Asset | null;
+}
+interface DebtTarget {
+  editing: Debt | null;
+}
 
 /** Sub-tela da aba Reservas. */
 type ReserveView = { kind: "list" } | { kind: "detail"; id: Ulid };
@@ -169,6 +200,9 @@ export function App({
   recurrence,
   reserves,
   budgets,
+  assets,
+  debts,
+  books,
   cards,
   onboarding,
   importer,
@@ -197,6 +231,8 @@ export function App({
   // Estimativa em confirmação, ou null. Aberta pelo bloco "A confirmar".
   const [confirming, setConfirming] = useState<Transaction | null>(null);
   const [classifying, setClassifying] = useState(false);
+  // Assistente "Criar conta comercial" aberto. Só abre sem conta comercial.
+  const [creatingBusiness, setCreatingBusiness] = useState(false);
   // "Ajustar cartões" aberto à mão (pelas Faturas), mesmo depois de um "Depois".
   const [fixingCards, setFixingCards] = useState(false);
   // O boot (fusão dos padrões, materialização) já rodou. O aviso dos cartões
@@ -213,6 +249,9 @@ export function App({
   // Separado de `reserveView`: o formulário é um sheet por cima da lista ou do
   // detalhe, e fechar devolve para onde ele foi aberto sem ter que lembrar.
   const [reserveForm, setReserveForm] = useState<ReserveFormTarget | null>(null);
+  // Sheets de bem e de dívida (aba Negócio). Montados só enquanto abertos.
+  const [assetSheet, setAssetSheet] = useState<AssetTarget | null>(null);
+  const [debtSheet, setDebtSheet] = useState<DebtTarget | null>(null);
 
   // Reserva apagada por baixo (sync, outra aba) enquanto o detalhe, o
   // formulário ou um sheet dela estava aberto. O render já mostra a lista
@@ -233,6 +272,21 @@ export function App({
   useEffect(() => {
     if (formReserveGone) setReserveForm(null);
   }, [formReserveGone]);
+
+  // Bem ou dívida em edição que sumiu por baixo (sync, outra aba): o sheet fecha em vez
+  // de gravar sobre uma linha apagada.
+  const assetsById = session.state.value.assets;
+  const debtsById = session.state.value.debts;
+  const editingAssetId = assetSheet?.editing?.id ?? null;
+  const editingDebtId = debtSheet?.editing?.id ?? null;
+  const assetGone = editingAssetId !== null && !isAlive(assetsById[editingAssetId]);
+  const debtGone = editingDebtId !== null && !isAlive(debtsById[editingDebtId]);
+  useEffect(() => {
+    if (assetGone) setAssetSheet(null);
+  }, [assetGone]);
+  useEffect(() => {
+    if (debtGone) setDebtSheet(null);
+  }, [debtGone]);
 
   useEffect(() => {
     // Materializa depois do init: o boot e o "virar do mês" são o mesmo caminho.
@@ -285,6 +339,33 @@ export function App({
     setSection("help");
   }, [helpRequest, canPair]);
 
+  // Conta ativa comercial sem linha `books` viva (removida, ou a meta de uma conta que
+  // este aparelho não tem) volta para a pessoal. Efeito e não render: precisa gravar
+  // a meta, e reage também a uma linha apagada que chegue depois pelo sync.
+  const activeBook = session.activeBook.value;
+  const business = books.business.value;
+  const ready = session.status.value === "ready";
+  useEffect(() => {
+    if (!ready || activeBook !== "business" || business !== null) return;
+    void books.repairActiveBook().catch(ignoreHandled);
+  }, [books, ready, activeBook, business]);
+
+  const tabs = screensFor(activeBook);
+  // A aba Negócio só existe na comercial. Se a conta ativa voltar para a pessoal por
+  // baixo dela (reparo, sync), a tela cairia em branco e o arraste ficaria sem índice:
+  // renderiza a Início já neste quadro e alinha o estado no efeito.
+  const orphanTab = screen === "negocio" && activeBook !== "business";
+  const currentScreen: ScreenId = orphanTab ? "inicio" : screen;
+  useEffect(() => {
+    if (orphanTab) setScreen("inicio");
+  }, [orphanTab]);
+  // Sheets de bem e dívida só valem na comercial (as stores recusam na pessoal).
+  useEffect(() => {
+    if (activeBook === "business") return;
+    setAssetSheet(null);
+    setDebtSheet(null);
+  }, [activeBook]);
+
   // Uma condição só para os dois casos: o modal está aberto para criar
   // (`editing` nulo) ou para editar. Dois estados independentes permitiriam
   // abrir os dois ao mesmo tempo.
@@ -303,17 +384,20 @@ export function App({
   // sub-tela (perfil/cadastro em Ajustes, detalhe em Reservas)
   // desliga o gesto para não trocar de aba no meio de um formulário.
   const swipe = useSwipeNav({
-    screens: SCREEN_IDS,
-    screen,
+    screens: tabs.map((tab) => tab.id),
+    screen: currentScreen,
     enabled:
       session.status.value === "ready" &&
       !onboarding.needsOnboarding.value &&
       section === null &&
       !modalOpen &&
       !importing &&
+      !creatingBusiness &&
       reserveView.kind === "list" &&
       reserveSheet === null &&
-      reserveForm === null,
+      reserveForm === null &&
+      assetSheet === null &&
+      debtSheet === null,
     onChange: goToScreen,
   });
 
@@ -363,8 +447,11 @@ export function App({
     adjusting !== null ||
     confirming !== null ||
     classifying ||
+    creatingBusiness ||
     reserveSheet !== null ||
-    reserveForm !== null;
+    reserveForm !== null ||
+    assetSheet !== null ||
+    debtSheet !== null;
   // Não interrompe quem está no meio de um formulário: o aviso espera ele fechar.
   const migrationOpen =
     booted && hasPendingCards && !otherSheetOpen && (fixingCards || !cards.deferred.value);
@@ -379,6 +466,18 @@ export function App({
   function closeModal() {
     setComposing(null);
     setEditing(null);
+  }
+
+  // Na pessoal: vai para a comercial, ou abre o assistente se ela ainda não existe. Na
+  // comercial: volta para a pessoal. Falha já está em `session.error`.
+  function handleSwitchBook() {
+    if (activeBook === "business") {
+      void session.setActiveBook("personal").catch(ignoreHandled);
+    } else if (business !== null) {
+      void session.setActiveBook("business").catch(ignoreHandled);
+    } else {
+      setCreatingBusiness(true);
+    }
   }
 
   // Escritas fire-and-forget: a falha já aparece pelo `session.error`, no
@@ -496,6 +595,34 @@ export function App({
     );
   }
 
+  function renderAssetSheet(target: AssetTarget) {
+    const row = target.editing;
+    return (
+      <AssetSheet
+        key={row?.id ?? "novo"}
+        editing={row}
+        today={today}
+        onSubmit={(input) => (row === null ? assets.create(input) : assets.edit(row.id, input))}
+        onDelete={row === null ? undefined : () => assets.remove(row.id)}
+        onClose={() => setAssetSheet(null)}
+      />
+    );
+  }
+
+  function renderDebtSheet(target: DebtTarget) {
+    const row = target.editing;
+    return (
+      <DebtSheet
+        key={row?.id ?? "nova"}
+        editing={row}
+        today={today}
+        onSubmit={(input) => (row === null ? debts.create(input) : debts.edit(row.id, input))}
+        onDelete={row === null ? undefined : () => debts.remove(row.id)}
+        onClose={() => setDebtSheet(null)}
+      />
+    );
+  }
+
   const editingAuthor = editing === null ? null : findUser(state, editing.userId);
   const editingSeriesId = editing?.recurrenceId ?? null;
   // Variável não tem reajuste (a estimativa é a média) nem volta a ser fixa:
@@ -509,6 +636,16 @@ export function App({
         O padding inferior reserva a altura da barra mais o safe area. Sem ele o
         último item da lista fica permanentemente sob a barra, inalcançável.
       */}
+      {activeBook === "business" && business !== null && (
+        // Filete da cor do negócio no topo, em todas as abas: o aviso discreto de que
+        // a pessoa está na conta comercial. Token da paleta, nunca hex.
+        <div
+          aria-hidden="true"
+          data-testid="business-accent"
+          class="pointer-events-none fixed inset-x-0 top-0 z-20 h-0.5"
+          style={{ backgroundColor: cssVarForToken(business.color) }}
+        />
+      )}
       <main
         class="hf-swipe mx-auto w-full max-w-md px-5 pt-[max(1.25rem,env(safe-area-inset-top))]
           pb-[calc(var(--hf-nav-h)+env(safe-area-inset-bottom)+2rem)]"
@@ -529,7 +666,7 @@ export function App({
           </p>
         )}
 
-        {screen === "dashboard" && (
+        {currentScreen === "dashboard" && (
           <DashboardPage
             items={items}
             state={state}
@@ -538,11 +675,18 @@ export function App({
             onOpenBudgets={() => openSection("budget")}
             currentUserId={profile?.id ?? null}
             onEdit={setEditing}
+            business={activeBook === "business"}
           />
         )}
 
-        {screen === "inicio" && (
+        {currentScreen === "inicio" && (
           <HomePage
+            // `key` pela conta: o recorte da lista (filtro por categoria, busca) é da
+            // conta de onde saiu, e na outra apontaria para uma categoria que não existe.
+            key={activeBook}
+            book={activeBook}
+            businessName={business?.name ?? null}
+            onSwitchBook={handleSwitchBook}
             items={items}
             state={state}
             profile={profile}
@@ -559,9 +703,20 @@ export function App({
           />
         )}
 
-        {screen === "reservas" && renderReserves()}
+        {currentScreen === "negocio" && (
+          <BusinessPage
+            state={state}
+            today={today}
+            onNewAsset={() => setAssetSheet({ editing: null })}
+            onEditAsset={(asset) => setAssetSheet({ editing: asset })}
+            onNewDebt={() => setDebtSheet({ editing: null })}
+            onEditDebt={(debt) => setDebtSheet({ editing: debt })}
+          />
+        )}
 
-        {screen === "config" &&
+        {currentScreen === "reservas" && renderReserves()}
+
+        {currentScreen === "config" &&
           (section === null ? (
             <SettingsPage
               categoryCount={categories.length}
@@ -573,7 +728,9 @@ export function App({
               update={update}
               onOpen={openSection}
               onReset={onReset}
-              state={state}
+              // O arquivo exporta o banco inteiro (as duas contas): a prévia conta o
+              // estado completo, e não a visão filtrada pela conta ativa.
+              state={session.fullState.value}
               today={today}
               onExport={onExport}
               onImportPrepare={onImportPrepare}
@@ -643,9 +800,13 @@ export function App({
           pb-[max(1.125rem,env(safe-area-inset-bottom))]"
       >
         <div aria-hidden="true" class="hf-rule-both absolute inset-x-0 top-0" />
-        <div class="mx-auto grid h-[var(--hf-nav-h)] w-full max-w-md grid-cols-4 px-3">
-          {SCREENS.map(({ id, label, icon }) => {
-            const active = screen === id;
+        <div
+          class={`mx-auto grid h-[var(--hf-nav-h)] w-full max-w-md px-3 ${
+            tabs.length === 5 ? "grid-cols-5" : "grid-cols-4"
+          }`}
+        >
+          {tabs.map(({ id, label, icon }) => {
+            const active = currentScreen === id;
             return (
               <button
                 key={id}
@@ -674,6 +835,7 @@ export function App({
         {importing && (
           <ImportSheet
             state={state}
+            book={session.activeBook.value}
             today={today}
             readPdf={readPdf}
             onCreateCard={registry.addPaymentMethod}
@@ -781,6 +943,20 @@ export function App({
             state={state}
             onApply={(ids, categoryId) => store.setCategory(ids, categoryId)}
             onClose={() => setClassifying(false)}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={creatingBusiness}
+        title="Criar conta comercial"
+        onClose={() => setCreatingBusiness(false)}
+      >
+        {/* Montada só enquanto aberta: fechar descarta as escolhas pela metade. */}
+        {creatingBusiness && (
+          <BusinessWizard
+            onCreate={books.createBusiness}
+            onClose={() => setCreatingBusiness(false)}
           />
         )}
       </Modal>
@@ -910,6 +1086,28 @@ export function App({
             onCancel={() => setReserveForm(null)}
           />
         )}
+      </Modal>
+
+      {/*
+        Bem e dívida por último, pelo mesmo motivo da ordem dos efeitos. Montados só
+        enquanto abertos, com `key` da linha: abrir outra remonta o sheet e os
+        `useState` releem as props. O sheet espera a gravação e só então fecha: falhou,
+        ele continua aberto com o motivo e as escolhas.
+      */}
+      <Modal
+        open={assetSheet !== null}
+        title={assetSheet?.editing ? "Editar bem" : "Novo bem"}
+        onClose={() => setAssetSheet(null)}
+      >
+        {assetSheet !== null && !assetGone && renderAssetSheet(assetSheet)}
+      </Modal>
+
+      <Modal
+        open={debtSheet !== null}
+        title={debtSheet?.editing ? "Editar dívida" : "Nova dívida"}
+        onClose={() => setDebtSheet(null)}
+      >
+        {debtSheet !== null && !debtGone && renderDebtSheet(debtSheet)}
       </Modal>
     </div>
   );
