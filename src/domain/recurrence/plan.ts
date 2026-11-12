@@ -1,6 +1,7 @@
 import { stableEntityId } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
+import { type Book, bookOf } from "../model/book";
 import type { TransactionDraft } from "../model/transaction";
 import { amountFor } from "./adjustments";
 import { earliestOccurrenceAuthors, seriesAuthor } from "./author";
@@ -17,6 +18,11 @@ export interface OccurrencePlan {
    * esta geração no LWW por linha, por mais tarde que ela aconteça.
    */
   anchored: boolean;
+  /**
+   * Conta da série: a ocorrência herda a do pai, e não a conta ativa. Quem grava
+   * passa isto a `buildRow`; o draft do formulário nunca carrega `book`.
+   */
+  book: Book;
   /**
    * Autor da série (gravado ou deduzido, ver `seriesAuthor`). `null` só quando
    * não há como saber; aí quem materializa usa o usuário do aparelho.
@@ -62,6 +68,7 @@ export function planOccurrences(state: AppState, today: string): OccurrencePlan[
       plans.push({
         entityId,
         anchored: variable,
+        book: bookOf(series),
         userId,
         draft: {
           kind: series.kind,

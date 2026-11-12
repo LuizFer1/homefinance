@@ -1,6 +1,7 @@
 import { formatHlc } from "../clock/hlc";
 import { stableEntityId } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
+import { type Book, DEFAULT_BOOK } from "../model/book";
 import type { Category, CategoryDraft } from "../model/category";
 import type { PaymentMethod, PaymentMethodDraft } from "../model/payment-method";
 
@@ -25,11 +26,28 @@ export interface DefaultEntry<D> {
 }
 
 /**
+ * Id estável de um padrão. A conta pessoal mantém a semente de sempre
+ * (`default:categories:food`): esses ids já existem em aparelhos e no hub, e
+ * mudá-los duplicaria todo padrão. Só as outras contas levam o `book` no id
+ * (`default:business:categories:sales`), para o padrão de uma conta nunca
+ * colidir com o da outra nem ser fundido nela.
+ */
+export function defaultId(table: string, key: string, book: Book = DEFAULT_BOOK): Ulid {
+  const scope = book === DEFAULT_BOOK ? "" : `${book}:`;
+  return stableEntityId(`default:${scope}${table}:${key}`);
+}
+
+/**
  * A chave do id é interna e não o nome exibido: o nome é editável, e um id
  * derivado dele mudaria a cada tradução ou ajuste de grafia da lista.
  */
-function entry<D>(table: string, key: string, draft: D): DefaultEntry<D> {
-  return { id: stableEntityId(`default:${table}:${key}`), draft };
+function entry<D>(
+  table: string,
+  key: string,
+  draft: D,
+  book: Book = DEFAULT_BOOK,
+): DefaultEntry<D> {
+  return { id: defaultId(table, key, book), draft };
 }
 
 /**
@@ -74,11 +92,11 @@ export const DEFAULT_METHODS: readonly DefaultEntry<PaymentMethodDraft>[] = [
 const UNSEEDED_METHOD_KEYS: readonly string[] = ["credit"];
 
 const UNSEEDED_METHOD_IDS: ReadonlySet<string> = new Set(
-  UNSEEDED_METHOD_KEYS.map((key) => stableEntityId(`default:paymentMethods:${key}`)),
+  UNSEEDED_METHOD_KEYS.map((key) => defaultId("paymentMethods", key)),
 );
 
 /** O id estável do genérico antigo, para a migração reconhecer a linha. */
-export const LEGACY_CREDIT_METHOD_ID: Ulid = stableEntityId("default:paymentMethods:credit");
+export const LEGACY_CREDIT_METHOD_ID: Ulid = defaultId("paymentMethods", "credit");
 
 /**
  * Categorias padrão, pelo mesmo argumento dos métodos: cadastros comuns, não
@@ -156,9 +174,12 @@ export const DEFAULT_CATEGORIES: readonly DefaultEntry<CategoryDraft>[] = [
   }),
 ];
 
-function genesisRow<T>(item: DefaultEntry<object>): T {
+function genesisRow<T>(item: DefaultEntry<object>, book: Book): T {
   return {
     ...item.draft,
+    // A pessoal sai sem `book`, como as sementes que os aparelhos já gravaram:
+    // a linha segue idêntica byte a byte em todo aparelho e no hub.
+    ...(book === DEFAULT_BOOK ? {} : { book }),
     mergedInto: null,
     id: item.id,
     createdAt: GENESIS_ISO,
@@ -170,12 +191,32 @@ function genesisRow<T>(item: DefaultEntry<object>): T {
   } as T;
 }
 
-/** As linhas da semente. Sem relógio: não dependem de quando nem de onde. */
-export function buildDefaultRows(): { categories: Category[]; paymentMethods: PaymentMethod[] } {
+/** Os padrões de uma conta: o que a semente cria e o que o planejador de fusão conhece. */
+export interface DefaultCatalog {
+  categories: readonly DefaultEntry<CategoryDraft>[];
+  methods: readonly DefaultEntry<PaymentMethodDraft>[];
+}
+
+/**
+ * Padrões por conta. A comercial começa vazia: a semente do comércio (Vendas,
+ * Fornecedores, Pix…) entra com a criação da conta, e `buildDefaultRows` e
+ * `planDefaultsMerge` já aceitam o `book` para recebê-la sem mudar de forma.
+ */
+export const DEFAULTS_BY_BOOK: Record<Book, DefaultCatalog> = {
+  personal: { categories: DEFAULT_CATEGORIES, methods: DEFAULT_METHODS },
+  business: { categories: [], methods: [] },
+};
+
+/** As linhas da semente de uma conta. Sem relógio: não dependem de quando nem de onde. */
+export function buildDefaultRows(
+  book: Book = DEFAULT_BOOK,
+  catalog: DefaultCatalog = DEFAULTS_BY_BOOK[book],
+): { categories: Category[]; paymentMethods: PaymentMethod[] } {
+  const unseeded = book === DEFAULT_BOOK ? UNSEEDED_METHOD_IDS : new Set<string>();
   return {
-    categories: DEFAULT_CATEGORIES.map((c) => genesisRow<Category>(c)),
-    paymentMethods: DEFAULT_METHODS.filter((m) => !UNSEEDED_METHOD_IDS.has(m.id)).map((m) =>
-      genesisRow<PaymentMethod>(m),
-    ),
+    categories: catalog.categories.map((c) => genesisRow<Category>(c, book)),
+    paymentMethods: catalog.methods
+      .filter((m) => !unseeded.has(m.id))
+      .map((m) => genesisRow<PaymentMethod>(m, book)),
   };
 }
