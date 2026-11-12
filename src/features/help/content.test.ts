@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { HELP_STRUCTURE, HELP_TEXT_PT, HELP_TOPICS } from "./content";
+import { ACCOUNT_IDS } from "./accounts.fake";
+import { HELP_STRUCTURE, HELP_TEXT_PT, HELP_TOPIC_LABELS_PT, HELP_TOPICS } from "./content";
 import { PHASE_3_IDS } from "./phase-3.fake";
 
 describe("conteúdo da ajuda", () => {
@@ -30,5 +31,17 @@ describe("conteúdo da ajuda", () => {
       "start",
       "import",
     ]);
+  });
+
+  it("o tema da conta comercial cobre o que é, como criar, como trocar, o isolamento e a atualização", () => {
+    expect(HELP_TOPIC_LABELS_PT.accounts).toBe("Conta comercial");
+    const entries = HELP_STRUCTURE.filter((entry) => entry.topic === "accounts");
+    expect(entries.map((entry) => entry.id)).toEqual([...ACCOUNT_IDS]);
+
+    const text = (id: string) => (HELP_TEXT_PT[id]?.answer ?? []).join(" ");
+    expect(text("accounts-create")).toContain("ícone de loja");
+    expect(text("accounts-switch")).toContain("volta à pessoal");
+    expect(text("accounts-separate")).toContain("nunca somam");
+    expect(text("accounts-update-first")).toContain("todos os aparelhos e o hub");
   });
 });
