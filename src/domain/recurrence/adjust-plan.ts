@@ -60,15 +60,19 @@ export function planAdjustment(state: AppState, input: AdjustmentInput): Adjustm
 
   const id = adjustmentId(series.id, input.fromPeriod);
   const current = adjustmentsOf(state, series.id);
-  // O reajuste já gravado na mesma competência (mesmo id) é substituído, não
-  // somado: no "depois" ele sai e entra o novo.
+  // O reajuste já gravado na mesma competência é substituído, não somado: no
+  // "depois" ele sai e entra o novo. Pela competência, não pelo id: depois de uma
+  // colisão do id estável ele pode estar num id que não é o v1, ou haver duas
+  // linhas vivas da mesma competência, e as duas têm que sair.
   const after: AdjustmentLike[] = [
-    ...current.filter((row) => row.id !== id),
+    ...current.filter((row) => row.fromPeriod !== input.fromPeriod),
     {
+      id,
       recurrenceId: series.id,
       fromPeriod: input.fromPeriod,
       amountMinor: input.amountMinor,
       deletedAt: null,
+      updatedAt: null,
     },
   ];
 
