@@ -71,6 +71,37 @@ function hasNext(series: Recurrence, period: string): boolean {
   return occurrenceOn(next, series.scheduleType, series.scheduleN) <= series.endOn;
 }
 
+interface Origin {
+  current: Transaction;
+  series: Recurrence;
+  period: string;
+}
+
+/**
+ * A ocorrência viva e a série dela, quando "este e os próximos" é possível: série
+ * viva, ativa, de frequência conhecida e com competência depois desta.
+ */
+function originOf(state: AppState, transactionId: Ulid): Origin | null {
+  const current = state.transactions[transactionId];
+  if (!isAlive(current) || current.recurrenceId === null || current.occurrenceKey === null) {
+    return null;
+  }
+  const series = state.recurrences[current.recurrenceId];
+  if (!isAlive(series) || series.active !== true) return null;
+  if (!isKnownFrequency(series.frequency)) return null;
+  const period = periodOfKey(current.occurrenceKey);
+  if (!hasNext(series, period)) return null;
+  return { current, series, period };
+}
+
+/**
+ * Se a edição desta ocorrência pode virar "este e os próximos", seja qual for o
+ * campo mudado. O formulário usa para avisar antes de o usuário salvar.
+ */
+export function canEditFollowing(state: AppState, transactionId: Ulid): boolean {
+  return originOf(state, transactionId) !== null;
+}
+
 /**
  * O que "este e os próximos" faria ao salvar `draft` na ocorrência
  * `transactionId`. Puro: o formulário usa para decidir se pergunta e a store
@@ -93,15 +124,9 @@ export function planSeriesEdit(
   transactionId: Ulid,
   draft: TransactionDraft,
 ): SeriesEditPlan | null {
-  const current = state.transactions[transactionId];
-  if (!isAlive(current) || current.recurrenceId === null || current.occurrenceKey === null) {
-    return null;
-  }
-  const series = state.recurrences[current.recurrenceId];
-  if (!isAlive(series) || series.active !== true) return null;
-  if (!isKnownFrequency(series.frequency)) return null;
-  const period = periodOfKey(current.occurrenceKey);
-  if (!hasNext(series, period)) return null;
+  const origin = originOf(state, transactionId);
+  if (origin === null) return null;
+  const { current, series, period } = origin;
 
   const seriesPatch: SeriesPatch = {};
   for (const field of SERIES_FIELDS) {

@@ -7,7 +7,7 @@ import type { RecurrenceAdjustment } from "../model/recurrence-adjustment";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
 import type { Transaction, TransactionDraft } from "../model/transaction";
 import { adjustmentId } from "./adjustments";
-import { planSeriesEdit } from "./edit-plan";
+import { canEditFollowing, planSeriesEdit } from "./edit-plan";
 import { occurrenceKey } from "./schedule";
 
 const ALUGUEL: Recurrence = {
@@ -133,6 +133,8 @@ describe("planSeriesEdit: quando perguntar", () => {
     const state = estado([JUN, JUL, AGO], parcelado);
     expect(planSeriesEdit(state, AGO.id, rascunho(AGO, { categoryId: "CAT-NOVA" }))).toBeNull();
     expect(planSeriesEdit(state, JUL.id, rascunho(JUL, { categoryId: "CAT-NOVA" }))).not.toBeNull();
+    expect(canEditFollowing(state, AGO.id)).toBe(false);
+    expect(canEditFollowing(state, JUL.id)).toBe(true);
   });
 
   it("valor em série variável não é campo da série", () => {
