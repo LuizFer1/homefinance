@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { budgetReport } from "../../domain/budgets/status";
+import { upcomingInvoices } from "../../domain/cards/upcoming-invoices";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
@@ -174,6 +175,11 @@ export function DashboardPage({
   const bars = monthlyTotals(items, lastMonths(`${month}-01`, HISTORY_MONTHS));
   const surplus = averageSurplus(bars, firstMonthOf(items), current);
   const upcoming = isCurrent ? upcomingRecurrences(state, today, UPCOMING_DAYS) : [];
+  const invoices = isCurrent ? upcomingInvoices(state, today, UPCOMING_DAYS) : [];
+  const upcomingCount = invoices.length + upcoming.length;
+  // O preview conta faturas e recorrentes juntas; as faturas vêm primeiro.
+  const previewInvoices = invoices.slice(0, UPCOMING_PREVIEW);
+  const previewItems = upcoming.slice(0, UPCOMING_PREVIEW - previewInvoices.length);
   // Só no mês corrente: "mês que vem" de um mês passado já aconteceu e está no extrato.
   const free = isCurrent ? nextMonthFreeMoney(state, today) : null;
   const showFree = free !== null && (free.incomeMinor > 0 || free.expenseMinor > 0);
@@ -253,23 +259,24 @@ export function DashboardPage({
           </div>
         </Block>
 
-        {(showFree || upcoming.length > 0) && (
+        {(showFree || upcomingCount > 0) && (
           <Block title="O que vem">
             {showFree && <FreeMoneyCard free={free} />}
-            {upcoming.length > 0 && (
-              <section aria-label="Próximas recorrentes" class="rounded-lg bg-surface px-4 py-2">
+            {upcomingCount > 0 && (
+              <section aria-label="Próximas saídas" class="rounded-lg bg-surface px-4 py-2">
                 <div class="flex min-h-9 items-center justify-between gap-3">
-                  <h3 class="text-sm text-fg/60">Próximas recorrentes</h3>
+                  <h3 class="text-sm text-fg/60">Próximas saídas</h3>
                   <span class="text-xs text-fg/55">próximos {UPCOMING_DAYS} dias</span>
                 </div>
                 <UpcomingList
-                  items={upcoming.slice(0, UPCOMING_PREVIEW)}
+                  invoices={previewInvoices}
+                  items={previewItems}
                   state={state}
                   today={today}
                 />
-                {upcoming.length > UPCOMING_PREVIEW && (
+                {upcomingCount > UPCOMING_PREVIEW && (
                   <TextLink caret onClick={() => setSheet("upcoming")}>
-                    Ver todas as {upcoming.length}
+                    Ver todas as {upcomingCount}
                   </TextLink>
                 )}
               </section>
@@ -307,11 +314,11 @@ export function DashboardPage({
       </ListSheet>
       <ListSheet
         open={sheet === "upcoming"}
-        title="Recorrentes a caminho"
+        title="Próximas saídas"
         note={`próximos ${UPCOMING_DAYS} dias`}
         onClose={close("upcoming")}
       >
-        <UpcomingList items={upcoming} state={state} today={today} />
+        <UpcomingList invoices={invoices} items={upcoming} state={state} today={today} />
       </ListSheet>
       <DaySheet
         date={pickedDay}

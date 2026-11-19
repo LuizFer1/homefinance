@@ -253,7 +253,7 @@ describe("com a máscara ligada nenhuma tela mostra valor", () => {
       ["Saídas por dia", "Saídas por dia"],
       ["Últimos 6 meses", "Últimos 6 meses"],
       ["Ver todas as 6", "Todas as categorias"],
-      ["Ver todas as 4", "Recorrentes a caminho"],
+      ["Ver todas as 4", "Próximas saídas"],
     ])("%s", (button, title) => {
       setHideValues(true);
       const { container } = render(<DashboardPage items={all} state={full} today="2026-09-20" />);

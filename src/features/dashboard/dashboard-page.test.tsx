@@ -463,6 +463,70 @@ describe("DashboardPage", () => {
       );
     });
 
+    it("próximas saídas: a fatura vem antes das recorrentes, aberta com til e % da renda", () => {
+      renderGrafite();
+      const card = screen.getByRole("region", { name: "Próximas saídas" });
+      const rows = card.querySelectorAll("li");
+      expect(rows[0]?.getAttribute("data-testid")).toBe("upcoming-invoice");
+      expect(rows[0]?.textContent).toContain("Fatura Mercado Pago");
+      expect(screen.getByTestId("invoice-when").textContent).toBe(
+        "vence ter, 8 dez · em 19 dias · fatura aberta",
+      );
+      expect(screen.getByTestId("invoice-amount").textContent).toMatch(
+        /^aproximadamente ~R\$\s515,15$/u,
+      );
+      const note = screen.getByTestId("invoice-note");
+      expect(note.textContent).toBe(
+        "15% da renda. Já está nas despesas: é o dinheiro que precisa estar na conta no vencimento.",
+      );
+      // 15% não passa de 30%: sem atenção.
+      expect(note.querySelector(".text-warning")).toBeNull();
+      // Fatura + recorrentes (Cadeira 21/11, Contas, Prime, Meli+, Spotify, Claude, Mesada… de dezembro).
+      expect(within(card).getByRole("button", { name: /^Ver todas as \d+$/ })).toBeDefined();
+    });
+
+    it("fatura fechada vai sem til; acima de 30% da renda a porcentagem fica em atenção", () => {
+      const nubank: PaymentMethod = {
+        ...ALIVE,
+        id: "NU",
+        name: "Nubank",
+        icon: "credit-card",
+        color: "violet",
+        kind: "credit",
+        bank: "Nubank",
+        closingDay: 5,
+        dueDay: 20,
+      };
+      const salary = recurrence({
+        id: "SAL",
+        kind: "income",
+        amountMinor: 100_000,
+        scheduleN: 5,
+        startOn: "2026-06-05",
+      });
+      const state: AppState = {
+        ...stateWith(),
+        paymentMethods: { NU: nubank },
+        recurrences: { SAL: salary },
+      };
+      const items = [
+        record({ id: "a", amountMinor: 50_000, occurredOn: "2026-08-03", paymentMethodId: "NU" }),
+      ];
+      state.transactions = { a: items[0] as Transaction };
+      render(<DashboardPage items={items} state={state} today={TODAY} />);
+
+      expect(screen.getByTestId("invoice-when").textContent).toBe(
+        "vence qui, 20 ago · em 10 dias · fatura fechada",
+      );
+      expect(screen.getByTestId("invoice-amount").textContent).toMatch(/^R\$\s500,00$/u);
+      expect(screen.getByText("50% da renda.").className).toContain("text-warning");
+    });
+
+    it("a fatura nunca soma: despesas do mês continuam R$ 3.113,41", () => {
+      renderGrafite();
+      expect(screen.getByTestId("total-expense").textContent).toMatch(/^R\$\s3\.113,41$/u);
+    });
+
     it("livre em dezembro: 25% da renda fixa já comprometido, com as marcas de 50% e 70%", () => {
       renderGrafite();
       expect(screen.getByTestId("free-money-expense").textContent).toMatch(
@@ -1035,12 +1099,12 @@ describe("DashboardPage", () => {
       it("mostra as três primeiras e abre todas em um toque", () => {
         render(<DashboardPage items={[record({ id: "a" })]} state={busy} today={TODAY} />);
 
-        const card = within(screen.getByRole("region", { name: "Próximas recorrentes" }));
+        const card = within(screen.getByRole("region", { name: "Próximas saídas" }));
         expect(card.getAllByRole("listitem")).toHaveLength(3);
         expect(card.queryByText("Internet")).toBeNull();
 
         fireEvent.click(card.getByRole("button", { name: "Ver todas as 5" }));
-        const sheet = within(openSheet("Recorrentes a caminho") as HTMLElement);
+        const sheet = within(openSheet("Próximas saídas") as HTMLElement);
         expect(sheet.getAllByRole("listitem")).toHaveLength(5);
         expect(sheet.getByText("Academia")).toBeDefined();
       });
@@ -1052,7 +1116,7 @@ describe("DashboardPage", () => {
         };
         render(<DashboardPage items={[record({ id: "a" })]} state={few} today={TODAY} />);
 
-        const card = within(screen.getByRole("region", { name: "Próximas recorrentes" }));
+        const card = within(screen.getByRole("region", { name: "Próximas saídas" }));
         expect(card.getAllByRole("listitem")).toHaveLength(3);
         expect(card.queryByRole("button", { name: /Ver todas/ })).toBeNull();
       });
@@ -1069,9 +1133,9 @@ describe("DashboardPage", () => {
         expect(amounts[1]?.text).toMatch(/^R\$\s230,00$/u);
         expect(amounts[1]?.income).toBe(false);
         expect(amounts[2]?.text).toMatch(/^aproximadamente ~R\$\s179,91$/u);
-        expect(
-          screen.getByRole("region", { name: "Próximas recorrentes" }).textContent,
-        ).not.toContain("−");
+        expect(screen.getByRole("region", { name: "Próximas saídas" }).textContent).not.toContain(
+          "−",
+        );
       });
     });
   });
