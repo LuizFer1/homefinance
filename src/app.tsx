@@ -20,6 +20,7 @@ import {
   listPaymentMethods,
   listTransactions,
 } from "./domain/projections/selectors";
+import { canEditFollowing, planSeriesEdit } from "./domain/recurrence/edit-plan";
 import { findSimilar, type SimilarQuery } from "./domain/transactions/similar";
 import { AssetSheet } from "./features/assets/asset-sheet";
 import type { AssetsStore } from "./features/assets/store";
@@ -64,6 +65,7 @@ import { SettingsPage, type SettingsSection } from "./features/settings/settings
 import { HubPage } from "./features/sync/hub-page";
 import type { SyncStore } from "./features/sync/store";
 import type { ThemeToggleProps } from "./features/theme/theme-toggle";
+import type { EditScope } from "./features/transactions/series-scope-choice";
 import { SimilarSheet } from "./features/transactions/similar-sheet";
 import type { TransactionsStore } from "./features/transactions/store";
 import { TransactionWizard } from "./features/transactions/transaction-wizard";
@@ -482,7 +484,11 @@ export function App({
 
   // Escritas fire-and-forget: a falha já aparece pelo `session.error`, no
   // alerta logo abaixo do cabeçalho; `ignoreHandled` só evita a rejeição solta.
-  function handleSubmit(draft: TransactionDraft, recurrenceRule: RecurrenceRule | null) {
+  function handleSubmit(
+    draft: TransactionDraft,
+    recurrenceRule: RecurrenceRule | null,
+    scope?: EditScope,
+  ) {
     if (editing === null) {
       if (recurrenceRule !== null) {
         void recurrence.createSeries(draft, recurrenceRule, today).catch(ignoreHandled);
@@ -499,7 +505,12 @@ export function App({
         ? draft.categoryId
         : null;
     const editedId = editing.id;
-    const edited = store.edit(editedId, draft);
+    // "Este e os próximos" grava a ocorrência e a série num lote só; "Só este" (e
+    // a edição sem pergunta) é a edição de sempre.
+    const edited: Promise<unknown> =
+      scope === "following"
+        ? recurrence.editFollowing(editedId, draft)
+        : store.edit(editedId, draft);
     if (reclassified === null) {
       void edited.catch(ignoreHandled);
     } else {
@@ -861,6 +872,16 @@ export function App({
             key={editing?.id ?? "novo"}
             editing={editing}
             onSubmit={handleSubmit}
+            askScope={
+              editing === null || !canEditFollowing(state, editing.id)
+                ? undefined
+                : (draft) => {
+                    const plan = planSeriesEdit(state, editing.id, draft);
+                    return plan === null
+                      ? null
+                      : { fields: plan.fields, following: plan.following.length };
+                  }
+            }
             onCancel={closeModal}
             categoryIndex={buildCategoryIndex(state)}
             today={today}
