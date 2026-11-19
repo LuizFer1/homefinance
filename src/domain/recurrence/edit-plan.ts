@@ -9,22 +9,20 @@ import { adjustmentsOf, amountFor } from "./adjustments";
 import { isKnownFrequency, occurrenceOn, periodOfKey, stepPeriod } from "./schedule";
 
 /**
- * Campos que a série guarda e a materialização copia para cada ocorrência. O
- * valor fica de fora: ele muda por reajuste, nunca reescrevendo a série.
+ * Campos que a série guarda e a materialização copia para cada ocorrência, e
+ * que disparam a escolha. O valor fica de fora: muda por reajuste, nunca
+ * reescrevendo a série. O cashback também (decisão do coordenador, 2026-11-19):
+ * ele varia de mês a mês, e perguntar a cada edição seria insistência. Só é
+ * limpo como consequência de tipo/forma de pagamento que não o comportam.
  */
-export const SERIES_FIELDS = [
-  "kind",
-  "description",
-  "categoryId",
-  "paymentMethodId",
-  "cashbackMinor",
-] as const;
+export const SERIES_FIELDS = ["kind", "description", "categoryId", "paymentMethodId"] as const;
 export type SeriesField = (typeof SERIES_FIELDS)[number];
 
 /** O que a edição pode levar à série: os campos copiados e o valor. */
 export type SeriesEditField = SeriesField | "amountMinor";
 
-export type SeriesPatch = Partial<Pick<Recurrence, SeriesField>>;
+/** `cashbackMinor` só entra como `null`, pela limpeza de cashback. */
+export type SeriesPatch = Partial<Pick<Recurrence, SeriesField | "cashbackMinor">>;
 
 export interface SeriesEditPlan {
   /** A série como foi lida: `updatedAt` é a versão esperada na gravação. */
@@ -158,7 +156,11 @@ export function planSeriesEdit(
     "paymentMethodId" in seriesPatch
       ? (seriesPatch.paymentMethodId ?? null)
       : series.paymentMethodId;
-  if (touchesCashbackRule && !offersCashback(methodKind(nextMethod), nextKind)) {
+  if (
+    touchesCashbackRule &&
+    series.cashbackMinor !== null &&
+    !offersCashback(methodKind(nextMethod), nextKind)
+  ) {
     seriesPatch.cashbackMinor = null;
   }
 
@@ -187,7 +189,7 @@ export function planSeriesEdit(
       const value = seriesPatch[field];
       if (row[field] === value) continue;
       if (row[field] === series[field]) (next as Record<SeriesField, unknown>)[field] = value;
-      else if (field !== "cashbackMinor") handEdited = true;
+      else handEdited = true;
     }
     if (touchesCashbackRule && !offersCashback(methodKind(next.paymentMethodId), next.kind)) {
       next.cashbackMinor = null;

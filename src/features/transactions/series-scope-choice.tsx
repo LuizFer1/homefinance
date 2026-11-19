@@ -18,7 +18,6 @@ const FIELD_LABELS: Record<SeriesEditField, string> = {
   description: "a descrição",
   categoryId: "a categoria",
   paymentMethodId: "a forma de pagamento",
-  cashbackMinor: "o cashback",
   amountMinor: "o valor",
 };
 

@@ -238,9 +238,32 @@ describe("planSeriesEdit: o que muda", () => {
       jul.id,
       rascunho(jul, { paymentMethodId: "PM-PIX", cashbackMinor: null }),
     );
+    expect(plan?.fields).toEqual(["paymentMethodId"]);
     expect(plan?.seriesPatch).toEqual({ paymentMethodId: "PM-PIX", cashbackMinor: null });
     expect(plan?.following).toEqual([
       expect.objectContaining({ id: ago.id, paymentMethodId: "PM-PIX", cashbackMinor: null }),
+    ]);
+  });
+
+  it("cashback não é campo da série: sozinho grava direto e não vai às próximas", () => {
+    const serie = { ...ALUGUEL, paymentMethodId: "PM-CREDITO", cashbackMinor: 500 };
+    const credito = { paymentMethodId: "PM-CREDITO", cashbackMinor: 500 };
+    const jul = ocorrencia("2026-07", credito);
+    const ago = ocorrencia("2026-08", credito);
+    const state = estado([jul, ago], serie);
+    expect(planSeriesEdit(state, jul.id, rascunho(jul, { cashbackMinor: 800 }))).toBeNull();
+
+    // Junto de outro campo da série, o cashback novo fica só nesta ocorrência.
+    const plan = planSeriesEdit(
+      state,
+      jul.id,
+      rascunho(jul, { cashbackMinor: 800, categoryId: "CAT-NOVA" }),
+    );
+    expect(plan?.fields).toEqual(["categoryId"]);
+    expect(plan?.seriesPatch).toEqual({ categoryId: "CAT-NOVA" });
+    expect(plan?.transaction.cashbackMinor).toBe(800);
+    expect(plan?.following).toEqual([
+      expect.objectContaining({ id: ago.id, categoryId: "CAT-NOVA", cashbackMinor: 500 }),
     ]);
   });
 
