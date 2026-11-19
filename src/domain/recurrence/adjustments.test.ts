@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
 import type { RecurrenceAdjustment } from "../model/recurrence-adjustment";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
-import { adjustmentId, adjustmentsOf, amountFor } from "./adjustments";
+import { type AdjustmentLike, adjustmentId, adjustmentsOf, amountFor } from "./adjustments";
 
 const SERIE = { id: "SERIE-1", amountMinor: 300_000 };
 
@@ -55,6 +55,64 @@ describe("amountFor", () => {
   it("reajuste de outra série não interfere", () => {
     const lista = [ajuste("2027-01", 350_000, { recurrenceId: "OUTRA" })];
     expect(amountFor(SERIE, lista, "2027-06")).toBe(300_000);
+  });
+
+  // Regra R (spec do id estável, §4.3 e §8): os mesmos vetores R1, R2 e R4 do hub
+  // (`recurrence.rs`, `amount_for::regra_r`). Duas linhas vivas com a mesma competência
+  // existem quando um aparelho velho regrava a chave no lugar v1 depois de um novo gravar em
+  // v2; app e hub precisam escolher a mesma. O R3 do hub (sem `updatedAt` perde) não tem par
+  // aqui: no app toda linha gravada tem versão, e `updatedAt` null é o reajuste simulado, que
+  // vence (o oposto, de propósito).
+  describe("regra R: mesma competência", () => {
+    const SERIES = "01JZ0000000000000000000SR1";
+    const ID_A = "01JZ000000000000000000ADJA";
+    const ID_B = "01JZ000000000000000000ADJB";
+    const H1 = "1793000000000-0000-01JZ0000000000000000000DV1";
+    const H2 = "1793000000000-0001-01JZ0000000000000000000DV2";
+    const SERIE_R = { id: SERIES, amountMinor: 300_000 };
+
+    const linha = (
+      id: string,
+      updatedAt: string,
+      amountMinor: number,
+      deleted = false,
+    ): RecurrenceAdjustment =>
+      ajuste("2027-01", amountMinor, {
+        id,
+        recurrenceId: SERIES,
+        updatedAt,
+        deletedAt: deleted ? updatedAt : null,
+      });
+
+    /** Valor em 2027-03 com as linhas nas duas ordens; as duas têm de dar o mesmo. */
+    const vencedor = (a: AdjustmentLike, b: AdjustmentLike): number => {
+      const ida = amountFor(SERIE_R, [a, b], "2027-03");
+      expect(amountFor(SERIE_R, [b, a], "2027-03")).toBe(ida);
+      return ida;
+    };
+
+    it("R1: vale a de updatedAt maior, mesmo com o id menor", () => {
+      expect(vencedor(linha(ID_A, H2, 350_000), linha(ID_B, H1, 360_000))).toBe(350_000);
+    });
+
+    it("R2: empate de updatedAt, vale a de id maior", () => {
+      expect(vencedor(linha(ID_A, H1, 350_000), linha(ID_B, H1, 360_000))).toBe(360_000);
+    });
+
+    it("R4: apagada não concorre, mesmo mais nova", () => {
+      expect(vencedor(linha(ID_A, H2, 350_000, true), linha(ID_B, H1, 360_000))).toBe(360_000);
+    });
+
+    it("competência maior vence mesmo com updatedAt menor", () => {
+      const a = { ...linha(ID_B, H2, 350_000), fromPeriod: "2027-01" };
+      const b = { ...linha(ID_A, H1, 360_000), fromPeriod: "2027-02" };
+      expect(vencedor(a, b)).toBe(360_000);
+    });
+
+    it("o reajuste ainda não gravado (updatedAt null) conta como o mais novo", () => {
+      const simulado: AdjustmentLike = { ...linha(ID_A, H1, 350_000), updatedAt: null };
+      expect(vencedor(linha(ID_B, H2, 360_000), simulado)).toBe(350_000);
+    });
   });
 
   describe("1ª parcela com a sobra", () => {
