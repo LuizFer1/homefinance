@@ -1203,6 +1203,28 @@ describe("DashboardPage: bloco Negócio", () => {
     expect(blockText("total-expense")).toBe("R$ 800,00");
   });
 
+  it('capital e dívidas dizem "hoje"; resultado, receitas e despesas continuam do mês', () => {
+    render(
+      <DashboardPage
+        items={[sales, supply, record({ id: "j", amountMinor: 5_000, occurredOn: "2026-07-03" })]}
+        state={withPatrimony}
+        today={TODAY}
+        business
+      />,
+    );
+    const block = within(screen.getByRole("region", { name: "Resultado e patrimônio do negócio" }));
+    expect(block.getByTestId("business-capital-today").textContent).toBe("hoje");
+    expect(block.getByTestId("business-debt-today").textContent).toBe("hoje");
+    expect(block.getByRole("heading", { name: "Resultado do mês" })).toBeDefined();
+
+    // Em julho o resultado muda; capital e dívidas, não (são de hoje).
+    fireEvent.click(screen.getByRole("button", { name: "Mês anterior" }));
+    expect(blockText("business-expense")).toBe("R$ 50,00");
+    expect(blockText("business-capital")).toBe("R$ 17.500,00");
+    expect(blockText("business-debt")).toBe("R$ 7.200,00");
+    expect(block.getByTestId("business-capital-today").textContent).toBe("hoje");
+  });
+
   it('fica acima de "Como estou"', () => {
     render(<DashboardPage items={[sales]} state={withPatrimony} today={TODAY} business />);
     const negocio = screen.getByRole("heading", { level: 2, name: "Negócio" });
