@@ -386,6 +386,83 @@ describe("DashboardPage", () => {
     expect(screen.getByText("15% acima").className).toContain("text-warning");
   });
 
+  describe("previsão, fechar no zero e taxa de poupança (fixture grafite)", () => {
+    function renderGrafite(today = GRAFITE_TODAY) {
+      const state = grafiteState();
+      render(<DashboardPage items={listTransactions(state)} state={state} today={today} />);
+    }
+
+    it("no lugar da comparação, diz quanto vai faltar no fim do mês, em atenção", () => {
+      renderGrafite();
+      const line = screen.getByTestId("forecast-line");
+      expect(line.textContent).toMatch(
+        /^Vão faltar ~R\$\s960 no fim do mês, se continuar no ritmo atual$/u,
+      );
+      expect(line.className).toContain("text-warning");
+    });
+
+    it("taxa de poupança até agora, o alvo e a taxa no ritmo atual", () => {
+      renderGrafite();
+      expect(screen.getByTestId("savings-rate").textContent).toBe(
+        "Taxa de poupança 11% até agora · alvo: 20% da renda",
+      );
+      expect(screen.getByTestId("savings-pace").textContent).toBe("No ritmo atual, ~−27%");
+    });
+
+    it("o líquido das reservas: R$ 200 saíram neste mês", () => {
+      renderGrafite();
+      expect(screen.getByTestId("reserves-line").textContent).toMatch(
+        /^R\$\s200 saíram das reservas neste mês$/u,
+      );
+    });
+
+    it("fechar no zero com piso em reais e a média avulsa", () => {
+      renderGrafite();
+      const box = screen.getByTestId("zero-box").textContent ?? "";
+      expect(box).toMatch(/Para fechar no zero: ~R\$\s30 por dia até o dia 30/u);
+      expect(box).toMatch(
+        /Sua média até aqui: ~R\$\s118 por dia no gasto do dia a dia \(avulso\)/u,
+      );
+    });
+
+    it("o gráfico do ritmo prolonga a previsão tracejada até o fim do mês", () => {
+      renderGrafite();
+      expect(screen.getByTestId("pace-forecast")).toBeDefined();
+      expect(screen.getByText("previsão")).toBeDefined();
+    });
+
+    it("até o dia 5 não há previsão: fica o ritmo", () => {
+      renderGrafite("2026-11-05");
+      expect(screen.queryByTestId("forecast-line")).toBeNull();
+      expect(screen.queryByTestId("zero-box")).toBeNull();
+      expect(screen.queryByTestId("savings-pace")).toBeNull();
+      expect(screen.queryByTestId("pace-forecast")).toBeNull();
+      expect(screen.getByTestId("pace-sentence")).toBeDefined();
+    });
+
+    it("mês fechado: taxa do mês, sem previsão nem fechar no zero", () => {
+      renderGrafite();
+      fireEvent.click(screen.getByRole("button", { name: "Mês anterior" }));
+      expect(screen.getByTestId("savings-rate").textContent).toBe(
+        "Taxa de poupança 28% no mês · alvo: 20% da renda",
+      );
+      expect(screen.queryByTestId("forecast-line")).toBeNull();
+      expect(screen.queryByTestId("zero-box")).toBeNull();
+      expect(screen.queryByTestId("savings-pace")).toBeNull();
+    });
+
+    it("sem receita no mês não mostra taxa", () => {
+      render(
+        <DashboardPage
+          items={[record({ id: "a", amountMinor: 9200, occurredOn: "2026-08-03" })]}
+          state={stateWith()}
+          today={TODAY}
+        />,
+      );
+      expect(screen.queryByTestId("savings-rate")).toBeNull();
+    });
+  });
+
   it("num mês fechado o ritmo fala do mês inteiro", () => {
     render(
       <DashboardPage

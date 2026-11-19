@@ -6,6 +6,7 @@ import type { Transaction } from "../../domain/model/transaction";
 import { filterByMonth, monthlyTotals } from "../../domain/projections/breakdown";
 import { capitalByKind, debtTotal } from "../../domain/projections/business";
 import { dailyExpenses, expensesOn } from "../../domain/projections/daily-expenses";
+import { forecast } from "../../domain/projections/forecast";
 import { nextMonthFreeMoney, recurringMonth } from "../../domain/projections/free-money";
 import {
   averageSurplus,
@@ -17,6 +18,7 @@ import {
 } from "../../domain/projections/insights";
 import { lastMonths, monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { upcomingRecurrences } from "../../domain/recurrence/upcoming";
+import { savedInMonth } from "../../domain/reserves/balances";
 import { Button } from "../ui/button";
 import { MonthPicker } from "../ui/month-picker";
 import { PageHeader } from "../ui/page-header";
@@ -197,6 +199,8 @@ export function DashboardPage({
             isCurrent={isCurrent}
             comparison={comparison}
             pace={pace}
+            forecast={isCurrent ? forecast(items, state, today) : null}
+            savedMinor={savedInMonth(state, month)}
             cashback={cashbackSummary(monthItems, state)}
             onOpenCalendar={hasExpense ? () => setSheet("calendar") : undefined}
             onOpenHistory={() => setSheet("history")}

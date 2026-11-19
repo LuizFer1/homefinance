@@ -1,3 +1,10 @@
+import {
+  type Forecast,
+  roundToTens,
+  SAVINGS_TARGET_PERCENT,
+  savingsRate,
+  zeroAllowance,
+} from "../../domain/projections/forecast";
 import type {
   CashbackSummary,
   MonthComparison,
@@ -5,7 +12,7 @@ import type {
 } from "../../domain/projections/insights";
 import { monthLabelShort } from "../../domain/projections/periods";
 import { Icon } from "../icons/icon";
-import { brl, Money } from "../ui/money";
+import { brl, compactBRL, MINUS, Money, wholeBRL } from "../ui/money";
 import { PaceChart } from "./pace-chart";
 
 export interface SummaryCardProps {
@@ -14,6 +21,10 @@ export interface SummaryCardProps {
   isCurrent: boolean;
   comparison: MonthComparison;
   pace: SpendingPace;
+  /** Previsão de fechamento: só no mês corrente e depois do dia 5; `null` fora disso. */
+  forecast: Forecast | null;
+  /** Líquido guardado nas reservas no mês (`savedInMonth`); negativo = saiu. */
+  savedMinor: number;
   cashback: CashbackSummary;
   /** Ausente quando o mês não tem despesa: não há calendário para abrir. */
   onOpenCalendar?: () => void;
@@ -58,6 +69,60 @@ function PaceChange({ percent }: { percent: number }) {
   );
 }
 
+/** Porcentagem com o menos tipográfico: "−27%". */
+function percentText(value: number): string {
+  return value < 0 ? `${MINUS}${Math.abs(value)}%` : `${value}%`;
+}
+
+/**
+ * "Vão faltar ~R$ 960 no fim do mês, se continuar no ritmo atual". No lugar da
+ * comparação com o normal no mês corrente: parcial contra mês inteiro enganava, a
+ * previsão responde a mesma pergunta ("vai fechar bem?") com o mês inteiro. Faltar é
+ * atenção (`warning`), não erro: ainda dá tempo de mudar. O sinal sai do valor já
+ * arredondado à dezena, então "~R$ 0" nunca aparece.
+ */
+function ForecastLine({ forecast }: { forecast: Forecast }) {
+  const rounded = roundToTens(forecast.expectedSurplusMinor);
+  const tone = rounded < 0 ? "text-warning" : rounded > 0 ? "text-income-fg" : "text-fg/70";
+  return (
+    <p data-testid="forecast-line" class={`mt-2 flex items-start gap-2 text-sm ${tone}`}>
+      <Icon name={rounded < 0 ? "trend-down" : "trend-up"} size={16} class="mt-0.5 shrink-0" />
+      <span class="text-pretty">
+        {rounded < 0
+          ? `Vão faltar ~${wholeBRL(-rounded)} no fim do mês, se continuar no ritmo atual`
+          : rounded > 0
+            ? `Vão sobrar ~${wholeBRL(rounded)} no fim do mês, se continuar no ritmo atual`
+            : "Deve fechar perto do zero, se continuar no ritmo atual"}
+      </span>
+    </p>
+  );
+}
+
+/**
+ * "Para fechar no zero ~R$ 30 por dia até o dia 30" e a média avulsa que a previsão
+ * usa. A média diz "do dia a dia (avulso)" e não "variável": a recorrência de valor
+ * variável fica fora dela (entra pela estimativa), e o "variável" de "Para onde foi"
+ * a inclui — o mesmo nome para dois números diferentes confundiria.
+ */
+function ZeroBox({ forecast }: { forecast: Forecast }) {
+  const allowance = zeroAllowance(forecast);
+  return (
+    <div data-testid="zero-box" class="mt-4 rounded-md border border-divider p-3 text-sm">
+      {allowance !== null && (
+        <p class="text-pretty">
+          {allowance > 0
+            ? `Para fechar no zero: ~${wholeBRL(allowance)} por dia até o dia ${forecast.daysInMonth}`
+            : "As contas que ainda vêm já passam do saldo do mês"}
+        </p>
+      )}
+      <p class={`text-xs text-fg/55 text-pretty ${allowance !== null ? "mt-1" : ""}`}>
+        Sua média até aqui: ~{wholeBRL(forecast.casualDailyMinor)} por dia no gasto do dia a dia
+        (avulso)
+      </p>
+    </div>
+  );
+}
+
 /**
  * "Como estou": o saldo do mês com o ritmo de gastos colado nele.
  *
@@ -71,6 +136,8 @@ export function SummaryCard({
   isCurrent,
   comparison,
   pace,
+  forecast,
+  savedMinor,
   cashback,
   onOpenCalendar,
   onOpenHistory,
@@ -80,6 +147,8 @@ export function SummaryCard({
   const delta = isCurrent ? null : comparison.deltaMinor;
   const up = delta !== null && delta >= 0;
   const hasExpense = summary.expenseMinor > 0;
+  const rate = savingsRate(summary.incomeMinor, summary.expenseMinor);
+  const shownForecast = isCurrent ? forecast : null;
 
   return (
     <section aria-label="Saldo do mês" class="rounded-lg bg-surface p-4">
@@ -104,6 +173,7 @@ export function SummaryCard({
             : `${brl(Math.abs(delta))} a ${up ? "mais" : "menos"} que o seu normal`}
         </p>
       )}
+      {shownForecast !== null && <ForecastLine forecast={shownForecast} />}
       <div class="mt-4 grid grid-cols-2 gap-3">
         <div>
           <p class="flex items-center gap-2 text-xs text-fg/55">
@@ -127,6 +197,31 @@ export function SummaryCard({
       <p class="sr-only">
         {comparison.count} {comparison.count === 1 ? "lançamento" : "lançamentos"} no mês.
       </p>
+      {/* Sem receita não há "% da renda": fica só o saldo. */}
+      {rate !== null && (
+        <p data-testid="savings-rate" class="mt-3 text-sm text-fg/70 text-pretty">
+          Taxa de poupança <strong class="hf-num font-medium text-fg">{percentText(rate)}</strong>{" "}
+          {isCurrent ? "até agora" : "no mês"}
+          <span class="text-fg/55"> · alvo: {SAVINGS_TARGET_PERCENT}% da renda</span>
+        </p>
+      )}
+      {rate !== null && shownForecast?.expectedSavingsRate != null && (
+        <p data-testid="savings-pace" class="mt-1 text-xs text-fg/55">
+          No ritmo atual, ~{percentText(shownForecast.expectedSavingsRate)}
+        </p>
+      )}
+      {/*
+        Guardar não é despesa, então não abate a taxa: ela já é parte do que sobrou. A
+        linha só diz para onde foi (ou de onde veio) uma parte; líquido zero some.
+      */}
+      {savedMinor !== 0 && (
+        <p data-testid="reserves-line" class="hf-num mt-1 text-xs text-fg/55 text-pretty">
+          {compactBRL(Math.abs(savedMinor))}{" "}
+          {savedMinor < 0 ? "saíram das reservas" : "foram para reservas"}{" "}
+          {isCurrent ? "neste mês" : "no mês"}
+        </p>
+      )}
+      {shownForecast !== null && <ZeroBox forecast={shownForecast} />}
 
       {hasExpense && (
         <>
@@ -154,8 +249,19 @@ export function SummaryCard({
                 seu normal
               </span>
             )}
+            {shownForecast !== null && (
+              <span class="flex items-center gap-2">
+                <span aria-hidden="true" class="w-3 border-t-[1.5px] border-dashed border-accent" />
+                previsão
+              </span>
+            )}
           </p>
-          <PaceChart pace={pace} showToday={isCurrent} monthShort={monthLabelShort(month)} />
+          <PaceChart
+            pace={pace}
+            showToday={isCurrent}
+            monthShort={monthLabelShort(month)}
+            forecastMinor={shownForecast?.expectedExpenseMinor ?? null}
+          />
         </>
       )}
 
