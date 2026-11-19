@@ -100,6 +100,9 @@ describe("committedPercent", () => {
     const december = recurringMonth(grafiteState(), "2026-12");
     expect(december.expenseMinor).toBe(87_600);
     expect(december.incomeMinor).toBe(350_000);
+    // Livre em dezembro: 262400, sem "~" (nenhuma série variável).
+    expect(december.freeMinor).toBe(262_400);
+    expect(december.estimated).toBe(false);
     expect(committedPercent(december)).toBe(25);
   });
 

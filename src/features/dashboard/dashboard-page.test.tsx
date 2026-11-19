@@ -481,8 +481,9 @@ describe("DashboardPage", () => {
       );
       // 15% não passa de 30%: sem atenção.
       expect(note.querySelector(".text-warning")).toBeNull();
-      // Fatura + recorrentes (Cadeira 21/11, Contas, Prime, Meli+, Spotify, Claude, Mesada… de dezembro).
-      expect(within(card).getByRole("button", { name: /^Ver todas as \d+$/ })).toBeDefined();
+      // 1 fatura + 8 recorrentes em (19/11, 19/12]: Cadeira 21/11, Prime, Meli+, Mesada, Salário,
+      // Contas, Spotify e Claude code de dezembro.
+      expect(within(card).getByRole("button", { name: "Ver todas as 9" })).toBeDefined();
     });
 
     it("fatura fechada vai sem til; acima de 30% da renda a porcentagem fica em atenção", () => {
