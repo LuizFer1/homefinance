@@ -1,6 +1,5 @@
 import { useState } from "preact/hooks";
 import { budgetReport } from "../../domain/budgets/status";
-import { shiftMonth } from "../../domain/dates/calendar";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
@@ -154,7 +153,6 @@ export function DashboardPage({
   const isCurrent = month === current;
   const monthItems = filterByMonth(items, month);
   const comparison = monthComparison(items, month);
-  const previous = shiftMonth(month, -1);
   const pace = spendingPace(items, month, today);
   // Médias só sobre os dias que já aconteceram: o mesmo corte do ritmo de gastos.
   const daily = dailyExpenses(items, month, pace.cutoff);
@@ -196,8 +194,6 @@ export function DashboardPage({
         <Block title="Como estou">
           <SummaryCard
             month={month}
-            previous={previous}
-            hadPrevious={filterByMonth(items, previous).length > 0}
             isCurrent={isCurrent}
             comparison={comparison}
             pace={pace}

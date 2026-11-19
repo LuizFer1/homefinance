@@ -77,26 +77,58 @@ describe("daysInMonth", () => {
 });
 
 describe("monthComparison", () => {
-  it("compara o saldo do mês com o do anterior", () => {
+  it("compara o saldo do mês com a média dos 3 anteriores", () => {
     const items = [
       record({ id: "a", kind: "income", amountMinor: 10_000, occurredOn: "2026-09-02" }),
       record({ id: "b", amountMinor: 3000, occurredOn: "2026-09-10" }),
+      record({ id: "c", kind: "income", amountMinor: 8000, occurredOn: "2026-08-02" }),
+      record({ id: "d", amountMinor: 4000, occurredOn: "2026-08-20" }),
+      record({ id: "e", kind: "income", amountMinor: 5000, occurredOn: "2026-07-02" }),
+      record({ id: "f", amountMinor: 1000, occurredOn: "2026-06-02" }),
+    ];
+
+    const result = monthComparison(items, "2026-09");
+
+    expect(result.current).toEqual({ incomeMinor: 10_000, expenseMinor: 3000, balanceMinor: 7000 });
+    // (−1000 + 5000 + 4000) / 3 = 2666,67.
+    expect(result.normalBalanceMinor).toBe(2667);
+    expect(result.deltaMinor).toBe(4333);
+    expect(result.count).toBe(2);
+  });
+
+  it("divide só pelos meses com dado", () => {
+    const items = [
+      record({ id: "a", kind: "income", amountMinor: 10_000, occurredOn: "2026-09-02" }),
       record({ id: "c", kind: "income", amountMinor: 8000, occurredOn: "2026-08-02" }),
       record({ id: "d", amountMinor: 4000, occurredOn: "2026-08-20" }),
     ];
 
     const result = monthComparison(items, "2026-09");
 
-    expect(result.current).toEqual({ incomeMinor: 10_000, expenseMinor: 3000, balanceMinor: 7000 });
-    expect(result.previous.balanceMinor).toBe(4000);
-    expect(result.deltaMinor).toBe(3000);
-    expect(result.count).toBe(2);
+    expect(result.normalBalanceMinor).toBe(4000);
+    expect(result.deltaMinor).toBe(6000);
   });
 
   it("atravessa a virada do ano", () => {
     const items = [record({ id: "a", amountMinor: 500, occurredOn: "2025-12-31" })];
 
-    expect(monthComparison(items, "2026-01").previous.expenseMinor).toBe(500);
+    expect(monthComparison(items, "2026-01").normalBalanceMinor).toBe(-500);
+  });
+
+  it("sem mês de referência não compara", () => {
+    const items = [record({ id: "a", amountMinor: 500, occurredOn: "2026-09-02" })];
+
+    const result = monthComparison(items, "2026-09");
+
+    expect(result.normalBalanceMinor).toBeNull();
+    expect(result.deltaMinor).toBeNull();
+  });
+
+  it("fixture grafite: o normal de novembro é o saldo de outubro", () => {
+    const result = monthComparison(listTransactions(grafiteState()), "2026-11");
+
+    expect(result.current.balanceMinor).toBe(38_659);
+    expect(result.normalBalanceMinor).toBe(141_029);
   });
 });
 

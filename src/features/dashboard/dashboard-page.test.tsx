@@ -318,7 +318,26 @@ describe("DashboardPage", () => {
     expect(screen.getByTestId("total-expense").textContent).toContain("70,00");
   });
 
-  it("compara o saldo com o mês anterior", () => {
+  it("num mês fechado compara o saldo com o seu normal", () => {
+    render(
+      <DashboardPage
+        items={[
+          record({ id: "a", kind: "income", amountMinor: 50_000, occurredOn: "2026-07-02" }),
+          record({ id: "b", kind: "income", amountMinor: 8800, occurredOn: "2026-06-02" }),
+        ]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Mês anterior" }));
+
+    // Só junho é referência (o primeiro lançamento é de junho): 500 − 88 = 412.
+    expect(screen.getByText(/412,00 a mais que o seu normal/).className).toContain(
+      "text-income-fg",
+    );
+  });
+
+  it("no mês corrente o saldo não compara: parcial contra mês inteiro engana", () => {
     render(
       <DashboardPage
         items={[
@@ -330,7 +349,8 @@ describe("DashboardPage", () => {
       />,
     );
 
-    expect(screen.getByText(/412,00 a mais que julho/)).toBeDefined();
+    expect(screen.queryByText(/que o seu normal/)).toBeNull();
+    expect(screen.queryByText(/a (mais|menos) que/)).toBeNull();
   });
 
   it("o ritmo compara com o seu normal no mesmo dia", () => {

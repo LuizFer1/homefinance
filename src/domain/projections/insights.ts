@@ -22,26 +22,40 @@ export function daysInMonth(month: string): number {
 
 export interface MonthComparison {
   current: Totals;
-  previous: Totals;
-  /** Saldo do mês menos o do anterior. Positivo = sobrou mais. */
-  deltaMinor: number;
+  /**
+   * "Seu normal" do saldo: média do saldo dos meses de referência (os 3 anteriores
+   * com dado, `referenceMonths`). `null` sem mês de referência.
+   */
+  normalBalanceMinor: number | null;
+  /** Saldo do mês menos o normal. Positivo = sobrou mais. `null` sem normal. */
+  deltaMinor: number | null;
   /** Lançamentos no mês. */
   count: number;
 }
 
 /**
  * O "como estou indo" do cartão de saldo: o número sozinho não diz se o mês foi
- * bom, a diferença para o anterior diz.
+ * bom, a diferença para o normal diz. A régua é a média dos 3 meses anteriores, e
+ * não só o anterior: um mês atípico (13º, viagem, IPVA) não vira a régua do
+ * seguinte. Só faz sentido em mês fechado — no corrente, parcial contra inteiro
+ * sempre parece "gastei muito menos"; a tela esconde a linha ali.
  */
 export function monthComparison(items: Transaction[], month: string): MonthComparison {
   const monthItems = filterByMonth(items, month);
   const current = totals(monthItems);
-  const previous = totals(filterByMonth(items, shiftMonth(month, -1)));
+  const months = referenceMonths(items, month);
+  const normalBalanceMinor =
+    months.length === 0
+      ? null
+      : Math.round(
+          months.reduce((acc, m) => acc + totals(filterByMonth(items, m)).balanceMinor, 0) /
+            months.length,
+        );
 
   return {
     current,
-    previous,
-    deltaMinor: current.balanceMinor - previous.balanceMinor,
+    normalBalanceMinor,
+    deltaMinor: normalBalanceMinor === null ? null : current.balanceMinor - normalBalanceMinor,
     count: monthItems.length,
   };
 }

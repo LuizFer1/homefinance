@@ -7,14 +7,9 @@ import { monthLabelShort } from "../../domain/projections/periods";
 import { Icon } from "../icons/icon";
 import { brl, Money } from "../ui/money";
 import { PaceChart } from "./pace-chart";
-import { monthWord } from "./parts";
 
 export interface SummaryCardProps {
   month: string;
-  /** Mês anterior ao escolhido, 'YYYY-MM'. */
-  previous: string;
-  /** Há lançamento no mês anterior: sem isso a comparação seria contra zero. */
-  hadPrevious: boolean;
   /** O mês escolhido é o corrente (régua de "hoje" no ritmo). */
   isCurrent: boolean;
   comparison: MonthComparison;
@@ -73,8 +68,6 @@ function PaceChange({ percent }: { percent: number }) {
  */
 export function SummaryCard({
   month,
-  previous,
-  hadPrevious,
   isCurrent,
   comparison,
   pace,
@@ -83,7 +76,9 @@ export function SummaryCard({
   onOpenHistory,
 }: SummaryCardProps) {
   const summary = comparison.current;
-  const up = comparison.deltaMinor >= 0;
+  // Só mês fechado compara o saldo; o mês corrente tem a previsão no lugar.
+  const delta = isCurrent ? null : comparison.deltaMinor;
+  const up = delta !== null && delta >= 0;
   const hasExpense = summary.expenseMinor > 0;
 
   return (
@@ -97,16 +92,16 @@ export function SummaryCard({
           class={summary.balanceMinor < 0 ? "text-expense-fg" : ""}
         />
       </p>
-      {hadPrevious && (
+      {delta !== null && (
         <p
           class={`mt-2 flex items-center gap-2 text-sm ${
             up ? "text-income-fg" : "text-expense-fg"
           }`}
         >
           <Icon name={up ? "trend-up" : "trend-down"} size={16} />
-          {comparison.deltaMinor === 0
-            ? `Igual a ${monthWord(previous)}`
-            : `${brl(Math.abs(comparison.deltaMinor))} a ${up ? "mais" : "menos"} que ${monthWord(previous)}`}
+          {delta === 0
+            ? "Igual ao seu normal"
+            : `${brl(Math.abs(delta))} a ${up ? "mais" : "menos"} que o seu normal`}
         </p>
       )}
       <div class="mt-4 grid grid-cols-2 gap-3">
