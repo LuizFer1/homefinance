@@ -451,6 +451,27 @@ describe("DashboardPage", () => {
       expect(screen.queryByTestId("savings-pace")).toBeNull();
     });
 
+    it("para onde foi: fixos e variáveis do mês e Compras acima do normal", () => {
+      renderGrafite();
+      expect(screen.getByTestId("fixed-variable").textContent).toMatch(
+        /^R\$\s876 fixos · R\$\s2\.237 variáveis$/u,
+      );
+      const marks = screen.getAllByTestId("above-normal");
+      expect(marks.map((mark) => mark.textContent)).toEqual(["↑ 38% do normal"]);
+      expect(screen.getByTestId("category-row-CAT-COMPRAS").textContent).toContain(
+        "↑ 38% do normal",
+      );
+    });
+
+    it("livre em dezembro: 25% da renda fixa já comprometido, com as marcas de 50% e 70%", () => {
+      renderGrafite();
+      expect(screen.getByTestId("free-money-expense").textContent).toMatch(
+        /^R\$\s876,00 já comprometido · 25% da renda fixa$/u,
+      );
+      expect(screen.getByTestId("committed-mark-50")).toBeDefined();
+      expect(screen.getByTestId("committed-mark-70")).toBeDefined();
+    });
+
     it("sem receita no mês não mostra taxa", () => {
       render(
         <DashboardPage
@@ -919,8 +940,22 @@ describe("DashboardPage", () => {
       expect(screen.getByTestId("free-money").textContent).toContain("770");
       expect(screen.getByTestId("free-money-of").textContent).toMatch(/de R\$\s1\.000,00/u);
       expect(screen.getByTestId("free-money-expense").textContent).toMatch(
+        /^R\$\s230,00 já comprometido · 23% da renda fixa$/u,
+      );
+    });
+
+    it("sem entrada recorrente, sem porcentagem: convida a cadastrar o salário", () => {
+      const onlyExpense: AppState = {
+        ...stateWith(),
+        recurrences: { [series[1]?.id ?? ""]: series[1] as Recurrence },
+      };
+      render(<DashboardPage items={[record({ id: "a" })]} state={onlyExpense} today={TODAY} />);
+
+      expect(screen.getByTestId("free-money-expense").textContent).toMatch(
         /^R\$\s230,00 já comprometido$/u,
       );
+      expect(screen.getByText(/Cadastre o salário como recorrente/)).toBeDefined();
+      expect(screen.queryByTestId("committed-mark-50")).toBeNull();
     });
 
     it("a barra do comprometido é neutra e fala só em porcentagem", () => {

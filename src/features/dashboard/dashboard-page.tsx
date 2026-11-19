@@ -5,7 +5,9 @@ import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
 import { filterByMonth, monthlyTotals } from "../../domain/projections/breakdown";
 import { capitalByKind, debtTotal } from "../../domain/projections/business";
+import { categoriesAboveNormal } from "../../domain/projections/category-normal";
 import { dailyExpenses, expensesOn } from "../../domain/projections/daily-expenses";
+import { fixedVariable } from "../../domain/projections/fixed-variable";
 import { forecast } from "../../domain/projections/forecast";
 import { nextMonthFreeMoney, recurringMonth } from "../../domain/projections/free-money";
 import {
@@ -20,6 +22,7 @@ import { lastMonths, monthLabelLong, monthOf } from "../../domain/projections/pe
 import { upcomingRecurrences } from "../../domain/recurrence/upcoming";
 import { savedInMonth } from "../../domain/reserves/balances";
 import { Button } from "../ui/button";
+import { wholeBRL } from "../ui/money";
 import { MonthPicker } from "../ui/month-picker";
 import { PageHeader } from "../ui/page-header";
 import { BusinessBlock } from "./business-block";
@@ -159,7 +162,12 @@ export function DashboardPage({
   // Médias só sobre os dias que já aconteceram: o mesmo corte do ritmo de gastos.
   const daily = dailyExpenses(items, month, pace.cutoff);
   const budgets = budgetReport(items, state, month).rows;
-  const categories = withBudgets(categoryBreakdown(monthItems, state), budgets);
+  const categories = withBudgets(
+    categoryBreakdown(monthItems, state),
+    budgets,
+    categoriesAboveNormal(items, state, month, today),
+  );
+  const split = fixedVariable(items, state, month);
   const shown = visibleRows(categories);
   // Do mês do seletor, não de hoje: a barra de agosto mede contra a renda fixa de agosto.
   const categoryScale = recurringMonth(state, month).incomeMinor;
@@ -219,7 +227,13 @@ export function DashboardPage({
             {categories.length === 0 ? (
               <p class="text-sm text-fg/55">Nenhuma despesa em {label}</p>
             ) : (
-              <CategoryRows rows={shown} scaleMinor={categoryScale} />
+              <>
+                {/* Reais inteiros: é leitura de proporção, não conferência de centavo. */}
+                <p data-testid="fixed-variable" class="hf-num mb-3 text-xs text-fg/55">
+                  {wholeBRL(split.fixedMinor)} fixos · {wholeBRL(split.variableMinor)} variáveis
+                </p>
+                <CategoryRows rows={shown} scaleMinor={categoryScale} />
+              </>
             )}
             {(categories.length > shown.length ||
               (onOpenBudgets !== undefined && budgets.length > 0)) && (
