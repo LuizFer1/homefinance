@@ -204,6 +204,27 @@ describe("DashboardPage", () => {
     expect(screen.queryByTestId("bar-income-2026-08")).toBeNull();
   });
 
+  it("a sobra média cobre os meses fechados dos últimos 12, não só os 6 das barras", () => {
+    render(
+      <DashboardPage
+        items={[
+          // Dezembro de 2025 abre o histórico: de dezembro a julho são 8 meses fechados.
+          record({ id: "a", kind: "income", amountMinor: 80_000, occurredOn: "2025-12-05" }),
+          // Agosto é o corrente: põe barra na janela de 6, mas fica fora da média.
+          record({ id: "b", amountMinor: 99_999, occurredOn: "2026-08-02" }),
+        ]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    tap("Últimos 6 meses");
+    const sheet = within(openSheet("Últimos 6 meses") as HTMLElement);
+    // 800 / 8 = 100, como o hub. Só com as barras (março a julho) daria R$ 0.
+    expect(sheet.getByText(/^Sobrou em média R\$\s100 por mês nos meses fechados$/u)).toBeDefined();
+    expect(screen.queryByTestId("bar-income-2025-12")).toBeNull();
+  });
+
   it("a média diz que faltou quando os meses fechados gastaram mais que entrou", () => {
     render(
       <DashboardPage

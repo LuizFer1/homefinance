@@ -17,6 +17,7 @@ import {
   categoryBreakdown,
   firstMonthOf,
   monthComparison,
+  SURPLUS_WINDOW_MONTHS,
   spendingPace,
 } from "../../domain/projections/insights";
 import { lastMonths, monthLabelLong, monthOf } from "../../domain/projections/periods";
@@ -173,7 +174,14 @@ export function DashboardPage({
   // Do mês do seletor, não de hoje: a barra de agosto mede contra a renda fixa de agosto.
   const categoryScale = recurringMonth(state, month).incomeMinor;
   const bars = monthlyTotals(items, lastMonths(`${month}-01`, HISTORY_MONTHS));
-  const surplus = averageSurplus(bars, firstMonthOf(items), current);
+  // A sobra média não sai das barras: elas são 6 e terminam no mês escolhido; a média
+  // olha os 12 fechados antes de hoje (+1 é o corrente, que `averageSurplus` descarta),
+  // como o hub, para os dois painéis darem o mesmo número.
+  const surplus = averageSurplus(
+    monthlyTotals(items, lastMonths(`${current}-01`, SURPLUS_WINDOW_MONTHS + 1)),
+    firstMonthOf(items),
+    current,
+  );
   const upcoming = isCurrent ? upcomingRecurrences(state, today, UPCOMING_DAYS) : [];
   const invoices = isCurrent ? upcomingInvoices(state, today, UPCOMING_DAYS) : [];
   const upcomingCount = invoices.length + upcoming.length;

@@ -284,12 +284,22 @@ export interface SurplusAverage {
 }
 
 /**
- * Quanto sobrou, em média, nos meses **fechados com dado** da janela: do mês do
- * primeiro lançamento (`firstMonth`) até o anterior ao corrente. Mês antes do
- * primeiro lançamento não existia — contá-lo como zero diluía a média (com 2 meses
- * de histórico numa janela de 6, a sobra saía um terço da real). O mês corrente
- * também fica de fora: pela metade, a receita já entrou e a despesa não. `null`
- * quando nenhum mês fechado sobra.
+ * Quantos meses fechados, no máximo, entram na sobra média: os 12 anteriores ao
+ * corrente. É o mesmo número do hub (`average_surplus_closed`); com janelas
+ * diferentes, quem tem 7 ou mais meses fechados via uma média no celular e outra no
+ * computador. Independe das barras do histórico, que mostram só 6.
+ */
+export const SURPLUS_WINDOW_MONTHS = 12;
+
+/**
+ * Quanto sobrou, em média, nos meses **fechados com dado** dos últimos
+ * `SURPLUS_WINDOW_MONTHS`: do mês do primeiro lançamento (`firstMonth`) até o
+ * anterior ao corrente, e nunca antes de 12 meses atrás. Mês antes do primeiro
+ * lançamento não existia — contá-lo como zero diluía a média (com 2 meses de
+ * histórico numa janela de 6, a sobra saía um terço da real). O mês corrente também
+ * fica de fora: pela metade, a receita já entrou e a despesa não. `months` pode
+ * trazer mais meses que a janela; o corte é aqui. `null` quando nenhum mês fechado
+ * sobra.
  */
 export function averageSurplus(
   months: MonthTotals[],
@@ -297,7 +307,10 @@ export function averageSurplus(
   currentMonth: string,
 ): SurplusAverage | null {
   if (firstMonth === null) return null;
-  const closed = months.filter((item) => item.month >= firstMonth && item.month < currentMonth);
+  const oldest = shiftMonth(currentMonth, -SURPLUS_WINDOW_MONTHS);
+  const closed = months.filter(
+    (item) => item.month >= firstMonth && item.month >= oldest && item.month < currentMonth,
+  );
   if (closed.length === 0) return null;
   const sum = closed.reduce((acc, item) => acc + item.incomeMinor - item.expenseMinor, 0);
   return { averageMinor: Math.round(sum / closed.length), months: closed.length };

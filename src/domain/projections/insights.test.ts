@@ -411,6 +411,30 @@ describe("averageSurplus", () => {
     ).toEqual({ averageMinor: 267, months: 3 });
   });
 
+  it("com 8 meses fechados, a média cobre os 8 (não só os 6 das barras)", () => {
+    // Março a outubro, sobras de 1000 a 8000: (1000 + … + 8000) / 8 = 4500. Com a
+    // janela de 6 das barras saía 5500 — e o hub, com 12, dizia 4500.
+    const closed = lastMonths("2026-10-01", 8).map((m, index) => month(m, (index + 1) * 1000, 0));
+
+    expect(averageSurplus([...closed, month("2026-11", 99_999, 0)], "2026-03", "2026-11")).toEqual({
+      averageMinor: 4500,
+      months: 8,
+    });
+  });
+
+  it("com 14 meses fechados, só os últimos 12 contam", () => {
+    // Setembro e outubro de 2025 ficam antes de novembro − 12: as sobras enormes deles
+    // não podem puxar a média.
+    const closed = lastMonths("2026-10-01", 14).map((m) =>
+      month(m, m < "2025-11" ? 1_000_000 : 1000, 0),
+    );
+
+    expect(averageSurplus(closed, "2025-09", "2026-11")).toEqual({
+      averageMinor: 1000,
+      months: 12,
+    });
+  });
+
   it("sem mês fechado não mostra média", () => {
     expect(averageSurplus([month("2026-10", 1000, 400)], "2026-10", "2026-10")).toBeNull();
     expect(averageSurplus([month("2026-09", 0, 0)], null, "2026-10")).toBeNull();

@@ -8,14 +8,19 @@ export interface HistorySheetProps {
   open: boolean;
   /** Do mais antigo para o mais novo; o último é o mês escolhido. */
   bars: MonthTotals[];
-  /** Sobra média dos meses fechados com dado; `null` sem mês fechado. */
+  /**
+   * Sobra média dos meses fechados com dado dos últimos 12 — não das barras, que são 6.
+   * `null` sem mês fechado.
+   */
   average: SurplusAverage | null;
   onClose: () => void;
 }
 
 /**
  * "Últimos 6 meses": receita × despesa mês a mês e a sobra média dos meses
- * fechados (a regra mora em `averageSurplus`; aqui só a frase).
+ * fechados (a regra mora em `averageSurplus`; aqui só a frase). A frase diz "nos
+ * meses fechados", sem número, de propósito: a média cobre até 12 deles (como o hub)
+ * e as barras só 6, então "nos últimos 6 meses" seria falso.
  *
  * O título diz "6" e o vazio diz "seis" por extenso: os dois dependem de
  * `HISTORY_MONTHS` na página, e não dá para compor a frase a partir do número.
