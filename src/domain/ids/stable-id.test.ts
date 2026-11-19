@@ -105,5 +105,6 @@ describe("stableEntityIdV2", () => {
     }
     expect(seeds).toBeGreaterThanOrEqual(240_000);
     expect(ids.size).toBe(seeds);
-  });
+    // ~2 s sozinho; com a suíte inteira em paralelo passa dos 5 s padrão.
+  }, 30_000);
 });
