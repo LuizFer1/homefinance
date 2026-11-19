@@ -344,7 +344,7 @@ export function FilterBar({ state, filters, onChange, sheetOpen, onSheetOpen }: 
           {count > 0 && (
             <span
               aria-hidden="true"
-              class="hf-num absolute -top-1.5 -right-1.5 grid size-[18px] place-items-center rounded-full bg-accent text-[10px] font-medium text-bg"
+              class="hf-num absolute -top-1.5 -right-1.5 grid size-[18px] place-items-center rounded-full bg-accent text-[10px] font-medium text-on-accent"
             >
               {count}
             </span>

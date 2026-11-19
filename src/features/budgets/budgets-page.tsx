@@ -51,7 +51,7 @@ const PREVIEW_COUNT = 3;
 /** Estado em texto e ícone, para a gravidade não depender só da cor. */
 const LEVEL_BADGE: Record<BudgetStatus["level"], { label: string; icon: string; tone: string }> = {
   ok: { label: "Dentro da meta", icon: "check", tone: "bg-accent/12 text-accent-300" },
-  warning: { label: "Atenção", icon: "warning", tone: "bg-tag-amber/15 text-tag-amber" },
+  warning: { label: "Atenção", icon: "warning", tone: "bg-warning/15 text-warning" },
   over: { label: "Estourou", icon: "warning-circle", tone: "bg-expense/12 text-expense-fg" },
 };
 

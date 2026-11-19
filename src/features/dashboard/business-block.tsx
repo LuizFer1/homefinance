@@ -33,10 +33,30 @@ function Row({
 }
 
 /**
+ * Título de metade do card com o chip "hoje": capital e dívidas são o saldo de agora,
+ * não do mês do seletor. Sem o chip, sob "agosto" eles pareciam valores de agosto
+ * (indicadores §4 problema 6).
+ */
+function SectionTitle({ title, testId }: { title: string; testId: string }) {
+  return (
+    <h4 class="mt-4 flex items-center gap-2 text-xs text-fg/55">
+      {title}
+      <span
+        data-testid={testId}
+        class="rounded-full bg-neutral-800 px-2 py-0.5 text-[11px] font-medium text-fg/70"
+      >
+        hoje
+      </span>
+    </h4>
+  );
+}
+
+/**
  * Bloco "Negócio" do Resumo da conta comercial: o resultado do mês e o patrimônio do
  * negócio num card só. O resultado vem só de lançamentos; o capital e as dívidas vêm
  * de bens e dívidas, que nunca entram em receita nem em despesa — por isso as duas
- * metades são rotuladas à parte. Mesmos números do painel do hub.
+ * metades são rotuladas à parte, e as de patrimônio dizem "hoje". Mesmos números do
+ * painel do hub.
  */
 export function BusinessBlock({ month, capital, debtMinor }: BusinessBlockProps) {
   return (
@@ -73,7 +93,8 @@ export function BusinessBlock({ month, capital, debtMinor }: BusinessBlockProps)
         </div>
 
         <div aria-hidden="true" class="hf-rule mt-4" />
-        <dl class="mt-4 space-y-2 text-sm">
+        <SectionTitle title="Capital" testId="business-capital-today" />
+        <dl class="mt-2 space-y-2 text-sm">
           <Row label="Investimentos" minor={capital.investmentMinor} testId="business-investment" />
           <Row
             label="Capital em estoque"
@@ -93,7 +114,8 @@ export function BusinessBlock({ month, capital, debtMinor }: BusinessBlockProps)
           />
         </dl>
         <div aria-hidden="true" class="hf-rule mt-4" />
-        <dl class="mt-4 text-sm">
+        <SectionTitle title="Dívidas" testId="business-debt-today" />
+        <dl class="mt-2 text-sm">
           <Row label="Dívidas totais" minor={debtMinor} testId="business-debt" strong />
         </dl>
         <p class="mt-3 text-xs leading-normal text-fg/50 text-pretty">

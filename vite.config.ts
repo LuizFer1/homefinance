@@ -55,8 +55,8 @@ export default defineConfig({
         scope: BASE,
         display: "standalone",
         orientation: "portrait-primary",
-        background_color: "#161826",
-        theme_color: "#161826",
+        background_color: "#131313",
+        theme_color: "#131313",
         // Quadrados de proposito: o Chrome so aceita icone principal quadrado, e
         // com o canvas antigo (192x204 / 512x544) recusava instalar com
         // `no-acceptable-icon`. pwa-icons.test.ts confere declarado vs arquivo.

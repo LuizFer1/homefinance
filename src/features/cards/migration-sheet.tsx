@@ -306,7 +306,7 @@ export function MigrationSheet({
                     )}
                   </div>
                   {notice !== null && (
-                    <p role="status" class="mt-4 text-sm text-tag-amber">
+                    <p role="status" class="mt-4 text-sm text-warning">
                       {notice}
                     </p>
                   )}

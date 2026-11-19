@@ -555,6 +555,57 @@ describe("modal de lançamento", () => {
     expect(sheet.open).toBe(true);
   });
 
+  it("editar a ocorrência pergunta e 'Este e os próximos' muda a série", async () => {
+    const db = await cadastrado();
+    const stores = buildStores(db);
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Ações rápidas" })).toBeDefined(),
+    );
+    await act(() =>
+      stores.recurrence.createSeries(
+        {
+          kind: "expense",
+          description: "Aluguel",
+          amountMinor: 150_000,
+          currency: "BRL",
+          categoryId: null,
+          paymentMethodId: null,
+          cashbackMinor: null,
+          occurredOn: "2026-08-05",
+          recurrenceId: null,
+          occurrenceKey: null,
+        },
+        {
+          frequency: "monthly",
+          scheduleType: "dayOfMonth",
+          scheduleN: 5,
+          endOn: null,
+          variable: false,
+        },
+        "2026-08-08",
+      ),
+    );
+
+    await abrirEdicao("Aluguel");
+    fireEvent.input(screen.getByLabelText("Descrição"), { target: { value: "Aluguel apto" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Este e os próximos" }));
+
+    await waitFor(async () => {
+      const [series] = await db.recurrences.toArray();
+      expect(series?.description).toBe("Aluguel apto");
+    });
+    const [linha] = await db.transactions.toArray();
+    expect(linha?.description).toBe("Aluguel apto");
+
+    await act(() => stores.recurrence.materializeDue("2026-09-10"));
+    const setembro = (await db.transactions.toArray()).find(
+      (row) => row.occurredOn === "2026-09-05",
+    );
+    expect(setembro?.description).toBe("Aluguel apto");
+  });
+
   async function pronto() {
     render(
       <App {...buildStores(await cadastrado())} today="2026-08-08" hour={9} theme={fakeTheme()} />,

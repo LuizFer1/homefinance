@@ -149,7 +149,7 @@ export function DepositSheet({
             {brl(monthAvailable)} → fica {brl(monthAvailable - amount)}
           </div>
           {over && (
-            <div id="deposit-warning" class="mt-0.5 text-xs text-tag-amber">
+            <div id="deposit-warning" class="mt-0.5 text-xs text-warning">
               Maior que o saldo de {monthName(month)}
             </div>
           )}

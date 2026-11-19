@@ -377,7 +377,7 @@ export function ReserveForm({
           actions={<HoldToDelete label="Excluir reserva de emergência" onConfirm={onDelete} />}
         />
         <p class="mt-5 flex gap-2 text-sm leading-normal text-fg/75 text-pretty">
-          <Icon name="info" size={16} class="mt-0.5 shrink-0 text-tag-amber" />
+          <Icon name="info" size={16} class="mt-0.5 shrink-0 text-warning" />
           Reserva de emergência duplicada (criada em outro aparelho). Exclua uma delas.
         </p>
         <p class={HINT}>Segure a lixeira para excluir. O saldo volta para o mês atual.</p>

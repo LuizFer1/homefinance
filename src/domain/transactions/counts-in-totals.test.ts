@@ -50,7 +50,7 @@ describe("lançamento marcado como transferência ou oculto não conta", () => {
     }
   });
 
-  it("a comparação com o mês anterior ignora o marcado nos dois meses", () => {
+  it("a comparação com o seu normal ignora o marcado nos dois lados", () => {
     const a = monthComparison(listTransactions(marked), "2026-09");
     const b = monthComparison(listTransactions(without), "2026-09");
     expect({ ...a, count: 0 }).toEqual({ ...b, count: 0 });

@@ -17,14 +17,14 @@ export const LANDING_URL = "https://luizfer1.github.io/homefinance/";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "public", "img", "landing-qr.svg");
 
-// Cores do handoff: tinta do fundo Nocturne sobre o texto claro. Sem margem no
+// Cores da paleta grafite: tinta do fundo (bg) sobre o texto claro (fg). Sem margem no
 // SVG porque a "zona quieta" que o leitor de camera precisa vem da moldura
 // clara (neutral-100, 8px) em volta dele na pagina — o fundo escuro nao serve.
 const svg = await QRCode.toString(LANDING_URL, {
   type: "svg",
   errorCorrectionLevel: "M",
   margin: 0,
-  color: { dark: "#161826", light: "#e9e9ed" },
+  color: { dark: "#131313", light: "#f2f2f2" },
 });
 
 // <title> para quem abre o SVG sozinho; na pagina o texto alternativo e o `alt`
