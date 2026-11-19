@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { shiftMonth } from "../dates/calendar";
-import { stableEntityIdV1 } from "../ids/stable-id";
+import { stableEntityIdV1, stableEntityIdV2 } from "../ids/stable-id";
 import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
 import type { Recurrence } from "../model/recurrence";
 import type { RecurrenceAdjustment } from "../model/recurrence-adjustment";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
 import type { Transaction } from "../model/transaction";
 import { periodChoices, planAdjustment } from "./adjust-plan";
-import { adjustmentId } from "./adjustments";
+import { adjustmentId, adjustmentSeed } from "./adjustments";
 import { occurrenceKey } from "./schedule";
 
 const SALARIO: Recurrence = {
@@ -215,6 +215,26 @@ describe("planAdjustment", () => {
       ["2026-07-05", 560_000],
       ["2026-08-05", 560_000],
     ]);
+  });
+
+  it("o id do plano é o da linha da chave, mesmo fora do v1", () => {
+    const outroId = { ...ajuste("2026-07", 550_000), id: "BBBBBBBBBBBBBBBBBBBBBBBBBB" };
+    const plan = planAdjustment(estado(LANCADAS, [outroId]), {
+      recurrenceId: SALARIO.id,
+      fromPeriod: "2026-07",
+      amountMinor: 560_000,
+    });
+    expect(plan?.adjustmentId).toBe("BBBBBBBBBBBBBBBBBBBBBBBBBB");
+  });
+
+  it("lugar v1 com o reajuste de outra série: o id do plano é o v2", () => {
+    const deOutra = { ...ajuste("2026-07", 1), recurrenceId: "OUTRA" };
+    const plan = planAdjustment(estado(LANCADAS, [deOutra]), {
+      recurrenceId: SALARIO.id,
+      fromPeriod: "2026-07",
+      amountMinor: 560_000,
+    });
+    expect(plan?.adjustmentId).toBe(stableEntityIdV2(adjustmentSeed(SALARIO.id, "2026-07")));
   });
 
   it("ocorrência que já tem o valor novo não aparece como mantida", () => {

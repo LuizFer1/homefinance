@@ -4,7 +4,7 @@ import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
 import type { Recurrence } from "../model/recurrence";
 import type { Transaction } from "../model/transaction";
-import { type AdjustmentLike, adjustmentId, adjustmentsOf, amountFor } from "./adjustments";
+import { type AdjustmentLike, adjustmentsOf, adjustmentTargetId, amountFor } from "./adjustments";
 import {
   isKnownFrequency,
   occurrenceKey,
@@ -28,6 +28,7 @@ export interface OccurrenceUpdate {
 }
 
 export interface AdjustmentPlan {
+  /** A linha da chave, ou onde a nova iria (ver `adjustmentTargetId`). */
   adjustmentId: Ulid;
   /** Valor vigente na competência anterior: base do percentual e do "de → para". */
   baseMinor: number;
@@ -58,7 +59,10 @@ export function planAdjustment(state: AppState, input: AdjustmentInput): Adjustm
   const series = state.recurrences[input.recurrenceId];
   if (!isAlive(series)) return null;
 
-  const id = adjustmentId(series.id, input.fromPeriod);
+  // A linha que a chave já tem, ou o lugar onde a nova iria (v1 livre, senão v2),
+  // vistos de `state`. A store recalcula com a tabela inteira: o lugar pode ser de
+  // uma linha da outra conta, que esta visão não mostra.
+  const id = adjustmentTargetId(state, series.id, input.fromPeriod);
   const current = adjustmentsOf(state, series.id);
   // O reajuste já gravado na mesma competência é substituído, não somado: no
   // "depois" ele sai e entra o novo. Pela competência, não pelo id: depois de uma

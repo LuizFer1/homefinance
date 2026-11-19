@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { collidingId } from "../ids/collision.fake";
+import { stableEntityIdV1, stableEntityIdV2 } from "../ids/stable-id";
 import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
 import type { RecurrenceAdjustment } from "../model/recurrence-adjustment";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
-import { type AdjustmentLike, adjustmentId, adjustmentsOf, amountFor } from "./adjustments";
+import {
+  type AdjustmentLike,
+  adjustmentForKey,
+  adjustmentId,
+  adjustmentSeed,
+  adjustmentsOf,
+  adjustmentTargetId,
+  amountFor,
+} from "./adjustments";
 
 const SERIE = { id: "SERIE-1", amountMinor: 300_000 };
 
@@ -158,5 +168,86 @@ describe("adjustmentsOf", () => {
     };
 
     expect(adjustmentsOf(state, "SERIE-1")).toEqual([velho, novo]);
+  });
+});
+
+describe("adjustmentsOf: duas linhas da mesma competência", () => {
+  const H1 = "1793000000000-0000-01JZ0000000000000000000DV1";
+  const H2 = "1793000000000-0001-01JZ0000000000000000000DV2";
+
+  it("lista só a vencedora da regra R, uma por competência", () => {
+    // Aparelho velho regravou a chave no lugar v1 depois de um novo gravar em v2:
+    // o histórico não pode mostrar a competência duas vezes.
+    const v1 = ajuste("2027-01", 350_000, { id: "01JZ000000000000000000ADJA", updatedAt: H2 });
+    const v2 = ajuste("2027-01", 360_000, { id: "01JZ000000000000000000ADJB", updatedAt: H1 });
+    const outro = ajuste("2027-06", 400_000);
+    for (const order of [
+      [v1, v2, outro],
+      [outro, v2, v1],
+    ]) {
+      const state: AppState = {
+        ...EMPTY_APP_STATE,
+        recurrenceAdjustments: Object.fromEntries(order.map((row) => [row.id, row])),
+      };
+      expect(adjustmentsOf(state, "SERIE-1")).toEqual([v1, outro]);
+    }
+  });
+});
+
+describe("reajuste pela chave", () => {
+  const SERIE_A = "01JZ0000000000000000000SRA";
+  const seedOf = (series: string) => adjustmentSeed(series, "2027-01");
+  const SERIE_B = collidingId("01JZ0000000000000000000", SERIE_A, seedOf);
+  const SLOT = stableEntityIdV1(seedOf(SERIE_A));
+  const H1 = "1793000000000-0000-01JZ0000000000000000000DV1";
+  const H2 = "1793000000000-0001-01JZ0000000000000000000DV2";
+
+  const de = (series: string, over: Partial<RecurrenceAdjustment> = {}): RecurrenceAdjustment =>
+    ajuste("2027-01", 350_000, { recurrenceId: series, ...over });
+
+  const com = (...rows: RecurrenceAdjustment[]): AppState => ({
+    ...EMPTY_APP_STATE,
+    recurrenceAdjustments: Object.fromEntries(rows.map((row) => [row.id, row])),
+  });
+
+  it("o par de teste colide mesmo na v1 e não na v2", () => {
+    expect(adjustmentId(SERIE_B, "2027-01")).toBe(SLOT);
+    expect(stableEntityIdV2(seedOf(SERIE_B))).not.toBe(stableEntityIdV2(seedOf(SERIE_A)));
+  });
+
+  it("lugar livre: v1, igual ao de hoje", () => {
+    expect(adjustmentForKey(com(), SERIE_B, "2027-01")).toBeNull();
+    expect(adjustmentTargetId(com(), SERIE_B, "2027-01")).toBe(SLOT);
+  });
+
+  it("lugar v1 com o reajuste vivo de outra série: v2, e a linha de lá não é a de B", () => {
+    const state = com(de(SERIE_A, { id: SLOT }));
+    expect(adjustmentForKey(state, SERIE_B, "2027-01")).toBeNull();
+    expect(adjustmentTargetId(state, SERIE_B, "2027-01")).toBe(stableEntityIdV2(seedOf(SERIE_B)));
+  });
+
+  it("lugar v1 com o reajuste apagado de outra série: v2 também", () => {
+    const state = com(de(SERIE_A, { id: SLOT, deletedAt: DELETED_AT }));
+    expect(adjustmentTargetId(state, SERIE_B, "2027-01")).toBe(stableEntityIdV2(seedOf(SERIE_B)));
+  });
+
+  it("a chave já tem linha em v2: é ela", () => {
+    const emV2 = de(SERIE_B, { id: stableEntityIdV2(seedOf(SERIE_B)) });
+    const state = com(de(SERIE_A, { id: SLOT }), emV2);
+    expect(adjustmentForKey(state, SERIE_B, "2027-01")).toBe(emV2);
+    expect(adjustmentTargetId(state, SERIE_B, "2027-01")).toBe(emV2.id);
+  });
+
+  it("a chave só tem linha apagada: é ela (refazer revive)", () => {
+    const apagada = de(SERIE_B, { id: "QUALQUER", deletedAt: DELETED_AT });
+    expect(adjustmentTargetId(com(apagada), SERIE_B, "2027-01")).toBe("QUALQUER");
+  });
+
+  it("duas vivas da chave: a vencedora da regra R; uma viva vence a apagada", () => {
+    const a = de(SERIE_B, { id: "01JZ000000000000000000ADJA", updatedAt: H2 });
+    const b = de(SERIE_B, { id: "01JZ000000000000000000ADJB", updatedAt: H1 });
+    const apagada = de(SERIE_B, { id: "01JZ000000000000000000ADJC", updatedAt: H2, deletedAt: H2 });
+    expect(adjustmentForKey(com(a, b, apagada), SERIE_B, "2027-01")).toBe(a);
+    expect(adjustmentForKey(com(b, apagada), SERIE_B, "2027-01")).toBe(b);
   });
 });
