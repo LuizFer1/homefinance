@@ -1,7 +1,6 @@
 import { buildRow } from "../../data/repository";
 import { floorHlc } from "../../domain/clock/hlc";
 import type { Ulid } from "../../domain/ids/ulid";
-import type { AppState } from "../../domain/model/app-state";
 import type { Draft } from "../../domain/model/base";
 import { BOOKS, bookOf } from "../../domain/model/book";
 import { stateForBook } from "../../domain/model/book-view";
@@ -10,6 +9,7 @@ import type { RecurrenceAdjustment } from "../../domain/model/recurrence-adjustm
 import type { Transaction, TransactionDraft } from "../../domain/model/transaction";
 import { MAX_MINOR } from "../../domain/money/mask";
 import { type AdjustmentInput, planAdjustment } from "../../domain/recurrence/adjust-plan";
+import { adjustmentForKey, adjustmentTargetId } from "../../domain/recurrence/adjustments";
 import { planAuthorRepair } from "../../domain/recurrence/author";
 import { planSeriesEdit } from "../../domain/recurrence/edit-plan";
 import {
@@ -76,19 +76,25 @@ function assertAdjustmentAmount(amountMinor: number): void {
 
 export function createRecurrenceStore(session: Session): RecurrenceStore {
   /**
-   * Linha do reajuste pronta para o lote. Mesma competência é a mesma linha (id
-   * determinístico), inclusive uma apagada: refazer o reajuste de janeiro é o
-   * mesmo fato, e criar outra linha com o mesmo id derrubaria o lote.
+   * Linha do reajuste pronta para o lote. Mesma competência é a mesma linha,
+   * achada pela chave `(série, competência)` e não pelo id (spec do id estável,
+   * §4.3): inclusive uma apagada — refazer o reajuste de janeiro é o mesmo fato —
+   * e, com duas vivas, a da regra R, a que a tela mostra. Sem linha da chave, o id
+   * é v1 se o lugar está livre e v2 se é de outro reajuste: o v1 sozinho, com a
+   * colisão, achava o reajuste de outra série e trocava o valor dela.
+   *
+   * Lê a tabela inteira (`fullState`): o lugar v1 pode ser de um reajuste da
+   * outra conta, que a visão da conta ativa esconde.
    */
-  function adjustmentRow(
-    state: AppState,
-    input: AdjustmentInput,
-    id: Ulid,
-  ): { adjustment: RecurrenceAdjustment; existing: RecurrenceAdjustment | undefined } {
+  function adjustmentRow(input: AdjustmentInput): {
+    adjustment: RecurrenceAdjustment;
+    existing: RecurrenceAdjustment | null;
+  } {
     const clock = session.clock();
-    const existing = state.recurrenceAdjustments[id];
+    const full = session.fullState.value;
+    const existing = adjustmentForKey(full, input.recurrenceId, input.fromPeriod);
     const adjustment: RecurrenceAdjustment =
-      existing === undefined
+      existing === null
         ? buildRow<RecurrenceAdjustment>(
             clock,
             {
@@ -96,9 +102,9 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
               fromPeriod: input.fromPeriod,
               amountMinor: input.amountMinor,
             },
-            id,
+            adjustmentTargetId(full, input.recurrenceId, input.fromPeriod),
             // O reajuste é filho da série: herda a conta dela.
-            bookOf(state.recurrences[input.recurrenceId]),
+            bookOf(full.recurrences[input.recurrenceId]),
           )
         : {
             ...existing,
@@ -142,7 +148,7 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         : [];
       const adjusted =
         plan.adjustment !== null && plan.adjustmentPlan !== null
-          ? adjustmentRow(state, plan.adjustment, plan.adjustmentPlan.adjustmentId)
+          ? adjustmentRow(plan.adjustment)
           : null;
 
       // Toda linha regravada entra com a versão lida, a série inclusive: se
@@ -236,7 +242,7 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
       if (plan === null) throw new Error("Série não existe");
 
       const clock = session.clock();
-      const { adjustment, existing } = adjustmentRow(state, input, plan.adjustmentId);
+      const { adjustment, existing } = adjustmentRow(input);
       const transactions: Transaction[] = plan.updates.map(({ transaction, amountMinor }) => ({
         ...transaction,
         amountMinor,
@@ -249,7 +255,7 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
       // reajuste) depois do boot, gravar as linhas inteiras desfaria isso.
       // Cada linha só é regravada se ainda estiver na versão que foi lida.
       const expected: ExpectedVersions = {
-        recurrenceAdjustments: { [plan.adjustmentId]: existing?.updatedAt ?? null },
+        recurrenceAdjustments: { [adjustment.id]: existing?.updatedAt ?? null },
         transactions: Object.fromEntries(
           plan.updates.map(({ transaction }) => [transaction.id, transaction.updatedAt]),
         ),
@@ -262,6 +268,44 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         { recurrenceAdjustments: [adjustment], transactions },
         expected,
       );
+    } catch (cause) {
+      session.error.value = describeError(cause);
+      throw cause;
+    }
+  }
+
+  async function removeAdjustment(id: Ulid): Promise<RecurrenceAdjustment> {
+    const target = session.fullState.value.recurrenceAdjustments[id];
+    // Linha que a memória não conhece (o repositório rejeita) ou já apagada (não
+    // regrava): o caminho de sempre.
+    if (target === undefined || target.deletedAt !== null) {
+      return session.mutate("recurrenceAdjustments", (repo) => repo.remove(id));
+    }
+    try {
+      // Todas as vivas da competência, não só a escolhida: com duas (aparelho velho
+      // e novo), a tela mostra uma só, e apagar só ela faria a outra reaparecer
+      // valendo. O reajuste de outra série que só divide o lugar v1 não é da chave.
+      const rows = Object.values(session.fullState.value.recurrenceAdjustments).filter(
+        (row) =>
+          row.deletedAt === null &&
+          row.recurrenceId === target.recurrenceId &&
+          row.fromPeriod === target.fromPeriod,
+      );
+      const clock = session.clock();
+      const removed = rows.map((row) => {
+        const { hlc } = clock.stamp();
+        return { ...row, deletedAt: hlc, updatedAt: hlc, dirty: 1 as const };
+      });
+      // Se o sync ou outra aba mexeu numa delas, nada é apagado (`StaleRowsError`).
+      await session.putRowsIfCurrent(
+        { recurrenceAdjustments: removed },
+        {
+          recurrenceAdjustments: Object.fromEntries(rows.map((row) => [row.id, row.updatedAt])),
+        },
+      );
+      const chosen = removed.find((row) => row.id === id);
+      if (chosen === undefined) throw new Error("Reajuste não existe");
+      return chosen;
     } catch (cause) {
       session.error.value = describeError(cause);
       throw cause;
@@ -374,7 +418,7 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
       session.mutate("recurrences", (repo) => repo.update(id, { variable: true })),
     adjustSeries,
     editFollowing,
-    removeAdjustment: (id) => session.mutate("recurrenceAdjustments", (repo) => repo.remove(id)),
+    removeAdjustment,
     repairAuthors,
   };
 }

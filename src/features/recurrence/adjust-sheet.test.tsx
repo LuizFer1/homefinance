@@ -196,6 +196,23 @@ describe("AdjustSheet", () => {
     ]);
   });
 
+  it("competência com duas linhas vivas aparece uma vez, com o valor que vale", () => {
+    // Aparelho velho regravou setembro no lugar v1 depois de um novo gravar noutro
+    // id: a regra R escolhe a de `updatedAt` maior, e só ela é listada.
+    const velha = { ...reajuste("2026-09", 350_000), updatedAt: "1793000000000-0000-DV1" };
+    const nova = {
+      ...reajuste("2026-09", 360_000),
+      id: "01JZ000000000000000000ADJB",
+      updatedAt: "1793000000000-0001-DV2",
+    };
+    montar(estado(LANCADAS, [velha, nova]));
+
+    const botoes = screen.getAllByRole("button", { name: /Excluir reajuste de set\/2026/ });
+    expect(botoes).toHaveLength(1);
+    expect(screen.getByText(brl(360_000))).toBeTruthy();
+    expect(screen.queryByText(brl(350_000))).toBeNull();
+  });
+
   it("percentual parte do valor já reajustado antes da competência", () => {
     const { onConfirm } = montar(estado(LANCADAS, [reajuste("2026-09", 350_000)]));
 
