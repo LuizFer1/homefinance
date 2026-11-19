@@ -10,7 +10,7 @@ import { EXPORT_APP, EXPORT_FORMAT_VERSION } from "./export-data";
  */
 export const MAX_IMPORT_BYTES = 30 * 1024 * 1024;
 
-/** 26 chars Crockford, não ULID estrito: `stableEntityId` usa o alfabeto inteiro. */
+/** 26 chars Crockford, não ULID estrito: `stableEntityIdV1` usa o alfabeto inteiro. */
 const ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** Linha como veio do arquivo: campos que não conhecemos seguem junto, intactos. */

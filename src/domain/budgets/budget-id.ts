@@ -1,4 +1,4 @@
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 
 /**
@@ -6,5 +6,5 @@ import type { Ulid } from "../ids/ulid";
  * prefixo para o id nunca colidir com o de outra tabela derivada da mesma categoria.
  */
 export function budgetIdFor(categoryId: Ulid): Ulid {
-  return stableEntityId(`budget:${categoryId}`);
+  return stableEntityIdV1(`budget:${categoryId}`);
 }

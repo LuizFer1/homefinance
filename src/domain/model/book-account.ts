@@ -1,10 +1,10 @@
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import { type BaseRow, type Draft, isAlive } from "./base";
 import type { Book, BookScoped } from "./book";
 import type { ColorToken, IconKey } from "./tokens";
 
 /** Id da linha da conta comercial: o mesmo em qualquer aparelho (ver `BookAccount`). */
-export const BUSINESS_BOOK_ID = stableEntityId("book:business");
+export const BUSINESS_BOOK_ID = stableEntityIdV1("book:business");
 
 /**
  * Cadastro da conta comercial: nome, cor e ícone do negócio **sincronizados**

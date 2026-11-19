@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
 import { floorHlc } from "../../domain/clock/hlc";
-import { stableEntityId } from "../../domain/ids/stable-id";
+import { stableEntityIdV1 } from "../../domain/ids/stable-id";
 import type { AppState } from "../../domain/model/app-state";
 import { isAlive } from "../../domain/model/base";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
@@ -91,7 +91,7 @@ function onlySeries(): Recurrence {
 }
 
 function amountOf(seriesId: string, period: string): number | undefined {
-  return session.state.value.transactions[stableEntityId(occurrenceKey(seriesId, period))]
+  return session.state.value.transactions[stableEntityIdV1(occurrenceKey(seriesId, period))]
     ?.amountMinor;
 }
 
@@ -250,7 +250,7 @@ describe("adjustSeries", () => {
   it("retroativo atualiza as lançadas e mantém a editada à mão", async () => {
     await store.createSeries(DRAFT, MENSAL, "2026-08-10");
     const series = onlySeries();
-    const agosto = stableEntityId(occurrenceKey(series.id, "2026-08"));
+    const agosto = stableEntityIdV1(occurrenceKey(series.id, "2026-08"));
     await session.mutate("transactions", (repo) => repo.update(agosto, { amountMinor: 520_000 }));
 
     await store.adjustSeries({
@@ -262,7 +262,7 @@ describe("adjustSeries", () => {
     expect(amountOf(series.id, "2026-06")).toBe(500_000);
     expect(amountOf(series.id, "2026-07")).toBe(550_000);
     expect(amountOf(series.id, "2026-08")).toBe(520_000);
-    const julho = await db.transactions.get(stableEntityId(occurrenceKey(series.id, "2026-07")));
+    const julho = await db.transactions.get(stableEntityIdV1(occurrenceKey(series.id, "2026-07")));
     expect(julho).toMatchObject({ amountMinor: 550_000, dirty: 1 });
   });
 
@@ -283,7 +283,7 @@ describe("adjustSeries", () => {
 
     expect(session.error.value).toBe("quota exceeded");
     expect(amountOf(series.id, "2026-07")).toBe(500_000);
-    const julho = await db.transactions.get(stableEntityId(occurrenceKey(series.id, "2026-07")));
+    const julho = await db.transactions.get(stableEntityIdV1(occurrenceKey(series.id, "2026-07")));
     expect(julho?.amountMinor).toBe(500_000);
     expect(await db.recurrenceAdjustments.count()).toBe(0);
   });
@@ -298,14 +298,14 @@ describe("adjustSeries", () => {
 
     expect(session.error.value).toBe("Valor de reajuste inválido");
     expect(await db.recurrenceAdjustments.count()).toBe(0);
-    const julho = await db.transactions.get(stableEntityId(occurrenceKey(series.id, "2026-07")));
+    const julho = await db.transactions.get(stableEntityIdV1(occurrenceKey(series.id, "2026-07")));
     expect(julho?.amountMinor).toBe(500_000);
   });
 
   it("sessão desatualizada não revive ocorrência apagada por outra sessão", async () => {
     await store.createSeries(DRAFT, MENSAL, "2026-08-10");
     const series = onlySeries();
-    const julho = stableEntityId(occurrenceKey(series.id, "2026-07"));
+    const julho = stableEntityIdV1(occurrenceKey(series.id, "2026-07"));
 
     // A sessão B nasce depois da materialização e apaga julho; a sessão A
     // continua com julho vivo no `state` em memória.
@@ -397,7 +397,7 @@ describe("série variável", () => {
     const series = onlySeries();
     expect(series.variable).toBe(true);
     const junho =
-      session.state.value.transactions[stableEntityId(occurrenceKey(series.id, "2026-06"))];
+      session.state.value.transactions[stableEntityIdV1(occurrenceKey(series.id, "2026-06"))];
     expect(junho).toMatchObject({ amountMinor: 20_000, estimated: true });
     expect(junho?.updatedAt).toBe(floorHlc("2026-06-05", session.clock().deviceId));
     expect((await db.transactions.get(junho?.id ?? ""))?.updatedAt).toBe(junho?.updatedAt);
@@ -406,7 +406,7 @@ describe("série variável", () => {
   it("a próxima ocorrência nasce com a média das confirmadas", async () => {
     await store.createSeries(LUZ, VARIAVEL, "2026-06-10");
     const series = onlySeries();
-    const junho = stableEntityId(occurrenceKey(series.id, "2026-06"));
+    const junho = stableEntityIdV1(occurrenceKey(series.id, "2026-06"));
     await session.mutate("transactions", (repo) =>
       repo.update(junho, { amountMinor: 32_000, estimated: false }),
     );
@@ -512,7 +512,7 @@ describe("autoria", () => {
     await session.mutate("recurrences", (repo) => repo.create(mensalDraft(), "SERIE-ANTIGA"));
     await store.materializeDue("2026-06-10");
     session.localUserId.value = "AUTOR-2";
-    const julhoId = stableEntityId(occurrenceKey("SERIE-ANTIGA", "2026-07"));
+    const julhoId = stableEntityIdV1(occurrenceKey("SERIE-ANTIGA", "2026-07"));
     const junho = alive()[0];
     if (junho === undefined) throw new Error("junho não materializou");
     await session.putRows({
@@ -545,7 +545,7 @@ describe("autoria", () => {
 describe("editFollowing", () => {
   /** Rascunho que o formulário mandaria para a ocorrência da competência. */
   function rascunhoDe(seriesId: string, period: string, over: Partial<TransactionDraft> = {}) {
-    const row = session.state.value.transactions[stableEntityId(occurrenceKey(seriesId, period))];
+    const row = session.state.value.transactions[stableEntityIdV1(occurrenceKey(seriesId, period))];
     if (row === undefined) throw new Error(`${period} não materializou`);
     const draft: TransactionDraft = {
       kind: row.kind,
@@ -564,7 +564,7 @@ describe("editFollowing", () => {
   }
 
   function categoriaDe(seriesId: string, period: string) {
-    return session.state.value.transactions[stableEntityId(occurrenceKey(seriesId, period))]
+    return session.state.value.transactions[stableEntityIdV1(occurrenceKey(seriesId, period))]
       ?.categoryId;
   }
 

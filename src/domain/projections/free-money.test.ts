@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
 import type { Recurrence } from "../model/recurrence";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
@@ -34,7 +34,7 @@ function series(overrides: Partial<Recurrence>): Recurrence {
 function occurrence(recurrence: Recurrence, period: string, overrides: Partial<Transaction> = {}) {
   const key = occurrenceKey(recurrence.id, period);
   const row: Transaction = {
-    id: stableEntityId(key),
+    id: stableEntityIdV1(key),
     ...ALIVE,
     kind: recurrence.kind,
     description: recurrence.description,

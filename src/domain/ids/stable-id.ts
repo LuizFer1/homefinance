@@ -11,7 +11,7 @@ const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
  * o sync traria dois salários no extrato. Com o mesmo id, as duas linhas são a
  * mesma linha, e o LWW por linha as converge.
  */
-export function stableEntityId(seed: string): Ulid {
+export function stableEntityIdV1(seed: string): Ulid {
   let h1 = 0x811c9dc5;
   let h2 = 0x811c9dc5 ^ 0xdeadbeef;
 

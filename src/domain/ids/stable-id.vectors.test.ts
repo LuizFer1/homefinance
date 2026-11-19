@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stableEntityId } from "./stable-id";
+import { stableEntityIdV1 } from "./stable-id";
 
 /**
  * Vetores colados como constantes no hub (`dashboard/ids.rs`). O hub recalcula
@@ -20,10 +20,10 @@ const VECTORS: ReadonlyArray<readonly [string, string]> = [
   ["ç:2026-11", "AN7MTHFGADQCTSFRA574T1F0AX"],
 ];
 
-describe("stableEntityId: vetores compartilhados com o hub", () => {
+describe("stableEntityIdV1: vetores compartilhados com o hub", () => {
   for (const [seed, id] of VECTORS) {
     it(`"${seed}" vira ${id}`, () => {
-      expect(stableEntityId(seed)).toBe(id);
+      expect(stableEntityIdV1(seed)).toBe(id);
     });
   }
 });

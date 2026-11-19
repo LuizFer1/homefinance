@@ -1,5 +1,5 @@
 import { compareHlc } from "../clock/hlc";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import type { Recurrence } from "../model/recurrence";
@@ -26,7 +26,7 @@ export type AdjustmentLike = Pick<
  * entre eles.
  */
 export function adjustmentId(recurrenceId: Ulid, fromPeriod: string): Ulid {
-  return stableEntityId(`${recurrenceId}:adj:${fromPeriod}`);
+  return stableEntityIdV1(`${recurrenceId}:adj:${fromPeriod}`);
 }
 
 /** Reajustes vivos da série, do mais antigo para o mais novo. */

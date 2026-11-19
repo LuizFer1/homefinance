@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
 import type { PaymentMethod } from "../model/payment-method";
 import type { Recurrence } from "../model/recurrence";
@@ -32,7 +32,7 @@ function ocorrencia(period: string, over: Partial<Transaction> = {}): Transactio
   const key = occurrenceKey(ALUGUEL.id, period);
   return {
     ...ALIVE,
-    id: stableEntityId(key),
+    id: stableEntityIdV1(key),
     kind: "expense",
     description: "Aluguel",
     amountMinor: 200_000,
@@ -271,12 +271,12 @@ describe("planSeriesEdit: o que muda", () => {
     const semanal = { ...ALUGUEL, frequency: "weekly" as const, startOn: "2026-06-01" };
     const key = (day: string) => occurrenceKey(semanal.id, day);
     const s1 = ocorrencia("x", {
-      id: stableEntityId(key("2026-06-01")),
+      id: stableEntityIdV1(key("2026-06-01")),
       occurrenceKey: key("2026-06-01"),
       occurredOn: "2026-06-01",
     });
     const s2 = ocorrencia("x", {
-      id: stableEntityId(key("2026-06-08")),
+      id: stableEntityIdV1(key("2026-06-08")),
       occurrenceKey: key("2026-06-08"),
       occurredOn: "2026-06-08",
     });

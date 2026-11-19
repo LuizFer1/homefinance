@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import { DELETED_AT } from "../model/row.fake";
 import { depositId, planDeposits } from "./deposits";
 import { movement, reserve, stateOf, tx } from "./fixtures.fake";
@@ -9,7 +9,7 @@ const R = reserve("R1", { recurring: { amountMinor: 50_000, day: 6, since: "2026
 
 describe("depositId", () => {
   it("é estável por reserva e mês", () => {
-    expect(depositId("R1", "2026-10")).toBe(stableEntityId("reserve:R1:2026-10"));
+    expect(depositId("R1", "2026-10")).toBe(stableEntityIdV1("reserve:R1:2026-10"));
   });
 });
 

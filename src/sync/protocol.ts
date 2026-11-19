@@ -61,7 +61,7 @@ export interface ErrorBody {
 export const PUSH_BATCH = 500;
 export const PULL_LIMIT = 500;
 
-/** 26 chars Crockford, não ULID estrito: `stableEntityId` usa o alfabeto inteiro. */
+/** 26 chars Crockford, não ULID estrito: `stableEntityIdV1` usa o alfabeto inteiro. */
 const ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 export type RemoteRowCheck =

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
 import type { Recurrence } from "../model/recurrence";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
@@ -85,7 +85,7 @@ describe("upcomingRecurrences", () => {
       [series({})],
       [
         {
-          id: stableEntityId(key),
+          id: stableEntityIdV1(key),
           ...ALIVE,
           kind: "expense",
           description: "Internet",
@@ -108,7 +108,7 @@ describe("upcomingRecurrences", () => {
   it("série variável projeta a média das confirmadas, marcada como estimada", () => {
     const key = occurrenceKey(SERIES, "2026-08");
     const agosto: Transaction = {
-      id: stableEntityId(key),
+      id: stableEntityIdV1(key),
       ...ALIVE,
       kind: "expense",
       description: "Internet",
@@ -188,7 +188,7 @@ describe("semanal e quinzenal", () => {
     const semanal = series({ frequency: "weekly", startOn: "2026-06-03" });
     const gravada = {
       ...ALIVE,
-      id: stableEntityId(occurrenceKey(SERIES, "2026-06-10")),
+      id: stableEntityIdV1(occurrenceKey(SERIES, "2026-06-10")),
     } as Transaction;
     const found = upcomingRecurrences(stateWith([semanal], [gravada]), "2026-06-05", 21);
 

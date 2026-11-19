@@ -35,7 +35,7 @@ describe("checkRemoteRow", () => {
     expect(checkRemoteRow("categories", { ...ROW, createdAt: 1 })).toEqual(invalid);
   });
 
-  it("id determinístico (stableEntityId) é aceito mesmo começando com Z", () => {
+  it("id determinístico (stableEntityIdV1) é aceito mesmo começando com Z", () => {
     expect(checkRemoteRow("transactions", { ...ROW, id: "ZZZZZZZZZZZZZZZZZZZZZZZZZZ" }).ok).toBe(
       true,
     );

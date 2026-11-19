@@ -1,5 +1,5 @@
 import { shiftDay } from "../dates/calendar";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
@@ -76,7 +76,7 @@ export function projectRecurrences(
       const date = occurrenceOn(period, series.scheduleType, series.scheduleN);
       if (date <= after || date > limit) continue;
       if (series.endOn !== null && date > series.endOn) continue;
-      if (state.transactions[stableEntityId(occurrenceKey(series.id, period))] !== undefined) {
+      if (state.transactions[stableEntityIdV1(occurrenceKey(series.id, period))] !== undefined) {
         continue;
       }
 

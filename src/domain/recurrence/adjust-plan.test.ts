@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { shiftMonth } from "../dates/calendar";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
 import type { Recurrence } from "../model/recurrence";
 import type { RecurrenceAdjustment } from "../model/recurrence-adjustment";
@@ -36,7 +36,7 @@ function ocorrencia(
   const key = occurrenceKey(SALARIO.id, period);
   return {
     ...ALIVE,
-    id: stableEntityId(key),
+    id: stableEntityIdV1(key),
     kind: "income",
     description: "Salário",
     amountMinor,
@@ -329,7 +329,7 @@ describe("série semanal", () => {
     const key = occurrenceKey(SEMANAL.id, period);
     return {
       ...ocorrencia(period, amountMinor),
-      id: stableEntityId(key),
+      id: stableEntityIdV1(key),
       recurrenceId: SEMANAL.id,
       occurrenceKey: key,
       occurredOn: period,

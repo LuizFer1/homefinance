@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import { type AppState, EMPTY_APP_STATE } from "../model/app-state";
 import type { Recurrence } from "../model/recurrence";
 import type { Transaction } from "../model/transaction";
@@ -52,7 +52,7 @@ function occurrenceOf(series: Recurrence, period: string, occurredOn: string): T
   const key = occurrenceKey(series.id, period);
   return {
     ...BASE,
-    id: stableEntityId(key),
+    id: stableEntityIdV1(key),
     kind: series.kind,
     description: series.description,
     amountMinor: series.amountMinor,
@@ -134,7 +134,7 @@ describe("planOccurrences", () => {
     const key = occurrenceKey("SERIE-1", period);
     const apagada: Transaction = {
       ...BASE,
-      id: stableEntityId(key),
+      id: stableEntityIdV1(key),
       deletedAt: BASE.updatedAt,
       kind: "income",
       description: "Salário",
@@ -190,7 +190,7 @@ describe("planOccurrences", () => {
         "2026-07-07",
         "2026-08-07",
       ]);
-      expect(plans[0]?.entityId).toBe(stableEntityId(occurrenceKey("SERIE-2", "2026-06")));
+      expect(plans[0]?.entityId).toBe(stableEntityIdV1(occurrenceKey("SERIE-2", "2026-06")));
       expect(plans[0]?.draft.recurrenceId).toBe("SERIE-2");
     });
 

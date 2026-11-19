@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { stableEntityId } from "./stable-id";
+import { stableEntityIdV1 } from "./stable-id";
 
-describe("stableEntityId", () => {
+describe("stableEntityIdV1", () => {
   it("e deterministico e de largura fixa", () => {
-    const a = stableEntityId("rec:2026-08");
-    const b = stableEntityId("rec:2026-08");
+    const a = stableEntityIdV1("rec:2026-08");
+    const b = stableEntityIdV1("rec:2026-08");
     expect(a).toBe(b);
     expect(a).toHaveLength(26);
   });
 
   it("sementes diferentes produzem ids diferentes", () => {
-    expect(stableEntityId("rec:2026-08")).not.toBe(stableEntityId("rec:2026-09"));
+    expect(stableEntityIdV1("rec:2026-08")).not.toBe(stableEntityIdV1("rec:2026-09"));
   });
 });

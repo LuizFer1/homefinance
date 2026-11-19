@@ -1,6 +1,6 @@
 import { budgetIdFor } from "../budgets/budget-id";
 import { card, series } from "../cards/fixtures.fake";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import type { AppState } from "../model/app-state";
 import { EMPTY_APP_STATE } from "../model/app-state";
 import { category } from "../model/books.fake";
@@ -45,11 +45,11 @@ export const CAT = {
 } as const;
 
 /**
- * Id da ocorrência = `stableEntityId("<série>:<competência>")`, como a
+ * Id da ocorrência = `stableEntityIdV1("<série>:<competência>")`, como a
  * materialização grava. O hub reconhece a ocorrência já gravada por esse id.
  */
 export function occurrenceIdOf(recurrenceId: string, period: string): string {
-  return stableEntityId(`${recurrenceId}:${period}`);
+  return stableEntityIdV1(`${recurrenceId}:${period}`);
 }
 
 const users: User[] = [

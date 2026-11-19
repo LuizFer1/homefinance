@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { stableEntityId } from "../../domain/ids/stable-id";
+import { stableEntityIdV1 } from "../../domain/ids/stable-id";
 import { type AppState, EMPTY_APP_STATE } from "../../domain/model/app-state";
 import type { Asset } from "../../domain/model/asset";
 import type { Budget } from "../../domain/model/budget";
@@ -767,7 +767,7 @@ describe("DashboardPage", () => {
       // projeção sabe que julho já tem linha e não soma a regra por cima.
       const key = occurrenceKey(SALARY, "2026-07");
       const july = record({
-        id: stableEntityId(key),
+        id: stableEntityIdV1(key),
         kind: "income",
         amountMinor: 200_000,
         occurredOn: "2026-07-10",

@@ -1,4 +1,4 @@
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
@@ -138,7 +138,7 @@ export function periodChoices(state: AppState, series: Recurrence): PeriodChoice
   let cursor = periodOf(series.frequency, series.startOn);
 
   while (lastMonth === null || cursor <= lastMonth) {
-    const exists = state.transactions[stableEntityId(occurrenceKey(series.id, cursor))];
+    const exists = state.transactions[stableEntityIdV1(occurrenceKey(series.id, cursor))];
     if (initialIndex === -1 && exists === undefined) initialIndex = all.length;
     all.push(cursor);
     // Sem `endOn` o laço só termina aqui; a padrão sempre aparece, porque o

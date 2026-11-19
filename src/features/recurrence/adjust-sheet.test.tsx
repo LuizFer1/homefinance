@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/preact";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { stableEntityId } from "../../domain/ids/stable-id";
+import { stableEntityIdV1 } from "../../domain/ids/stable-id";
 import { type AppState, EMPTY_APP_STATE } from "../../domain/model/app-state";
 import type { Recurrence } from "../../domain/model/recurrence";
 import type { RecurrenceAdjustment } from "../../domain/model/recurrence-adjustment";
@@ -43,7 +43,7 @@ function ocorrencia(period: string, amountMinor = 300_000): Transaction {
   const key = occurrenceKey(SALARIO.id, period);
   return {
     ...ALIVE,
-    id: stableEntityId(key),
+    id: stableEntityIdV1(key),
     kind: "income",
     description: "Salário",
     amountMinor,

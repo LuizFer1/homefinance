@@ -1,6 +1,6 @@
 import { dayOfMonthClamped } from "../dates/business-day";
 import { shiftMonth } from "../dates/calendar";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import { type Book, DEFAULT_BOOK } from "../model/book";
 import type { RecurrenceDraft } from "../model/recurrence";
@@ -90,14 +90,14 @@ export function identify(entries: readonly ParsedEntry[], ctx: ImportContext): U
     const name = normalizeDescription(entry.rawDescription);
     if (entry.installment !== null) {
       const anchor = installmentAnchor(entry.date, entry.installment.k, ctx.referenceMonth);
-      return stableEntityId(
+      return stableEntityIdV1(
         `import:${salt}parcel:${method}:${name}:${entry.installment.n}:${entry.amountMinor}:${anchor}`,
       );
     }
     const base = `import:${salt}tx:${method}:${entry.date}:${name}:${entry.amountMinor}:${entry.kind}`;
     const ordinal = seen.get(base) ?? 0;
     seen.set(base, ordinal + 1);
-    return stableEntityId(`${base}:${ordinal}`);
+    return stableEntityIdV1(`${base}:${ordinal}`);
   });
 }
 
