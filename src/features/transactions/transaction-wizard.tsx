@@ -47,12 +47,21 @@ import { SummaryChip } from "../ui/summary-chip";
 import { IconTile } from "../ui/tile";
 import { Toggle } from "../ui/toggle";
 import { CategoryTile, MethodRow } from "./choice-tiles";
+import { type EditScope, SeriesScopeChoice, type SeriesScopeSummary } from "./series-scope-choice";
 
 export interface TransactionWizardProps {
   /** Registro em edição, ou null para criação. Montado com `key` pelo App. */
   editing: Transaction | null;
-  /** `recurrence` é a regra de série pedida na criação; null = lançamento avulso. */
-  onSubmit: (draft: TransactionDraft, recurrence: RecurrenceRule | null) => void;
+  /**
+   * `recurrence` é a regra de série pedida na criação; null = lançamento avulso.
+   * `scope` só vem na edição de ocorrência em que a escolha foi feita.
+   */
+  onSubmit: (draft: TransactionDraft, recurrence: RecurrenceRule | null, scope?: EditScope) => void;
+  /**
+   * Só em ocorrência de série que admite "este e os próximos": diz, para o
+   * rascunho a salvar, o que mudaria na série, ou null para salvar direto.
+   */
+  askScope?: (draft: TransactionDraft) => SeriesScopeSummary | null;
   onCancel: () => void;
   today: string;
   /** Tipo pré-selecionado na criação. Ignorado na edição, onde o registro manda. */
@@ -160,8 +169,15 @@ export function TransactionWizard({
   onMakeVariable,
   categoryIndex,
   onCreateCard,
+  askScope,
 }: TransactionWizardProps) {
   const [step, setStep] = useState(0);
+  // Rascunho à espera de "só este / este e os próximos". A escolha substitui o
+  // formulário (como o cadastro de cartão) e "Voltar" devolve tudo como estava.
+  const [pending, setPending] = useState<{
+    draft: TransactionDraft;
+    summary: SeriesScopeSummary;
+  } | null>(null);
   // Sheet do cartão no lugar do formulário (não por cima): o rascunho do lançamento
   // vive nos estados deste componente e sobrevive a abrir e fechar o cadastro.
   const [creatingCard, setCreatingCard] = useState(false);
@@ -352,36 +368,41 @@ export function TransactionWizard({
       return;
     }
 
-    onSubmit(
-      {
-        kind,
-        description: trimmed,
-        amountMinor,
-        currency: "BRL",
-        categoryId,
-        paymentMethodId,
-        // A limpeza acontece aqui, no draft, e não escondendo o campo. Um cashback
-        // pendurado numa despesa em dinheiro seria dado sujo permanente: invisível
-        // na tela, presente no export, replicado pelo sync.
-        // Campo vazio continua sendo `null`, não zero: "não houve cashback" e
-        // "voltou R$ 0,00" são coisas diferentes, e o banco guarda as duas.
-        cashbackMinor: showsCashback && cashback !== "" ? minorOf(cashback) : null,
-        occurredOn,
-        // Avulso: a série e a competência só entram pela materialização.
-        recurrenceId: editing?.recurrenceId ?? null,
-        occurrenceKey: editing?.occurrenceKey ?? null,
-        // Salvar uma estimativa pelo assistente é confirmá-la, mesmo sem mudar
-        // o valor: abrir e salvar é um ato deliberado, e deixá-la estimada
-        // depois de mexer na data seria um limbo sem explicação.
-        ...(editing?.estimated === true ? { estimated: false } : {}),
-        // Só quando mudou: criar sem escolher não grava a coluna, e abrir e salvar
-        // uma linha com valor futuro não o apaga.
-        ...(countMode !== initialCount
-          ? { reportState: countMode === "counts" ? null : countMode }
-          : {}),
-      },
-      recurrenceForSubmit(),
-    );
+    const draft: TransactionDraft = {
+      kind,
+      description: trimmed,
+      amountMinor,
+      currency: "BRL",
+      categoryId,
+      paymentMethodId,
+      // A limpeza acontece aqui, no draft, e não escondendo o campo. Um cashback
+      // pendurado numa despesa em dinheiro seria dado sujo permanente: invisível
+      // na tela, presente no export, replicado pelo sync.
+      // Campo vazio continua sendo `null`, não zero: "não houve cashback" e
+      // "voltou R$ 0,00" são coisas diferentes, e o banco guarda as duas.
+      cashbackMinor: showsCashback && cashback !== "" ? minorOf(cashback) : null,
+      occurredOn,
+      // Avulso: a série e a competência só entram pela materialização.
+      recurrenceId: editing?.recurrenceId ?? null,
+      occurrenceKey: editing?.occurrenceKey ?? null,
+      // Salvar uma estimativa pelo assistente é confirmá-la, mesmo sem mudar
+      // o valor: abrir e salvar é um ato deliberado, e deixá-la estimada
+      // depois de mexer na data seria um limbo sem explicação.
+      ...(editing?.estimated === true ? { estimated: false } : {}),
+      // Só quando mudou: criar sem escolher não grava a coluna, e abrir e salvar
+      // uma linha com valor futuro não o apaga.
+      ...(countMode !== initialCount
+        ? { reportState: countMode === "counts" ? null : countMode }
+        : {}),
+    };
+    // Só pergunta se algum campo que a série também guarda mudou; data, "Nas
+    // contas" ou confirmar a estimativa gravam direto.
+    const summary = editing === null || askScope === undefined ? null : askScope(draft);
+    if (summary !== null) {
+      setPending({ draft, summary });
+      return;
+    }
+    onSubmit(draft, recurrenceForSubmit());
   }
 
   const isLast = step === steps.length - 1;
@@ -394,6 +415,16 @@ export function TransactionWizard({
     />
   );
   const amountTone = kind === "income" ? "text-income-fg" : "";
+
+  if (pending !== null) {
+    return (
+      <SeriesScopeChoice
+        summary={pending.summary}
+        onChoose={(scope) => onSubmit(pending.draft, null, scope)}
+        onBack={() => setPending(null)}
+      />
+    );
+  }
 
   if (creatingCard && onCreateCard !== undefined) {
     return (
@@ -535,7 +566,9 @@ export function TransactionWizard({
             {editing?.recurrenceId != null && (
               <p class={`${HINT} flex items-center gap-1.5`}>
                 <Icon name="repeat" size={14} />
-                Faz parte de uma série. Alterar aqui muda só esta ocorrência.
+                {askScope === undefined
+                  ? "Faz parte de uma série. Alterar aqui muda só esta ocorrência."
+                  : "Faz parte de uma série. Ao salvar, você escolhe se a mudança vale só para este ou também para os próximos."}
               </p>
             )}
             {/*

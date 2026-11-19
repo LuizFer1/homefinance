@@ -147,6 +147,7 @@ export const HELP_TEXT_PT: Record<string, HelpText> = {
     answer: [
       "Abra uma ocorrência da série e escolha Reajustar série. Informe a partir de qual mês vale e o valor novo. Os meses seguintes passam a nascer com o valor novo.",
       "Lançamentos já feitos não mudam, e excluir um reajuste também não altera o que já foi gerado. Série de valor variável não tem reajuste, porque o valor dela é a média.",
+      "Também dá para mudar o valor, a categoria, a forma de pagamento ou a descrição direto num lançamento da série: ao salvar, o app pergunta Só este ou Este e os próximos. Os anteriores nunca mudam.",
     ],
   },
   "states-estimated": {

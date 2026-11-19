@@ -939,3 +939,91 @@ describe("parcelado", () => {
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ amountMinor: 10_000 }), null);
   });
 });
+
+describe("só este ou este e os próximos", () => {
+  const OCORRENCIA: Transaction = {
+    ...RECORD,
+    recurrenceId: "SERIE-1",
+    occurrenceKey: "SERIE-1:2026-08",
+  };
+
+  /** Pergunta só quando a categoria muda, como faria `planSeriesEdit`. */
+  function perguntaSeCategoria(draft: { categoryId: string | null }) {
+    return draft.categoryId === OCORRENCIA.categoryId
+      ? null
+      : { fields: ["categoryId" as const], following: 2 };
+  }
+
+  function trocarCategoriaESalvar() {
+    continuar();
+    escolher(/Alimentacao/);
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+  }
+
+  it("trocar a categoria pergunta antes de gravar e avisa quantas próximas mudam", () => {
+    const { onSubmit } = montar({ editing: OCORRENCIA, askScope: perguntaSeCategoria });
+    expect(screen.getByText(/você escolhe se a mudança vale só para este/)).toBeDefined();
+
+    trocarCategoriaESalvar();
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText(/Você mudou a categoria de um lançamento que se repete/)).toBeDefined();
+    expect(screen.getByText(/2 já lançados depois deste também mudam/)).toBeDefined();
+  });
+
+  it("'Este e os próximos' grava com o escopo da série", () => {
+    const { onSubmit } = montar({ editing: OCORRENCIA, askScope: perguntaSeCategoria });
+    trocarCategoriaESalvar();
+
+    fireEvent.click(screen.getByRole("button", { name: "Este e os próximos" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId: "cat-1" }),
+      null,
+      "following",
+    );
+  });
+
+  it("'Só este' grava só a ocorrência", () => {
+    const { onSubmit } = montar({ editing: OCORRENCIA, askScope: perguntaSeCategoria });
+    trocarCategoriaESalvar();
+
+    fireEvent.click(screen.getByRole("button", { name: "Só este" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId: "cat-1" }),
+      null,
+      "one",
+    );
+  });
+
+  it("'Voltar' devolve o formulário com o rascunho intacto", () => {
+    const { onSubmit } = montar({ editing: OCORRENCIA, askScope: perguntaSeCategoria });
+    trocarCategoriaESalvar();
+
+    fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    // De volta ao passo em que estava, com a categoria escolhida no resumo.
+    expect(screen.getByText("Forma de pagamento")).toBeDefined();
+    expect(screen.getByText(/Alimentacao/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Só este" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId: "cat-1" }),
+      null,
+      "one",
+    );
+  });
+
+  it("sem campo da série mudado, salva direto", () => {
+    const { onSubmit } = montar({ editing: OCORRENCIA, askScope: perguntaSeCategoria });
+    fireEvent.input(screen.getByLabelText("Descrição"), { target: { value: "Feira" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ description: "Feira" }), null);
+    expect(screen.queryByRole("button", { name: "Só este" })).toBeNull();
+  });
+});
