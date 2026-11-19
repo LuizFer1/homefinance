@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { collidingId } from "../ids/collision.fake";
+import { stableEntityIdV1, stableEntityIdV2 } from "../ids/stable-id";
 import { EMPTY_APP_STATE } from "../model/app-state";
 import type { Budget } from "../model/budget";
 import type { Category } from "../model/category";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
-import { budgetIdFor } from "./budget-id";
+import { budgetForCategory, budgetIdFor, budgetSeed, budgetTargetId } from "./budget-id";
 import { budgetOf, listBudgets } from "./list";
 
 const category = (id: string, extra: Partial<Category> = {}): Category => ({
@@ -106,5 +108,45 @@ describe("listBudgets", () => {
     it("R4: apagada não concorre, mesmo mais nova", () => {
       expect(vencedor(linha(ID_A, H2, 20_000, true), linha(ID_B, H1, 30_000))).toBe(30_000);
     });
+  });
+});
+
+describe("meta pela categoria", () => {
+  const CAT_A = "01JZ0000000000000000000CTA";
+  const CAT_B = collidingId("01JZ0000000000000000000", CAT_A, budgetSeed);
+  const SLOT = stableEntityIdV1(budgetSeed(CAT_A));
+  const V2_B = stableEntityIdV2(budgetSeed(CAT_B));
+  const H1 = "1793000000000-0000-01JZ0000000000000000000DV1";
+  const H2 = "1793000000000-0001-01JZ0000000000000000000DV2";
+
+  it("o par de teste colide na v1", () => {
+    expect(budgetIdFor(CAT_B)).toBe(SLOT);
+  });
+
+  it("lugar livre: v1, igual ao de hoje", () => {
+    expect(budgetForCategory(state([], []), CAT_B)).toBeNull();
+    expect(budgetTargetId(state([], []), CAT_B)).toBe(SLOT);
+  });
+
+  it("lugar com a meta de outra categoria, viva ou apagada: v2", () => {
+    const viva = state([budget(SLOT, CAT_A)], []);
+    expect(budgetForCategory(viva, CAT_B)).toBeNull();
+    expect(budgetTargetId(viva, CAT_B)).toBe(V2_B);
+    const apagada = state([budget(SLOT, CAT_A, { deletedAt: DELETED_AT })], []);
+    expect(budgetTargetId(apagada, CAT_B)).toBe(V2_B);
+  });
+
+  it("a categoria já tem linha, em qualquer id e mesmo apagada: é ela", () => {
+    const emV2 = budget(V2_B, CAT_B, { deletedAt: DELETED_AT });
+    const s = state([budget(SLOT, CAT_A), emV2], []);
+    expect(budgetForCategory(s, CAT_B)).toBe(emV2);
+    expect(budgetTargetId(s, CAT_B)).toBe(V2_B);
+  });
+
+  it("duas vivas da categoria: a da regra R", () => {
+    const a = budget("01JZ000000000000000000BGTA", CAT_B, { updatedAt: H2 });
+    const b = budget("01JZ000000000000000000BGTB", CAT_B, { updatedAt: H1 });
+    expect(budgetForCategory(state([a, b], []), CAT_B)).toBe(a);
+    expect(budgetForCategory(state([b, a], []), CAT_B)).toBe(a);
   });
 });
