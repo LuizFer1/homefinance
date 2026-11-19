@@ -56,7 +56,7 @@
   --color-fg: #202020;
   --color-divider: color-mix(in srgb, #202020 12%, transparent);
   /*
-   * O dourado do escuro (#e2c15a) da 1,6:1 sobre branco: no claro o acento
+   * O dourado do escuro (#e2c15a) da 1,75:1 sobre branco: no claro o acento
    * tambem e texto (link, `outline`), entao ele foi escurecido ate passar 4,5:1
    * sobre `surface` e sobre `bg`. Clarear de volta reprova o texto de acento.
    */
