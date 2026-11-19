@@ -607,6 +607,18 @@ describe("editFollowing", () => {
     expect(session.state.value.transactions[id]?.userId).toBe("AUTOR-1");
   });
 
+  it("valor inválido no reajuste rejeita e não grava nada", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+    const { id, draft } = rascunhoDe(series.id, "2026-07", { amountMinor: 1.5 });
+
+    await expect(store.editFollowing(id, draft)).rejects.toThrow("Valor de reajuste inválido");
+
+    expect(session.error.value).toBe("Valor de reajuste inválido");
+    expect(await db.recurrenceAdjustments.count()).toBe(0);
+    expect(amountOf(series.id, "2026-07")).toBe(500_000);
+  });
+
   it("sem nada da série para mudar, grava só a ocorrência", async () => {
     await store.createSeries(DRAFT, MENSAL, "2026-08-10");
     const series = onlySeries();

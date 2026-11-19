@@ -63,6 +63,17 @@ export interface RecurrenceStore {
   repairAuthors: () => Promise<void>;
 }
 
+/**
+ * Guarda para qualquer chamador, não só o sheet: centavo fracionário ou valor
+ * acima do que o campo de dinheiro aceita entraria num reajuste, que é eterno. O
+ * teto é o mesmo `MAX_MINOR` do sheet, para os dois não discordarem.
+ */
+function assertAdjustmentAmount(amountMinor: number): void {
+  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || amountMinor > MAX_MINOR) {
+    throw new Error("Valor de reajuste inválido");
+  }
+}
+
 export function createRecurrenceStore(session: Session): RecurrenceStore {
   /**
    * Linha do reajuste pronta para o lote. Mesma competência é a mesma linha (id
@@ -112,8 +123,10 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         await session.mutate("transactions", (repo) => repo.update(transactionId, semAutor));
         return;
       }
-      if (plan.adjustment !== null && plan.adjustmentPlan === null) {
-        throw new Error("Série não existe");
+      if (plan.adjustment !== null) {
+        // A mesma guarda de `adjustSeries`: o reajuste é eterno na tabela.
+        assertAdjustmentAmount(plan.adjustment.amountMinor);
+        if (plan.adjustmentPlan === null) throw new Error("Série não existe");
       }
 
       const clock = session.clock();
@@ -212,17 +225,7 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
 
   async function adjustSeries(input: AdjustmentInput): Promise<void> {
     try {
-      // Guarda para qualquer chamador, não só o sheet: centavo fracionário ou
-      // valor acima do que o campo de dinheiro aceita entraria no log, que é
-      // eterno. O teto é o mesmo `MAX_MINOR` do sheet, para os dois não
-      // discordarem sobre o que é um valor válido.
-      if (
-        !Number.isSafeInteger(input.amountMinor) ||
-        input.amountMinor <= 0 ||
-        input.amountMinor > MAX_MINOR
-      ) {
-        throw new Error("Valor de reajuste inválido");
-      }
+      assertAdjustmentAmount(input.amountMinor);
       const state = session.state.value;
       // A estimativa da variável é a média das confirmadas: um reajuste seria
       // ignorado por ela e ficaria na tabela como um fato que não vale.

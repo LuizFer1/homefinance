@@ -91,9 +91,11 @@ export interface TransactionWizardProps {
 }
 
 /**
- * Criação tem etapa própria de recorrência; edição não — alterar a série não é
- * o mesmo que editar uma ocorrência, e misturar os dois no mesmo fluxo esconderia
- * qual decisão o usuário está tomando.
+ * Criação tem etapa própria de recorrência; edição não — mudar a regra da série
+ * (frequência, dia, data final) não é o mesmo que editar uma ocorrência, e
+ * misturar os dois no mesmo fluxo esconderia qual decisão o usuário está tomando.
+ * Os dados que a série copia (categoria, valor...) vão para ela só pela escolha
+ * "Este e os próximos" ao salvar.
  */
 //
 // "Repetir" é a última: parcelar depende do valor já digitado e é a decisão que
