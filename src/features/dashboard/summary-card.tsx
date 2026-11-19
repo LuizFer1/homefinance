@@ -40,6 +40,30 @@ function RowButton({ label, onClick }: { label: string; onClick: () => void }) {
 }
 
 /**
+ * "15% acima do seu normal". Acima é atenção (`warning`), não erro: gastar mais que o
+ * normal no meio do mês ainda tem conserto. Abaixo é a boa notícia, em verde; igual
+ * fica neutro. O sinal vem já arredondado do domínio, igual ao hub.
+ */
+function PaceChange({ percent }: { percent: number }) {
+  if (percent === 0) {
+    return (
+      <>
+        <strong class="font-medium">igual</strong> ao seu normal
+      </>
+    );
+  }
+  const above = percent > 0;
+  return (
+    <>
+      <strong class={`font-medium ${above ? "text-warning" : "text-income-fg"}`}>
+        {Math.abs(percent)}% {above ? "acima" : "abaixo"}
+      </strong>{" "}
+      do seu normal
+    </>
+  );
+}
+
+/**
  * "Como estou": o saldo do mês com o ritmo de gastos colado nele.
  *
  * Um card só, de propósito. O saldo diz quanto e o ritmo diz se está indo bem;
@@ -113,16 +137,11 @@ export function SummaryCard({
         <>
           <div aria-hidden="true" class="hf-rule mt-4" />
           <p data-testid="pace-sentence" class="mt-4 text-sm leading-normal text-fg/70 text-pretty">
-            {brl(pace.spentMinor)} até o dia {pace.cutoff}
-            {pace.change !== null && (
+            {brl(pace.spentMinor)} {isCurrent ? `até o dia ${pace.cutoff}` : "no mês"}
+            {pace.changePercent !== null && (
               <>
                 {" — "}
-                <strong
-                  class={`font-medium ${pace.change <= 0 ? "text-income-fg" : "text-expense-fg"}`}
-                >
-                  {Math.round(Math.abs(pace.change) * 100)}% {pace.change <= 0 ? "abaixo" : "acima"}
-                </strong>{" "}
-                do mesmo ponto de {monthWord(previous)}
+                <PaceChange percent={pace.changePercent} />
               </>
             )}
           </p>
@@ -131,13 +150,15 @@ export function SummaryCard({
               <span aria-hidden="true" class="h-0.5 w-3 rounded-full bg-accent" />
               {monthLabelShort(month)}
             </span>
-            <span class="flex items-center gap-2">
-              <span
-                aria-hidden="true"
-                class="w-3 border-t-[1.5px] border-dashed border-neutral-600"
-              />
-              {monthLabelShort(previous)}
-            </span>
+            {pace.normal.length > 0 && (
+              <span class="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  class="w-3 border-t-[1.5px] border-dashed border-neutral-600"
+                />
+                seu normal
+              </span>
+            )}
           </p>
           <PaceChart pace={pace} showToday={isCurrent} monthShort={monthLabelShort(month)} />
         </>

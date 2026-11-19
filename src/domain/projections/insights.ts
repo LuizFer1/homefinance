@@ -63,48 +63,111 @@ function cumulativeExpense(items: Transaction[], month: string): number[] {
   });
 }
 
-export interface SpendingPace {
-  /** Acumulado por dia no mês escolhido. */
-  current: number[];
-  /** Acumulado por dia no mês anterior, inteiro. */
-  previous: number[];
-  /** Último dia que já aconteceu: hoje no mês corrente, o fim num mês passado. */
-  cutoff: number;
-  spentMinor: number;
-  previousAtCutoffMinor: number;
-  /** Variação contra o anterior no mesmo dia; `null` se o anterior não gastou nada. */
-  change: number | null;
+/** Quantos meses anteriores formam "o seu normal". */
+export const NORMAL_MONTHS = 3;
+
+/**
+ * Mês ('YYYY-MM') do primeiro lançamento vivo, conte ele nos totais ou não.
+ * `null` sem lançamento. É o começo do histórico: mês anterior a ele "não
+ * existia", não "gastou zero".
+ */
+export function firstMonthOf(items: Transaction[]): string | null {
+  let first: string | null = null;
+  for (const item of items) {
+    const month = monthOf(item.occurredOn);
+    if (first === null || month < first) first = month;
+  }
+  return first;
 }
 
 /**
- * Ritmo de gastos: quanto já saiu até hoje contra quanto tinha saído até o
- * mesmo dia do mês anterior.
+ * Meses que formam "o seu normal" de `month`: os 3 anteriores, do mais antigo ao
+ * mais novo, só os que são do primeiro lançamento em diante (mesma regra do custo
+ * essencial). Dividir por 3 com um mês de histórico daria um normal três vezes
+ * menor que o real e todo mês pareceria "muito acima". Um mês vazio **depois**
+ * do primeiro lançamento conta, valendo zero: ele existiu.
+ */
+export function referenceMonths(items: Transaction[], month: string): string[] {
+  const first = firstMonthOf(items);
+  if (first === null) return [];
+  const months: string[] = [];
+  for (let back = NORMAL_MONTHS; back >= 1; back -= 1) {
+    const candidate = shiftMonth(month, -back);
+    if (candidate >= first) months.push(candidate);
+  }
+  return months;
+}
+
+export interface SpendingPace {
+  /** Acumulado por dia no mês escolhido. */
+  current: number[];
+  /**
+   * "Seu normal": média, dia a dia, do acumulado dos meses de referência, com um
+   * valor por dia do mês escolhido. Vazio quando não há mês de referência.
+   */
+  normal: number[];
+  /** Meses que entram no normal, do mais antigo ao mais novo. */
+  referenceMonths: string[];
+  /** Último dia que já aconteceu: hoje no mês corrente, o fim num mês passado. */
+  cutoff: number;
+  spentMinor: number;
+  /** Normal no dia do corte; `null` sem mês de referência. */
+  normalAtCutoffMinor: number | null;
+  /** Variação contra o normal no mesmo dia; `null` sem normal ou com normal zero. */
+  change: number | null;
+  /**
+   * `change` em porcentagem inteira, com sinal (`Math.round`, igual ao `js_round` do
+   * hub). Arredondar o módulo divergiria do hub em −x,5 e poderia escrever "0% acima".
+   */
+  changePercent: number | null;
+}
+
+/**
+ * Ritmo de gastos: quanto já saiu até hoje contra "o seu normal" no mesmo dia —
+ * a média dos 3 meses anteriores com dado.
  *
- * Comparar com o total do mês anterior seria injusto no dia 10 — sempre daria
- * "muito abaixo". O ponto de comparação é o mesmo dia; se o anterior é mais
- * curto (31 de março contra fevereiro), vale o último dia dele.
+ * Comparar com o total de um mês seria injusto no dia 10 — sempre daria "muito
+ * abaixo". O ponto de comparação é o mesmo dia; num mês de referência mais curto
+ * (31 de março contra fevereiro), vale o último dia dele. E a média de 3 meses,
+ * não só o anterior: um mês atípico (13º, viagem) não vira a régua do seguinte.
  */
 export function spendingPace(items: Transaction[], month: string, today: string): SpendingPace {
   const current = cumulativeExpense(items, month);
-  const previous = cumulativeExpense(items, shiftMonth(month, -1));
   const thisMonth = monthOf(today);
+  const months = referenceMonths(items, month);
+  const curves = months.map((reference) => cumulativeExpense(items, reference));
+  const normal =
+    curves.length === 0
+      ? []
+      : current.map((_, index) => {
+          const day = index + 1;
+          const sum = curves.reduce(
+            (acc, curve) => acc + (curve[Math.min(day, curve.length) - 1] ?? 0),
+            0,
+          );
+          return Math.round(sum / curves.length);
+        });
 
   const cutoff =
     month === thisMonth ? Number(today.slice(8, 10)) : month < thisMonth ? current.length : 0;
   const spentMinor = cutoff === 0 ? 0 : (current[cutoff - 1] ?? 0);
-  const previousAtCutoffMinor =
-    cutoff === 0 ? 0 : (previous[Math.min(cutoff, previous.length) - 1] ?? 0);
+  const normalAtCutoffMinor =
+    normal.length === 0 ? null : cutoff === 0 ? 0 : (normal[cutoff - 1] ?? 0);
+  // Mesma conta do hub (`gasto ÷ normal − 1`), para o ponto flutuante dar o mesmo resultado.
+  const change =
+    normalAtCutoffMinor === null || normalAtCutoffMinor === 0
+      ? null
+      : spentMinor / normalAtCutoffMinor - 1;
 
   return {
     current,
-    previous,
+    normal,
+    referenceMonths: months,
     cutoff,
     spentMinor,
-    previousAtCutoffMinor,
-    change:
-      previousAtCutoffMinor === 0
-        ? null
-        : (spentMinor - previousAtCutoffMinor) / previousAtCutoffMinor,
+    normalAtCutoffMinor,
+    change,
+    changePercent: change === null ? null : Math.round(change * 100),
   };
 }
 

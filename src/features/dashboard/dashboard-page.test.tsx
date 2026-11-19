@@ -10,6 +10,8 @@ import type { PaymentMethod } from "../../domain/model/payment-method";
 import type { Recurrence } from "../../domain/model/recurrence";
 import { ALIVE } from "../../domain/model/row.fake";
 import type { Transaction } from "../../domain/model/transaction";
+import { GRAFITE_TODAY, grafiteState } from "../../domain/projections/grafite.fake";
+import { listTransactions } from "../../domain/projections/selectors";
 import { occurrenceKey } from "../../domain/recurrence/schedule";
 import { DashboardPage } from "./dashboard-page";
 
@@ -300,7 +302,7 @@ describe("DashboardPage", () => {
     expect(screen.getByText(/412,00 a mais que julho/)).toBeDefined();
   });
 
-  it("o ritmo compara com o mesmo dia do mês anterior", () => {
+  it("o ritmo compara com o seu normal no mesmo dia", () => {
     render(
       <DashboardPage
         items={[
@@ -313,11 +315,56 @@ describe("DashboardPage", () => {
       />,
     );
 
+    // Só julho tem dado (o primeiro lançamento é de julho): o normal é julho sozinho.
     // Frase curta não leva ponto final.
     expect(screen.getByTestId("pace-sentence").textContent).toMatch(
-      /^R\$\s92,00 até o dia 10 — 8% abaixo do mesmo ponto de julho$/u,
+      /^R\$\s92,00 até o dia 10 — 8% abaixo do seu normal$/u,
     );
-    expect(screen.getByText(/8% abaixo/)).toBeDefined();
+    expect(screen.getByText(/8% abaixo/).className).toContain("text-income-fg");
+    expect(screen.getByText("seu normal")).toBeDefined();
+  });
+
+  it("fixture grafite: 15% acima do seu normal, em atenção", () => {
+    const state = grafiteState();
+    render(<DashboardPage items={listTransactions(state)} state={state} today={GRAFITE_TODAY} />);
+
+    expect(screen.getByTestId("pace-sentence").textContent).toMatch(
+      /^R\$\s3\.113,41 até o dia 19 — 15% acima do seu normal$/u,
+    );
+    // Acima do normal é atenção, não erro: `warning`, não `expense-fg`.
+    expect(screen.getByText("15% acima").className).toContain("text-warning");
+  });
+
+  it("num mês fechado o ritmo fala do mês inteiro", () => {
+    render(
+      <DashboardPage
+        items={[
+          record({ id: "a", amountMinor: 9200, occurredOn: "2026-07-03" }),
+          record({ id: "b", amountMinor: 9200, occurredOn: "2026-06-04" }),
+        ]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Mês anterior" }));
+
+    expect(screen.getByTestId("pace-sentence").textContent).toMatch(
+      /^R\$\s92,00 no mês — igual ao seu normal$/u,
+    );
+  });
+
+  it("sem mês de referência o ritmo não compara nem desenha o normal", () => {
+    render(
+      <DashboardPage
+        items={[record({ id: "a", amountMinor: 9200, occurredOn: "2026-08-03" })]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    expect(screen.getByTestId("pace-sentence").textContent).toMatch(/^R\$\s92,00 até o dia 10$/u);
+    expect(screen.queryByText("seu normal")).toBeNull();
+    expect(screen.getByRole("img", { name: "Gasto acumulado por dia" })).toBeDefined();
   });
 
   it("sem despesa no mês o ritmo não aparece", () => {

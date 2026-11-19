@@ -4,6 +4,7 @@ import type { Category } from "../model/category";
 import type { PaymentMethod } from "../model/payment-method";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
 import type { Transaction } from "../model/transaction";
+import { GRAFITE_TODAY, grafiteState } from "./grafite.fake";
 import {
   averageSurplus,
   cashbackSummary,
@@ -13,6 +14,7 @@ import {
   monthComparison,
   spendingPace,
 } from "./insights";
+import { listTransactions } from "./selectors";
 
 function record(overrides: Partial<Transaction> & { id: string }): Transaction {
   return {
@@ -96,6 +98,7 @@ describe("monthComparison", () => {
 });
 
 describe("spendingPace", () => {
+  // Setembro contra o normal de junho, julho e agosto (o primeiro lançamento é de junho).
   const items = [
     record({ id: "s1", amountMinor: 1000, occurredOn: "2026-09-01" }),
     record({ id: "s2", amountMinor: 2000, occurredOn: "2026-09-10" }),
@@ -103,27 +106,35 @@ describe("spendingPace", () => {
     record({ id: "a1", amountMinor: 1500, occurredOn: "2026-08-05" }),
     record({ id: "a2", amountMinor: 2500, occurredOn: "2026-08-20" }),
     record({ id: "a3", amountMinor: 800, occurredOn: "2026-08-31" }),
+    record({ id: "j1", amountMinor: 3000, occurredOn: "2026-07-03" }),
+    record({ id: "j2", amountMinor: 1000, occurredOn: "2026-07-24" }),
+    record({ id: "u1", amountMinor: 500, occurredOn: "2026-06-15" }),
     // Receita não entra no ritmo de gasto.
     record({ id: "r", kind: "income", amountMinor: 50_000, occurredOn: "2026-09-02" }),
   ];
 
-  it("acumula a despesa dia a dia nos dois meses", () => {
+  it("acumula a despesa dia a dia e o normal é a média dos 3 anteriores no mesmo dia", () => {
     const pace = spendingPace(items, "2026-09", "2026-09-24");
 
+    expect(pace.referenceMonths).toEqual(["2026-06", "2026-07", "2026-08"]);
     expect(pace.current).toHaveLength(30);
-    expect(pace.previous).toHaveLength(31);
+    // O normal acompanha os dias do mês escolhido.
+    expect(pace.normal).toHaveLength(30);
     expect(pace.current[0]).toBe(1000);
     expect(pace.current[9]).toBe(3000);
-    expect(pace.previous[30]).toBe(4800);
+    expect(pace.normal[0]).toBe(0);
+    // Dia 24: (500 + 4000 + 4000) / 3 = 2833,33.
+    expect(pace.normal[23]).toBe(2833);
   });
 
-  it("no mês corrente corta em hoje e compara no mesmo dia do anterior", () => {
+  it("no mês corrente corta em hoje e compara com o normal do mesmo dia", () => {
     const pace = spendingPace(items, "2026-09", "2026-09-24");
 
     expect(pace.cutoff).toBe(24);
     expect(pace.spentMinor).toBe(3000);
-    expect(pace.previousAtCutoffMinor).toBe(4000);
-    expect(pace.change).toBeCloseTo(-0.25);
+    expect(pace.normalAtCutoffMinor).toBe(2833);
+    expect(pace.change).toBeCloseTo(3000 / 2833 - 1);
+    expect(pace.changePercent).toBe(6);
   });
 
   it("num mês passado corta no último dia", () => {
@@ -131,15 +142,29 @@ describe("spendingPace", () => {
 
     expect(pace.cutoff).toBe(31);
     expect(pace.spentMinor).toBe(4800);
+    // Maio é anterior ao primeiro lançamento: o normal de agosto é junho e julho.
+    expect(pace.referenceMonths).toEqual(["2026-06", "2026-07"]);
+    // Dia 31: junho (30 dias) vale o dia 30 = 500; julho = 4000.
+    expect(pace.normalAtCutoffMinor).toBe(2250);
   });
 
-  it("sem gasto no anterior não inventa porcentagem", () => {
-    const pace = spendingPace(items.slice(0, 3), "2026-09", "2026-09-24");
+  it("sem gasto no normal não inventa porcentagem", () => {
+    const pace = spendingPace(
+      [
+        ...items.slice(0, 3),
+        record({ id: "ra", kind: "income", amountMinor: 1000, occurredOn: "2026-08-02" }),
+      ],
+      "2026-09",
+      "2026-09-24",
+    );
 
+    expect(pace.referenceMonths).toEqual(["2026-08"]);
+    expect(pace.normalAtCutoffMinor).toBe(0);
     expect(pace.change).toBeNull();
+    expect(pace.changePercent).toBeNull();
   });
 
-  it("dia de corte além do fim do mês anterior usa o último dia dele", () => {
+  it("dia de corte além do fim de um mês de referência usa o último dia dele", () => {
     // 31 de março contra fevereiro de 28 dias.
     const pace = spendingPace(
       [record({ id: "f", amountMinor: 700, occurredOn: "2026-02-28" })],
@@ -147,7 +172,80 @@ describe("spendingPace", () => {
       "2026-03-31",
     );
 
-    expect(pace.previousAtCutoffMinor).toBe(700);
+    expect(pace.normalAtCutoffMinor).toBe(700);
+  });
+
+  it("divide só pelos meses com dado", () => {
+    // Primeiro lançamento em agosto: junho e julho não existiam e não puxam o normal para baixo.
+    const pace = spendingPace(items.slice(0, 6), "2026-09", "2026-09-24");
+
+    expect(pace.referenceMonths).toEqual(["2026-08"]);
+    expect(pace.normalAtCutoffMinor).toBe(4000);
+    expect(pace.changePercent).toBe(-25);
+  });
+
+  it("mês sem gasto depois do primeiro lançamento conta como zero", () => {
+    // Julho existe (é depois de junho) e não gastou nada: entra na média valendo zero.
+    const pace = spendingPace(
+      [...items.slice(0, 6), items[8] as Transaction],
+      "2026-09",
+      "2026-09-24",
+    );
+
+    expect(pace.referenceMonths).toEqual(["2026-06", "2026-07", "2026-08"]);
+    expect(pace.normalAtCutoffMinor).toBe(1500);
+  });
+
+  it("sem mês de referência não compara", () => {
+    const pace = spendingPace(items.slice(0, 3), "2026-09", "2026-09-24");
+
+    expect(pace.referenceMonths).toEqual([]);
+    expect(pace.normal).toEqual([]);
+    expect(pace.normalAtCutoffMinor).toBeNull();
+    expect(pace.change).toBeNull();
+    expect(pace.changePercent).toBeNull();
+  });
+
+  it("lançamento marcado também define o primeiro mês", () => {
+    // Mesma regra do custo essencial: o histórico começa no primeiro lançamento vivo,
+    // conte ele nos totais ou não.
+    const pace = spendingPace(
+      [
+        ...items.slice(0, 6),
+        record({ id: "t", amountMinor: 9000, occurredOn: "2026-07-02", reportState: "transfer" }),
+      ],
+      "2026-09",
+      "2026-09-24",
+    );
+
+    expect(pace.referenceMonths).toEqual(["2026-07", "2026-08"]);
+    // A transferência não soma: julho vale zero. (0 + 4000) / 2.
+    expect(pace.normalAtCutoffMinor).toBe(2000);
+  });
+
+  it("a porcentagem arredonda com sinal, como o hub", () => {
+    // 1 contra 8: −87,5% arredonda para −87 (Math.round), não para 88 no módulo.
+    const pace = spendingPace(
+      [
+        record({ id: "n", amountMinor: 1, occurredOn: "2026-09-01" }),
+        record({ id: "o", amountMinor: 8, occurredOn: "2026-08-01" }),
+      ],
+      "2026-09",
+      "2026-09-24",
+    );
+
+    expect(pace.changePercent).toBe(-87);
+  });
+
+  it("fixture grafite: 15% acima do normal de outubro no dia 19", () => {
+    const pace = spendingPace(listTransactions(grafiteState()), "2026-11", GRAFITE_TODAY);
+
+    expect(pace.referenceMonths).toEqual(["2026-10"]);
+    expect(pace.spentMinor).toBe(311_341);
+    expect(pace.normalAtCutoffMinor).toBe(270_500);
+    expect(pace.changePercent).toBe(15);
+    // Normal no fim (dia 30 de novembro) = outubro inteiro.
+    expect(pace.normal[29]).toBe(366_200);
   });
 });
 

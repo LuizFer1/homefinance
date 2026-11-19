@@ -16,11 +16,12 @@ const PAD_BOTTOM = 6;
 
 /**
  * Gasto acumulado por dia: o mês escolhido em linha cheia de acento com área,
- * o anterior tracejado no mês inteiro.
+ * "o seu normal" (média dos 3 meses anteriores) tracejado no mês inteiro. Sem mês
+ * de referência não há normal, e a linha tracejada some em vez de desenhar zero.
  *
  * Acumulado e não diário: o diário é serrilhado (aluguel num dia, nada no
  * outro) e esconde a pergunta que o card responde — "estou gastando mais rápido
- * que no mês passado?". A linha acumulada responde olhando só a inclinação.
+ * que o normal?". A linha acumulada responde olhando só a inclinação.
  *
  * SVG à mão, sem biblioteca de gráfico: são duas polilinhas, e qualquer
  * biblioteca custaria mais que o app inteiro no teto de bundle.
@@ -28,7 +29,7 @@ const PAD_BOTTOM = 6;
 export function PaceChart({ pace, showToday, monthShort }: PaceChartProps) {
   const days = pace.current.length;
   const shown = pace.current.slice(0, Math.max(pace.cutoff, 1));
-  const max = Math.max(1, ...shown, ...pace.previous);
+  const max = Math.max(1, ...shown, ...pace.normal);
   const x = (day: number) => PAD_X + ((day - 1) / Math.max(days - 1, 1)) * (W - 2 * PAD_X);
   const y = (value: number) => H - PAD_BOTTOM - (value / max) * (H - PAD_TOP - PAD_BOTTOM);
 
@@ -54,15 +55,21 @@ export function PaceChart({ pace, showToday, monthShort }: PaceChartProps) {
         viewBox={`0 0 ${W} ${H}`}
         class="h-auto w-full overflow-visible"
         role="img"
-        aria-label="Gasto acumulado por dia, comparado ao mês anterior"
+        aria-label={
+          pace.normal.length > 0
+            ? "Gasto acumulado por dia, comparado ao seu normal"
+            : "Gasto acumulado por dia"
+        }
       >
-        <path
-          d={line(pace.previous)}
-          fill="none"
-          stroke="var(--color-neutral-600)"
-          stroke-width="1.5"
-          stroke-dasharray="4 4"
-        />
+        {pace.normal.length > 0 && (
+          <path
+            d={line(pace.normal)}
+            fill="none"
+            stroke="var(--color-neutral-600)"
+            stroke-width="1.5"
+            stroke-dasharray="4 4"
+          />
+        )}
         {pace.cutoff > 0 && (
           <>
             <path d={area} fill="color-mix(in srgb, var(--color-accent) 14%, transparent)" />
