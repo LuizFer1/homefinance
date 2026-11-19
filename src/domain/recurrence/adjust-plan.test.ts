@@ -174,6 +174,49 @@ describe("planAdjustment", () => {
     ]);
   });
 
+  // Spec do id estável, §4.3: o reajuste da competência pode estar num id que não é o v1
+  // (v2 depois da colisão, ou duplicata de aparelho velho). O "depois" tira pela chave.
+  it("reajuste gravado na competência em id que não é o v1 é substituído, não somado", () => {
+    const outroId = { ...ajuste("2026-07", 550_000), id: "BBBBBBBBBBBBBBBBBBBBBBBBBB" };
+    const state = estado(
+      [ocorrencia("2026-06"), ocorrencia("2026-07", 550_000), ocorrencia("2026-08", 550_000)],
+      [outroId],
+    );
+    const plan = planAdjustment(state, {
+      recurrenceId: SALARIO.id,
+      fromPeriod: "2026-07",
+      amountMinor: 560_000,
+    });
+
+    expect(plan?.updates.map((u) => [u.transaction.occurredOn, u.amountMinor])).toEqual([
+      ["2026-07-05", 560_000],
+      ["2026-08-05", 560_000],
+    ]);
+  });
+
+  it("duas linhas vivas na competência (v1 e outra): as duas saem do depois", () => {
+    const v1 = { ...ajuste("2026-07", 550_000), updatedAt: "1754568000000-0000-AAAA" };
+    const outra = {
+      ...ajuste("2026-07", 550_000),
+      id: "ZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+      updatedAt: "1754568000005-0000-AAAA",
+    };
+    const state = estado(
+      [ocorrencia("2026-06"), ocorrencia("2026-07", 550_000), ocorrencia("2026-08", 550_000)],
+      [v1, outra],
+    );
+    const plan = planAdjustment(state, {
+      recurrenceId: SALARIO.id,
+      fromPeriod: "2026-07",
+      amountMinor: 560_000,
+    });
+
+    expect(plan?.updates.map((u) => [u.transaction.occurredOn, u.amountMinor])).toEqual([
+      ["2026-07-05", 560_000],
+      ["2026-08-05", 560_000],
+    ]);
+  });
+
   it("ocorrência que já tem o valor novo não aparece como mantida", () => {
     const plan = planAdjustment(estado([ocorrencia("2026-07"), ocorrencia("2026-08", 550_000)]), {
       recurrenceId: SALARIO.id,

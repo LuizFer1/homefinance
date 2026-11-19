@@ -70,4 +70,41 @@ describe("listBudgets", () => {
     expect(budgetOf(s, "A")?.limitMinor).toBe(20_000);
     expect(budgetOf(s, "B")).toBeNull();
   });
+
+  // Regra R (spec do id estável, §4.3 e §8): os mesmos vetores R1, R2 e R4 do hub
+  // (`budgets.rs`, `regra_r`). O R3 do hub (sem `updatedAt` perde) não tem par: no app toda
+  // meta gravada tem versão.
+  describe("regra R: mesma categoria", () => {
+    const CATEGORY = "01JZ0000000000000000000CT1";
+    const ID_A = "01JZ000000000000000000BGTA";
+    const ID_B = "01JZ000000000000000000BGTB";
+    const H1 = "1793000000000-0000-01JZ0000000000000000000DV1";
+    const H2 = "1793000000000-0001-01JZ0000000000000000000DV2";
+
+    const linha = (id: string, updatedAt: string, limitMinor: number, deleted = false) =>
+      budget(id, CATEGORY, { updatedAt, limitMinor, deletedAt: deleted ? updatedAt : null });
+
+    const vencedor = (a: Budget, b: Budget) => {
+      const limite = (x: Budget, y: Budget) => {
+        const atual = listBudgets(state([x, y], [category(CATEGORY)]));
+        expect(atual).toHaveLength(1);
+        return atual[0]?.limitMinor;
+      };
+      const ida = limite(a, b);
+      expect(limite(b, a)).toBe(ida);
+      return ida;
+    };
+
+    it("R1: vale a de updatedAt maior, mesmo com o id menor", () => {
+      expect(vencedor(linha(ID_A, H2, 20_000), linha(ID_B, H1, 30_000))).toBe(20_000);
+    });
+
+    it("R2: empate de updatedAt, vale a de id maior", () => {
+      expect(vencedor(linha(ID_A, H1, 20_000), linha(ID_B, H1, 30_000))).toBe(30_000);
+    });
+
+    it("R4: apagada não concorre, mesmo mais nova", () => {
+      expect(vencedor(linha(ID_A, H2, 20_000, true), linha(ID_B, H1, 30_000))).toBe(30_000);
+    });
+  });
 });
