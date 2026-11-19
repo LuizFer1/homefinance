@@ -541,3 +541,118 @@ describe("autoria", () => {
     expect(session.state.value).toBe(antes);
   });
 });
+
+describe("editFollowing", () => {
+  /** Rascunho que o formulário mandaria para a ocorrência da competência. */
+  function rascunhoDe(seriesId: string, period: string, over: Partial<TransactionDraft> = {}) {
+    const row = session.state.value.transactions[stableEntityId(occurrenceKey(seriesId, period))];
+    if (row === undefined) throw new Error(`${period} não materializou`);
+    const draft: TransactionDraft = {
+      kind: row.kind,
+      description: row.description,
+      amountMinor: row.amountMinor,
+      currency: "BRL",
+      categoryId: row.categoryId,
+      paymentMethodId: row.paymentMethodId,
+      cashbackMinor: row.cashbackMinor,
+      occurredOn: row.occurredOn,
+      recurrenceId: row.recurrenceId,
+      occurrenceKey: row.occurrenceKey,
+      ...over,
+    };
+    return { id: row.id, draft };
+  }
+
+  function categoriaDe(seriesId: string, period: string) {
+    return session.state.value.transactions[stableEntityId(occurrenceKey(seriesId, period))]
+      ?.categoryId;
+  }
+
+  it("leva a categoria à série e às próximas; o mês anterior fica", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+    const { id, draft } = rascunhoDe(series.id, "2026-07", { categoryId: "CAT-NOVA" });
+
+    await store.editFollowing(id, draft);
+
+    expect(session.state.value.recurrences[series.id]?.categoryId).toBe("CAT-NOVA");
+    expect(categoriaDe(series.id, "2026-06")).toBeNull();
+    expect(categoriaDe(series.id, "2026-07")).toBe("CAT-NOVA");
+    expect(categoriaDe(series.id, "2026-08")).toBe("CAT-NOVA");
+    expect((await db.recurrences.get(series.id))?.categoryId).toBe("CAT-NOVA");
+    expect((await db.recurrences.get(series.id))?.dirty).toBe(1);
+
+    // O mês seguinte nasce da série já atualizada.
+    await store.materializeDue("2026-09-10");
+    expect(categoriaDe(series.id, "2026-09")).toBe("CAT-NOVA");
+  });
+
+  it("valor vira reajuste a partir da competência; autor e campos da série não mudam", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+    const { id, draft } = rascunhoDe(series.id, "2026-07", { amountMinor: 550_000 });
+
+    await store.editFollowing(id, { ...draft, userId: "INTRUSO" } as TransactionDraft);
+
+    expect(session.state.value.recurrences[series.id]).toMatchObject({
+      amountMinor: 500_000,
+      updatedAt: series.updatedAt,
+    });
+    expect(
+      session.state.value.recurrenceAdjustments[adjustmentId(series.id, "2026-07")],
+    ).toMatchObject({ fromPeriod: "2026-07", amountMinor: 550_000 });
+    expect(amountOf(series.id, "2026-06")).toBe(500_000);
+    expect(amountOf(series.id, "2026-07")).toBe(550_000);
+    expect(amountOf(series.id, "2026-08")).toBe(550_000);
+    expect(session.state.value.transactions[id]?.userId).toBe("AUTOR-1");
+  });
+
+  it("sem nada da série para mudar, grava só a ocorrência", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+    const { id, draft } = rascunhoDe(series.id, "2026-07", { occurredOn: "2026-07-06" });
+
+    await store.editFollowing(id, draft);
+
+    expect(session.state.value.transactions[id]?.occurredOn).toBe("2026-07-06");
+    expect(session.state.value.recurrences[series.id]?.updatedAt).toBe(series.updatedAt);
+  });
+
+  it("série mudada em outra aba: nada é gravado e o erro é StaleRowsError", async () => {
+    await store.createSeries(DRAFT, MENSAL, "2026-08-10");
+    const series = onlySeries();
+    const sessionB = createSession(testSessionDeps(db));
+    await sessionB.init();
+    await sessionB.mutate("recurrences", (repo) =>
+      repo.update(series.id, { description: "Salário B" }),
+    );
+    const { id, draft } = rascunhoDe(series.id, "2026-07", { categoryId: "CAT-NOVA" });
+
+    await expect(store.editFollowing(id, draft)).rejects.toBeInstanceOf(StaleRowsError);
+
+    expect(session.error.value).not.toBeNull();
+    expect((await db.transactions.get(id))?.categoryId).toBeNull();
+    expect((await db.recurrences.get(series.id))?.categoryId).toBeNull();
+    // A sessão se cura: a série passa a ser a que o banco tem.
+    expect(session.state.value.recurrences[series.id]?.description).toBe("Salário B");
+  });
+
+  it("parcela: a categoria vale para as parcelas seguintes", async () => {
+    await store.createSeries(
+      { ...DRAFT, kind: "expense", amountMinor: 30_000 },
+      {
+        ...MENSAL,
+        installments: 3,
+      },
+      "2026-07-10",
+    );
+    const series = onlySeries();
+    const { id, draft } = rascunhoDe(series.id, "2026-06", { categoryId: "CAT-NOVA" });
+
+    await store.editFollowing(id, draft);
+    await store.materializeDue("2026-08-10");
+
+    expect(categoriaDe(series.id, "2026-07")).toBe("CAT-NOVA");
+    expect(categoriaDe(series.id, "2026-08")).toBe("CAT-NOVA");
+  });
+});
