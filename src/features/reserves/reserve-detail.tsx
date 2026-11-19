@@ -264,7 +264,7 @@ export function ReserveDetail({
         </p>
       )}
       {duplicate && (
-        <p class="mt-1.5 text-[13px] text-tag-amber">
+        <p class="mt-1.5 text-[13px] text-warning">
           Reserva de emergência duplicada (criada em outro aparelho)
         </p>
       )}

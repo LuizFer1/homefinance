@@ -12,7 +12,7 @@ export interface BudgetBarProps {
 
 const FILL: Record<BudgetLevel, string> = {
   ok: "bg-accent",
-  warning: "bg-tag-amber",
+  warning: "bg-warning",
   over: "bg-expense",
 };
 

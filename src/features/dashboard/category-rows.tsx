@@ -38,7 +38,7 @@ export function visibleRows(rows: CategoryRow[]): CategoryRow[] {
 /** Uma cor só para todas: o tile já identifica a categoria; a cor da barra é estado. */
 const FILL: Record<BudgetLevel, string> = {
   ok: "bg-neutral-500",
-  warning: "bg-tag-amber",
+  warning: "bg-warning",
   over: "bg-expense",
 };
 

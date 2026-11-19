@@ -417,7 +417,7 @@ describe("DashboardPage", () => {
       expect(over.getByText("120% da meta").className).toContain("text-expense-fg");
       expect(over.getByTestId("category-fill").className).toContain("bg-expense");
       expect(warning.getByText("83% da meta").className).not.toContain("text-expense-fg");
-      expect(warning.getByTestId("category-fill").className).toContain("bg-tag-amber");
+      expect(warning.getByTestId("category-fill").className).toContain("bg-warning");
       // Sem meta: barra neutra, sem traço, e a legenda é a fatia do total.
       expect(plain.getByTestId("category-fill").className).toContain("bg-neutral-500");
       expect(plain.queryByTestId("category-limit")).toBeNull();
