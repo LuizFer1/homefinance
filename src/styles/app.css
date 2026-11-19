@@ -26,7 +26,10 @@
 }
 
 /*
- * Sistema Nocturne (handoff do redesign).
+ * Paleta Grafite: cinza puro e acento dourado, sobre a estrutura do Nocturne
+ * (handoff do redesign). A tabela de cores, com as contas de contraste, mora na
+ * spec da paleta (docs/mobile/specs/2026-11-19-paleta-grafite-design.md, fora do
+ * repo); o hub copia os mesmos hex, entao valor novo entra la primeiro.
  *
  * `--color-*: initial` apaga a paleta padrao do Tailwind: com ela viva, um
  * `bg-red-500` perdido passaria no review e furaria a regra de que cor aqui so
@@ -37,7 +40,9 @@
  * Sem `static`, um token usado so num `style=` do JSX sumiria do CSS.
  *
  * O bloco do `@theme` e o tema CLARO, derivado das rampas do escuro invertidas:
- * o handoff so desenhou o escuro. `accent-900` continua querendo dizer "fundo de
+ * o design so desenhou o escuro. Os neutros sao cinza puro na mesma luminosidade
+ * OKLCH da rampa antiga, entao todo contraste de cinza ficou como era; so saiu o
+ * tom azulado. `accent-900` continua querendo dizer "fundo de
  * item selecionado" e `accent-300` "texto sobre acento" nos dois temas — o
  * papel e o mesmo, o valor e que troca de ponta.
  */
@@ -46,31 +51,40 @@
   --color-black: #000;
   --color-white: #fff;
 
-  --color-bg: #f4f5fa;
+  --color-bg: #f5f5f5;
   --color-surface: #ffffff;
-  --color-fg: #1d1f2b;
-  --color-divider: color-mix(in srgb, #1d1f2b 12%, transparent);
-  --color-accent: #7466cc;
+  --color-fg: #202020;
+  --color-divider: color-mix(in srgb, #202020 12%, transparent);
+  /*
+   * O dourado do escuro (#e2c15a) da 1,6:1 sobre branco: no claro o acento
+   * tambem e texto (link, `outline`), entao ele foi escurecido ate passar 4,5:1
+   * sobre `surface` e sobre `bg`. Clarear de volta reprova o texto de acento.
+   */
+  --color-accent: #876c00;
+  /* Texto e icone sobre preenchimento `accent` (o badge do filtro). */
+  --color-on-accent: #ffffff;
+  /* Atencao (meta perto do limite). Nao e `tag-amber`: aquele e quase o dourado. */
+  --color-warning: #975201;
 
-  --color-accent-100: #2b2556;
-  --color-accent-200: #3d3578;
-  --color-accent-300: #52479a;
-  --color-accent-400: #6a5ec0;
-  --color-accent-500: #8578d4;
-  --color-accent-600: #a59be6;
-  --color-accent-700: #c3bbf3;
-  --color-accent-800: #e0dcfb;
-  --color-accent-900: #efedfe;
+  --color-accent-100: #392c01;
+  --color-accent-200: #4d4014;
+  --color-accent-300: #675412;
+  --color-accent-400: #866c10;
+  --color-accent-500: #a48402;
+  --color-accent-600: #c0a44f;
+  --color-accent-700: #dbc276;
+  --color-accent-800: #f0e0af;
+  --color-accent-900: #f8efd5;
 
-  --color-neutral-100: #292b33;
-  --color-neutral-200: #3d404c;
-  --color-neutral-300: #555968;
-  --color-neutral-400: #6f7387;
-  --color-neutral-500: #8a8ea3;
-  --color-neutral-600: #a9adc0;
-  --color-neutral-700: #c9ccda;
-  --color-neutral-800: #e2e4ee;
-  --color-neutral-900: #eceef5;
+  --color-neutral-100: #2b2b2b;
+  --color-neutral-200: #404040;
+  --color-neutral-300: #5a5a5a;
+  --color-neutral-400: #747474;
+  --color-neutral-500: #8f8f8f;
+  --color-neutral-600: #aeaeae;
+  --color-neutral-700: #cdcdcd;
+  --color-neutral-800: #e4e4e4;
+  --color-neutral-900: #eeeeee;
 
   /* Receita e despesa: base (barras, pontos) e -fg (texto e icone). */
   --color-income: oklch(0.64 0.13 158);
@@ -102,7 +116,10 @@
 }
 
 /*
- * Tema escuro, com os valores literais do handoff.
+ * Tema escuro, com os valores literais do design grafite (bg #131313, cards
+ * #1e1e1e, dourado #e2c15a). A divisoria e `fg` a 10% porque da exatamente o
+ * #333333 do design sobre o card. `on-accent` e quase preto: branco sobre o
+ * dourado nao chega a 2:1.
  *
  * Duas copias do mesmo bloco, e nao uma: `data-theme` ausente devolve a decisao
  * ao `prefers-color-scheme` (o "Sistema" de Ajustes), e `hf-dark` explicito tem
@@ -111,29 +128,31 @@
  */
 [data-theme="hf-dark"] {
   color-scheme: dark;
-  --color-bg: #161826;
-  --color-surface: #232532;
-  --color-fg: #e9e9ed;
-  --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
-  --color-accent: #9184d9;
-  --color-accent-100: #f5f4ff;
-  --color-accent-200: #e7e5fe;
-  --color-accent-300: #d2cefd;
-  --color-accent-400: #b5abfc;
-  --color-accent-500: #968ae0;
-  --color-accent-600: #796cbf;
-  --color-accent-700: #5d5294;
-  --color-accent-800: #423a6a;
-  --color-accent-900: #2b2741;
-  --color-neutral-100: #f3f5fe;
-  --color-neutral-200: #e4e7f5;
-  --color-neutral-300: #cfd3e5;
-  --color-neutral-400: #b2b6ca;
-  --color-neutral-500: #9397ab;
-  --color-neutral-600: #75798c;
-  --color-neutral-700: #595d6c;
-  --color-neutral-800: #3f424d;
-  --color-neutral-900: #292b31;
+  --color-bg: #131313;
+  --color-surface: #1e1e1e;
+  --color-fg: #f2f2f2;
+  --color-divider: color-mix(in srgb, #f2f2f2 10%, transparent);
+  --color-accent: #e2c15a;
+  --color-on-accent: #131313;
+  --color-warning: #f2994a;
+  --color-accent-100: #f9f3dd;
+  --color-accent-200: #f8e9b8;
+  --color-accent-300: #f0d98c;
+  --color-accent-400: #e8cd78;
+  --color-accent-500: #e2c15a;
+  --color-accent-600: #b29947;
+  --color-accent-700: #847335;
+  --color-accent-800: #5a4f24;
+  --color-accent-900: #332d14;
+  --color-neutral-100: #f2f2f2;
+  --color-neutral-200: #e8e8e8;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-400: #bdbdbd;
+  --color-neutral-500: #989898;
+  --color-neutral-600: #7a7a7a;
+  --color-neutral-700: #5e5e5e;
+  --color-neutral-800: #3d3d3d;
+  --color-neutral-900: #2a2a2a;
   --color-income: oklch(0.8 0.12 158);
   --color-income-fg: oklch(0.82 0.12 158);
   --color-expense: oklch(0.74 0.13 22);
@@ -155,29 +174,31 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="hf-light"]) {
     color-scheme: dark;
-    --color-bg: #161826;
-    --color-surface: #232532;
-    --color-fg: #e9e9ed;
-    --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
-    --color-accent: #9184d9;
-    --color-accent-100: #f5f4ff;
-    --color-accent-200: #e7e5fe;
-    --color-accent-300: #d2cefd;
-    --color-accent-400: #b5abfc;
-    --color-accent-500: #968ae0;
-    --color-accent-600: #796cbf;
-    --color-accent-700: #5d5294;
-    --color-accent-800: #423a6a;
-    --color-accent-900: #2b2741;
-    --color-neutral-100: #f3f5fe;
-    --color-neutral-200: #e4e7f5;
-    --color-neutral-300: #cfd3e5;
-    --color-neutral-400: #b2b6ca;
-    --color-neutral-500: #9397ab;
-    --color-neutral-600: #75798c;
-    --color-neutral-700: #595d6c;
-    --color-neutral-800: #3f424d;
-    --color-neutral-900: #292b31;
+    --color-bg: #131313;
+    --color-surface: #1e1e1e;
+    --color-fg: #f2f2f2;
+    --color-divider: color-mix(in srgb, #f2f2f2 10%, transparent);
+    --color-accent: #e2c15a;
+    --color-on-accent: #131313;
+    --color-warning: #f2994a;
+    --color-accent-100: #f9f3dd;
+    --color-accent-200: #f8e9b8;
+    --color-accent-300: #f0d98c;
+    --color-accent-400: #e8cd78;
+    --color-accent-500: #e2c15a;
+    --color-accent-600: #b29947;
+    --color-accent-700: #847335;
+    --color-accent-800: #5a4f24;
+    --color-accent-900: #332d14;
+    --color-neutral-100: #f2f2f2;
+    --color-neutral-200: #e8e8e8;
+    --color-neutral-300: #d4d4d4;
+    --color-neutral-400: #bdbdbd;
+    --color-neutral-500: #989898;
+    --color-neutral-600: #7a7a7a;
+    --color-neutral-700: #5e5e5e;
+    --color-neutral-800: #3d3d3d;
+    --color-neutral-900: #2a2a2a;
     --color-income: oklch(0.8 0.12 158);
     --color-income-fg: oklch(0.82 0.12 158);
     --color-expense: oklch(0.74 0.13 22);
