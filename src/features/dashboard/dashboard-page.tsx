@@ -1,22 +1,30 @@
 import { useState } from "preact/hooks";
 import { budgetReport } from "../../domain/budgets/status";
-import { shiftMonth } from "../../domain/dates/calendar";
+import { upcomingInvoices } from "../../domain/cards/upcoming-invoices";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { AppState } from "../../domain/model/app-state";
 import type { Transaction } from "../../domain/model/transaction";
 import { filterByMonth, monthlyTotals } from "../../domain/projections/breakdown";
 import { capitalByKind, debtTotal } from "../../domain/projections/business";
+import { categoriesAboveNormal } from "../../domain/projections/category-normal";
 import { dailyExpenses, expensesOn } from "../../domain/projections/daily-expenses";
+import { fixedVariable } from "../../domain/projections/fixed-variable";
+import { forecast } from "../../domain/projections/forecast";
 import { nextMonthFreeMoney, recurringMonth } from "../../domain/projections/free-money";
 import {
+  averageSurplus,
   cashbackSummary,
   categoryBreakdown,
+  firstMonthOf,
   monthComparison,
+  SURPLUS_WINDOW_MONTHS,
   spendingPace,
 } from "../../domain/projections/insights";
 import { lastMonths, monthLabelLong, monthOf } from "../../domain/projections/periods";
 import { upcomingRecurrences } from "../../domain/recurrence/upcoming";
+import { savedInMonth } from "../../domain/reserves/balances";
 import { Button } from "../ui/button";
+import { wholeBRL } from "../ui/money";
 import { MonthPicker } from "../ui/month-picker";
 import { PageHeader } from "../ui/page-header";
 import { BusinessBlock } from "./business-block";
@@ -152,17 +160,34 @@ export function DashboardPage({
   const isCurrent = month === current;
   const monthItems = filterByMonth(items, month);
   const comparison = monthComparison(items, month);
-  const previous = shiftMonth(month, -1);
   const pace = spendingPace(items, month, today);
   // Médias só sobre os dias que já aconteceram: o mesmo corte do ritmo de gastos.
   const daily = dailyExpenses(items, month, pace.cutoff);
   const budgets = budgetReport(items, state, month).rows;
-  const categories = withBudgets(categoryBreakdown(monthItems, state), budgets);
+  const categories = withBudgets(
+    categoryBreakdown(monthItems, state),
+    budgets,
+    categoriesAboveNormal(items, state, month, today),
+  );
+  const split = fixedVariable(items, state, month);
   const shown = visibleRows(categories);
   // Do mês do seletor, não de hoje: a barra de agosto mede contra a renda fixa de agosto.
   const categoryScale = recurringMonth(state, month).incomeMinor;
   const bars = monthlyTotals(items, lastMonths(`${month}-01`, HISTORY_MONTHS));
+  // A sobra média não sai das barras: elas são 6 e terminam no mês escolhido; a média
+  // olha os 12 fechados antes de hoje (+1 é o corrente, que `averageSurplus` descarta),
+  // como o hub, para os dois painéis darem o mesmo número.
+  const surplus = averageSurplus(
+    monthlyTotals(items, lastMonths(`${current}-01`, SURPLUS_WINDOW_MONTHS + 1)),
+    firstMonthOf(items),
+    current,
+  );
   const upcoming = isCurrent ? upcomingRecurrences(state, today, UPCOMING_DAYS) : [];
+  const invoices = isCurrent ? upcomingInvoices(state, today, UPCOMING_DAYS) : [];
+  const upcomingCount = invoices.length + upcoming.length;
+  // O preview conta faturas e recorrentes juntas; as faturas vêm primeiro.
+  const previewInvoices = invoices.slice(0, UPCOMING_PREVIEW);
+  const previewItems = upcoming.slice(0, UPCOMING_PREVIEW - previewInvoices.length);
   // Só no mês corrente: "mês que vem" de um mês passado já aconteceu e está no extrato.
   const free = isCurrent ? nextMonthFreeMoney(state, today) : null;
   const showFree = free !== null && (free.incomeMinor > 0 || free.expenseMinor > 0);
@@ -193,11 +218,11 @@ export function DashboardPage({
         <Block title="Como estou">
           <SummaryCard
             month={month}
-            previous={previous}
-            hadPrevious={filterByMonth(items, previous).length > 0}
             isCurrent={isCurrent}
             comparison={comparison}
             pace={pace}
+            forecast={isCurrent ? forecast(items, state, today) : null}
+            savedMinor={savedInMonth(state, month)}
             cashback={cashbackSummary(monthItems, state)}
             onOpenCalendar={hasExpense ? () => setSheet("calendar") : undefined}
             onOpenHistory={() => setSheet("history")}
@@ -216,7 +241,13 @@ export function DashboardPage({
             {categories.length === 0 ? (
               <p class="text-sm text-fg/55">Nenhuma despesa em {label}</p>
             ) : (
-              <CategoryRows rows={shown} scaleMinor={categoryScale} />
+              <>
+                {/* Reais inteiros: é leitura de proporção, não conferência de centavo. */}
+                <p data-testid="fixed-variable" class="hf-num mb-3 text-xs text-fg/55">
+                  {wholeBRL(split.fixedMinor)} fixos · {wholeBRL(split.variableMinor)} variáveis
+                </p>
+                <CategoryRows rows={shown} scaleMinor={categoryScale} />
+              </>
             )}
             {(categories.length > shown.length ||
               (onOpenBudgets !== undefined && budgets.length > 0)) && (
@@ -236,23 +267,24 @@ export function DashboardPage({
           </div>
         </Block>
 
-        {(showFree || upcoming.length > 0) && (
+        {(showFree || upcomingCount > 0) && (
           <Block title="O que vem">
             {showFree && <FreeMoneyCard free={free} />}
-            {upcoming.length > 0 && (
-              <section aria-label="Próximas recorrentes" class="rounded-lg bg-surface px-4 py-2">
+            {upcomingCount > 0 && (
+              <section aria-label="Próximas saídas" class="rounded-lg bg-surface px-4 py-2">
                 <div class="flex min-h-9 items-center justify-between gap-3">
-                  <h3 class="text-sm text-fg/60">Próximas recorrentes</h3>
+                  <h3 class="text-sm text-fg/60">Próximas saídas</h3>
                   <span class="text-xs text-fg/55">próximos {UPCOMING_DAYS} dias</span>
                 </div>
                 <UpcomingList
-                  items={upcoming.slice(0, UPCOMING_PREVIEW)}
+                  invoices={previewInvoices}
+                  items={previewItems}
                   state={state}
                   today={today}
                 />
-                {upcoming.length > UPCOMING_PREVIEW && (
+                {upcomingCount > UPCOMING_PREVIEW && (
                   <TextLink caret onClick={() => setSheet("upcoming")}>
-                    Ver todas as {upcoming.length}
+                    Ver todas as {upcomingCount}
                   </TextLink>
                 )}
               </section>
@@ -274,7 +306,12 @@ export function DashboardPage({
         }}
         onClose={close("calendar")}
       />
-      <HistorySheet open={sheet === "history"} bars={bars} onClose={close("history")} />
+      <HistorySheet
+        open={sheet === "history"}
+        bars={bars}
+        average={surplus}
+        onClose={close("history")}
+      />
       <ListSheet
         open={sheet === "categories"}
         title="Todas as categorias"
@@ -285,11 +322,11 @@ export function DashboardPage({
       </ListSheet>
       <ListSheet
         open={sheet === "upcoming"}
-        title="Recorrentes a caminho"
+        title="Próximas saídas"
         note={`próximos ${UPCOMING_DAYS} dias`}
         onClose={close("upcoming")}
       >
-        <UpcomingList items={upcoming} state={state} today={today} />
+        <UpcomingList invoices={invoices} items={upcoming} state={state} today={today} />
       </ListSheet>
       <DaySheet
         date={pickedDay}

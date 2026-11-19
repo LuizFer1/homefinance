@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EMPTY_APP_STATE } from "../../domain/model/app-state";
 import { ALIVE } from "../../domain/model/row.fake";
+import { GRAFITE_TODAY, grafiteState } from "../../domain/projections/grafite.fake";
+import { listTransactions } from "../../domain/projections/selectors";
 import { movement, reserve, stateOf, tx } from "../../domain/reserves/fixtures.fake";
 import { DashboardPage } from "../dashboard/dashboard-page";
 import { HomePage } from "../home/home-page";
@@ -251,7 +253,7 @@ describe("com a máscara ligada nenhuma tela mostra valor", () => {
       ["Saídas por dia", "Saídas por dia"],
       ["Últimos 6 meses", "Últimos 6 meses"],
       ["Ver todas as 6", "Todas as categorias"],
-      ["Ver todas as 4", "Recorrentes a caminho"],
+      ["Ver todas as 4", "Próximas saídas"],
     ])("%s", (button, title) => {
       setHideValues(true);
       const { container } = render(<DashboardPage items={all} state={full} today="2026-09-20" />);
@@ -277,6 +279,18 @@ describe("com a máscara ligada nenhuma tela mostra valor", () => {
       expect(screen.getByText(/1 saída/)).toBeDefined();
       expect(leaks(container)).toEqual([]);
     });
+  });
+
+  it("Resumo da fixture grafite: previsão, fechar no zero e reservas sem R$, porcentagens ficam", () => {
+    setHideValues(true);
+    const grafite = grafiteState();
+    const { container } = render(
+      <DashboardPage items={listTransactions(grafite)} state={grafite} today={GRAFITE_TODAY} />,
+    );
+    expect(leaks(container)).toEqual([]);
+    expect(screen.getByTestId("forecast-line").textContent).toContain(MASK);
+    expect(screen.getByTestId("savings-rate").textContent).toContain("11%");
+    expect(screen.getByTestId("savings-pace").textContent).toContain("27%");
   });
 
   it("estado vazio não quebra", () => {

@@ -19,6 +19,16 @@ export interface FreeMoney {
 }
 
 /**
+ * "25% da renda fixa": quanto das entradas recorrentes as saídas recorrentes já
+ * levam (indicadores §6.3). Sem teto — 150% é informação; quem trava em 100% é a
+ * barra. `null` sem entrada recorrente: não há renda fixa para ser a régua.
+ */
+export function committedPercent(free: FreeMoney): number | null {
+  if (free.incomeMinor <= 0) return null;
+  return Math.round((free.expenseMinor / free.incomeMinor) * 100);
+}
+
+/**
  * "Dinheiro livre mês que vem": entradas recorrentes menos saídas recorrentes
  * do mês seguinte a `today`.
  */

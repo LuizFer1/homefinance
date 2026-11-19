@@ -6,6 +6,11 @@ export interface PaceChartProps {
   showToday: boolean;
   /** Rótulo curto do mês ("set"), para o eixo "1 set". */
   monthShort: string;
+  /**
+   * Despesa prevista no último dia (`forecast`): o acumulado ganha um prolongamento
+   * tracejado de hoje até ela. `null` sem previsão (mês fechado, até o dia 5).
+   */
+  forecastMinor?: number | null;
 }
 
 const W = 318;
@@ -16,19 +21,23 @@ const PAD_BOTTOM = 6;
 
 /**
  * Gasto acumulado por dia: o mês escolhido em linha cheia de acento com área,
- * o anterior tracejado no mês inteiro.
+ * "o seu normal" (média dos 3 meses anteriores) tracejado no mês inteiro e, no mês
+ * corrente, a previsão tracejada em acento de hoje até o fim do mês. Sem mês
+ * de referência não há normal, e a linha tracejada some em vez de desenhar zero.
  *
  * Acumulado e não diário: o diário é serrilhado (aluguel num dia, nada no
  * outro) e esconde a pergunta que o card responde — "estou gastando mais rápido
- * que no mês passado?". A linha acumulada responde olhando só a inclinação.
+ * que o normal?". A linha acumulada responde olhando só a inclinação.
  *
  * SVG à mão, sem biblioteca de gráfico: são duas polilinhas, e qualquer
  * biblioteca custaria mais que o app inteiro no teto de bundle.
  */
-export function PaceChart({ pace, showToday, monthShort }: PaceChartProps) {
+export function PaceChart({ pace, showToday, monthShort, forecastMinor = null }: PaceChartProps) {
   const days = pace.current.length;
   const shown = pace.current.slice(0, Math.max(pace.cutoff, 1));
-  const max = Math.max(1, ...shown, ...pace.previous);
+  const forecastEnd = pace.cutoff > 0 && pace.cutoff < days ? forecastMinor : null;
+  // A previsão entra no teto: senão o tracejado sairia por cima do gráfico.
+  const max = Math.max(1, ...shown, ...pace.normal, forecastEnd ?? 0);
   const x = (day: number) => PAD_X + ((day - 1) / Math.max(days - 1, 1)) * (W - 2 * PAD_X);
   const y = (value: number) => H - PAD_BOTTOM - (value / max) * (H - PAD_TOP - PAD_BOTTOM);
 
@@ -54,15 +63,32 @@ export function PaceChart({ pace, showToday, monthShort }: PaceChartProps) {
         viewBox={`0 0 ${W} ${H}`}
         class="h-auto w-full overflow-visible"
         role="img"
-        aria-label="Gasto acumulado por dia, comparado ao mês anterior"
+        aria-label={
+          pace.normal.length > 0
+            ? "Gasto acumulado por dia, comparado ao seu normal"
+            : "Gasto acumulado por dia"
+        }
       >
-        <path
-          d={line(pace.previous)}
-          fill="none"
-          stroke="var(--color-neutral-600)"
-          stroke-width="1.5"
-          stroke-dasharray="4 4"
-        />
+        {pace.normal.length > 0 && (
+          <path
+            d={line(pace.normal)}
+            fill="none"
+            stroke="var(--color-neutral-600)"
+            stroke-width="1.5"
+            stroke-dasharray="4 4"
+          />
+        )}
+        {forecastEnd !== null && (
+          <path
+            data-testid="pace-forecast"
+            d={`M${lastX.toFixed(1)},${lastY.toFixed(1)} L${x(days).toFixed(1)},${y(forecastEnd).toFixed(1)}`}
+            fill="none"
+            stroke="var(--color-accent)"
+            stroke-width="1.5"
+            stroke-dasharray="4 4"
+            stroke-linecap="round"
+          />
+        )}
         {pace.cutoff > 0 && (
           <>
             <path d={area} fill="color-mix(in srgb, var(--color-accent) 14%, transparent)" />

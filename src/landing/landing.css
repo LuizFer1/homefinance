@@ -4,7 +4,7 @@
  * CSS a mao, sem Tailwind: a pagina e fixa, e o Tailwind traria o preflight e as
  * utilities varridas de src/ inteiro para um orcamento de 15kb.
  *
- * Sempre no Nocturne escuro: a landing e peca de marca e nao segue o tema que a
+ * Sempre no tema escuro (grafite): a landing e peca de marca e nao segue o tema que a
  * pessoa escolheu no app. As `--color-*` sao copia literal do tema escuro de
  * app.css — landing-tokens.test.ts falha se uma divergir. Cor que so a landing
  * tem (a faixa do extrato, os dados da demo) usa outro prefixo, de proposito.
@@ -23,26 +23,26 @@
 
 :root {
   color-scheme: dark;
-  --color-bg: #161826;
-  --color-surface: #232532;
-  --color-fg: #e9e9ed;
-  --color-accent: #9184d9;
-  --color-accent-200: #e7e5fe;
-  --color-accent-300: #d2cefd;
-  --color-accent-700: #5d5294;
-  --color-accent-900: #2b2741;
-  --color-neutral-100: #f3f5fe;
-  --color-neutral-200: #e4e7f5;
-  --color-neutral-500: #9397ab;
-  --color-neutral-700: #595d6c;
-  --color-neutral-800: #3f424d;
-  --color-neutral-900: #292b31;
+  --color-bg: #131313;
+  --color-surface: #1e1e1e;
+  --color-fg: #f2f2f2;
+  --color-accent: #e2c15a;
+  --color-accent-200: #f8e9b8;
+  --color-accent-300: #f0d98c;
+  --color-accent-700: #847335;
+  --color-accent-900: #332d14;
+  --color-neutral-100: #f2f2f2;
+  --color-neutral-200: #e8e8e8;
+  --color-neutral-500: #989898;
+  --color-neutral-700: #5e5e5e;
+  --color-neutral-800: #3d3d3d;
+  --color-neutral-900: #2a2a2a;
   --color-income: oklch(0.8 0.12 158);
   --color-expense: oklch(0.74 0.13 22);
-  --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --color-divider: color-mix(in srgb, #f2f2f2 10%, transparent);
 
-  --landing-section: #262a60;
-  --landing-section-glow: #353b80;
+  --landing-section: #1e1e1e;
+  --landing-section-glow: #332d14;
   --demo-food: oklch(0.77 0.11 58);
   --demo-housing: oklch(0.8 0.11 85);
   --demo-leisure: oklch(0.72 0.12 300);
@@ -52,8 +52,8 @@
   /* Coral da marca Ko-fi: o botao tem que ser reconhecivel de longe. */
   --kofi: #ff5e5b;
 
-  --shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0, 0, 0, 0.55);
-  --shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgba(0, 0, 0, 0.65);
+  --shadow-md: 0 0 0 1px #5e5e5e, 0 6px 18px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 0 0 1px #989898, 0 16px 40px rgba(0, 0, 0, 0.65);
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ring: inset 0 0 0 1px var(--color-divider);
 }
@@ -1669,11 +1669,11 @@ button.cta {
 .btn-coffee {
   border: 0;
   background: var(--kofi);
-  color: #161826;
+  color: var(--color-bg);
 }
 
 .btn-coffee:hover {
-  color: #161826;
+  color: var(--color-bg);
   filter: brightness(1.05);
 }
 

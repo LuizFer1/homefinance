@@ -284,16 +284,23 @@ function BudgetAlert({ rows, onOpen }: { rows: BudgetStatus[]; onOpen: () => voi
         ${
           over
             ? "border-expense/40 bg-expense/10 hover:bg-expense/15"
-            : "border-tag-amber/35 bg-tag-amber/10 hover:bg-tag-amber/15"
+            : "border-warning/35 bg-warning/10 hover:bg-warning/15"
         }`}
     >
-      <IconTile
-        icon={over ? "warning-circle" : "warning"}
-        color={over ? "red" : "amber"}
-        size={36}
-      />
+      {over ? (
+        <IconTile icon="warning-circle" color="red" size={36} />
+      ) : (
+        // Tile a mao, e nao `IconTile color="amber"`: `tag-amber` e quase o dourado do
+        // acento, e atencao tem que ler diferente de "dentro da meta".
+        <span
+          aria-hidden="true"
+          class="grid size-9 shrink-0 place-items-center rounded-lg bg-warning/[0.18] text-warning"
+        >
+          <Icon name="warning" size={18} />
+        </span>
+      )}
       <span class="min-w-0 flex-1">
-        <span class={`block text-sm font-medium ${over ? "text-expense-fg" : "text-tag-amber"}`}>
+        <span class={`block text-sm font-medium ${over ? "text-expense-fg" : "text-warning"}`}>
           <span class="hf-num">{rows.length}</span>{" "}
           {rows.length === 1 ? "meta em risco" : "metas em risco"}
         </span>

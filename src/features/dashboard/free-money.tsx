@@ -1,6 +1,9 @@
-import type { FreeMoney } from "../../domain/projections/free-money";
+import { committedPercent, type FreeMoney } from "../../domain/projections/free-money";
 import { brl, Money } from "../ui/money";
 import { monthWord } from "./parts";
+
+/** Marcas de referência do comprometido: até 50% há folga; acima de 70% qualquer imprevisto aperta. */
+const COMFORT_MARKS = [50, 70] as const;
 
 /**
  * "Dinheiro livre mês que vem": o que sobra das entradas recorrentes depois das
@@ -8,11 +11,13 @@ import { monthWord } from "./parts";
  *
  * A barra é neutra, sem verde nem vermelho: ela mostra uma proporção (quanto das
  * entradas já tem destino), não um julgamento. Vermelho aqui fica só para o
- * número quando ele fecha negativo. O `aria-label` da barra carrega só a
- * porcentagem, para não ler o que "Ocultar valores" esconde.
+ * número quando ele fecha negativo. As marcas de 50% e 70% são referência
+ * discreta, não alarme. O `aria-label` da barra carrega só a porcentagem, para
+ * não ler o que "Ocultar valores" esconde.
  */
 export function FreeMoneyCard({ free }: { free: FreeMoney }) {
   const committed = free.incomeMinor > 0 ? Math.min(1, free.expenseMinor / free.incomeMinor) : 1;
+  const percent = committedPercent(free);
 
   return (
     <section aria-label="Dinheiro livre mês que vem" class="rounded-lg bg-surface p-4">
@@ -39,16 +44,38 @@ export function FreeMoneyCard({ free }: { free: FreeMoney }) {
       <div
         role="img"
         aria-label={`${Math.round(committed * 100)}% das entradas recorrentes já comprometidos`}
-        class="mt-4 h-2 overflow-hidden rounded-full bg-neutral-800"
+        class="relative mt-4 h-2"
       >
-        <span
-          class="block h-full rounded-full bg-neutral-500"
-          style={{ width: `${committed * 100}%` }}
-        />
+        <div class="h-full overflow-hidden rounded-full bg-neutral-800">
+          <span
+            class="block h-full rounded-full bg-neutral-500"
+            style={{ width: `${committed * 100}%` }}
+          />
+        </div>
+        {percent !== null &&
+          COMFORT_MARKS.map((mark) => (
+            <span
+              key={mark}
+              data-testid={`committed-mark-${mark}`}
+              aria-hidden="true"
+              class="absolute -inset-y-1 -translate-x-1/2 border-l border-dotted border-fg/50"
+              style={{ left: `${mark}%` }}
+            />
+          ))}
       </div>
       <p data-testid="free-money-expense" class="hf-num mt-2 text-xs text-fg/55">
         {brl(free.expenseMinor)} já comprometido
+        {percent !== null && ` · ${percent}% da renda fixa`}
       </p>
+      {percent === null ? (
+        <p class="mt-1 text-xs text-fg/55 text-pretty">
+          Cadastre o salário como recorrente para ver quanto da renda já está comprometido
+        </p>
+      ) : (
+        <p class="mt-1 text-xs text-fg/55 text-pretty">
+          Até 50% há folga; acima de 70% qualquer imprevisto aperta
+        </p>
+      )}
       {free.estimated && (
         <p class="mt-1 text-xs text-fg/55 text-pretty">
           Inclui a estimativa de contas com valor variável

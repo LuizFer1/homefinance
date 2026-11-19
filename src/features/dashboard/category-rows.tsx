@@ -1,4 +1,5 @@
 import type { BudgetLevel, BudgetStatus } from "../../domain/budgets/status";
+import type { CategoryNormal } from "../../domain/projections/category-normal";
 import type { CategoryShare } from "../../domain/projections/insights";
 import { brl } from "../ui/money";
 import { IconTile } from "../ui/tile";
@@ -6,6 +7,8 @@ import { IconTile } from "../ui/tile";
 /** Uma categoria do mês com a meta dela, quando existe. */
 export interface CategoryRow extends CategoryShare {
   budget: BudgetStatus | null;
+  /** Passou do "seu normal" (+25% e R$ 50); `null` quando não. */
+  aboveNormal: CategoryNormal | null;
 }
 
 /** Linhas sempre visíveis no bloco; o resto fica atrás de "Ver todas". */
@@ -14,13 +17,19 @@ export const TOP_CATEGORIES = 5;
 /**
  * Junta o gasto por categoria com as metas. As duas projeções somam do mesmo
  * jeito (ver `budgetReport`), então o valor da linha e o uso da meta não
- * discordam. "Sem categoria" (`id` nulo) nunca tem meta.
+ * discordam. "Sem categoria" (`id` nulo) nunca tem meta. `aboveNormal` vem de
+ * `categoriesAboveNormal`, com a mesma chave da linha.
  */
-export function withBudgets(categories: CategoryShare[], budgets: BudgetStatus[]): CategoryRow[] {
+export function withBudgets(
+  categories: CategoryShare[],
+  budgets: BudgetStatus[],
+  aboveNormal: ReadonlyMap<string | null, CategoryNormal> = new Map(),
+): CategoryRow[] {
   const byCategory = new Map(budgets.map((row) => [row.category.id, row]));
   return categories.map((row) => ({
     ...row,
     budget: row.id === null ? null : (byCategory.get(row.id) ?? null),
+    aboveNormal: aboveNormal.get(row.id) ?? null,
   }));
 }
 
@@ -38,7 +47,7 @@ export function visibleRows(rows: CategoryRow[]): CategoryRow[] {
 /** Uma cor só para todas: o tile já identifica a categoria; a cor da barra é estado. */
 const FILL: Record<BudgetLevel, string> = {
   ok: "bg-neutral-500",
-  warning: "bg-tag-amber",
+  warning: "bg-warning",
   over: "bg-expense",
 };
 
@@ -79,7 +88,18 @@ export function CategoryRows({ rows, scaleMinor }: { rows: CategoryRow[]; scaleM
           <li key={row.id ?? "sem-categoria"} data-testid={`category-row-${row.id ?? "none"}`}>
             <div class="flex items-center gap-3">
               <IconTile icon={row.icon} color={row.color} size={28} iconSize={16} />
-              <span class="min-w-0 flex-1 truncate text-sm">{row.name}</span>
+              <span class="min-w-0 flex-1 truncate text-sm">
+                {row.name}
+                {/*
+                  Seta e texto, sem cor nova na barra: a cor da barra fica para a meta. Só
+                  a porcentagem, para "Ocultar valores" não ter o que esconder aqui.
+                */}
+                {row.aboveNormal !== null && (
+                  <span data-testid="above-normal" class="ml-2 text-xs text-warning">
+                    ↑ {row.aboveNormal.changePercent}% do normal
+                  </span>
+                )}
+              </span>
               <span class="hf-num text-sm font-medium">{brl(row.amountMinor)}</span>
             </div>
             <div class="mt-1 ml-10 flex items-center gap-3">

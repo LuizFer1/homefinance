@@ -22,26 +22,40 @@ export function daysInMonth(month: string): number {
 
 export interface MonthComparison {
   current: Totals;
-  previous: Totals;
-  /** Saldo do mês menos o do anterior. Positivo = sobrou mais. */
-  deltaMinor: number;
+  /**
+   * "Seu normal" do saldo: média do saldo dos meses de referência (os 3 anteriores
+   * com dado, `referenceMonths`). `null` sem mês de referência.
+   */
+  normalBalanceMinor: number | null;
+  /** Saldo do mês menos o normal. Positivo = sobrou mais. `null` sem normal. */
+  deltaMinor: number | null;
   /** Lançamentos no mês. */
   count: number;
 }
 
 /**
  * O "como estou indo" do cartão de saldo: o número sozinho não diz se o mês foi
- * bom, a diferença para o anterior diz.
+ * bom, a diferença para o normal diz. A régua é a média dos 3 meses anteriores, e
+ * não só o anterior: um mês atípico (13º, viagem, IPVA) não vira a régua do
+ * seguinte. Só faz sentido em mês fechado — no corrente, parcial contra inteiro
+ * sempre parece "gastei muito menos"; a tela esconde a linha ali.
  */
 export function monthComparison(items: Transaction[], month: string): MonthComparison {
   const monthItems = filterByMonth(items, month);
   const current = totals(monthItems);
-  const previous = totals(filterByMonth(items, shiftMonth(month, -1)));
+  const months = referenceMonths(items, month);
+  const normalBalanceMinor =
+    months.length === 0
+      ? null
+      : Math.round(
+          months.reduce((acc, m) => acc + totals(filterByMonth(items, m)).balanceMinor, 0) /
+            months.length,
+        );
 
   return {
     current,
-    previous,
-    deltaMinor: current.balanceMinor - previous.balanceMinor,
+    normalBalanceMinor,
+    deltaMinor: normalBalanceMinor === null ? null : current.balanceMinor - normalBalanceMinor,
     count: monthItems.length,
   };
 }
@@ -63,48 +77,111 @@ function cumulativeExpense(items: Transaction[], month: string): number[] {
   });
 }
 
-export interface SpendingPace {
-  /** Acumulado por dia no mês escolhido. */
-  current: number[];
-  /** Acumulado por dia no mês anterior, inteiro. */
-  previous: number[];
-  /** Último dia que já aconteceu: hoje no mês corrente, o fim num mês passado. */
-  cutoff: number;
-  spentMinor: number;
-  previousAtCutoffMinor: number;
-  /** Variação contra o anterior no mesmo dia; `null` se o anterior não gastou nada. */
-  change: number | null;
+/** Quantos meses anteriores formam "o seu normal". */
+export const NORMAL_MONTHS = 3;
+
+/**
+ * Mês ('YYYY-MM') do primeiro lançamento vivo, conte ele nos totais ou não.
+ * `null` sem lançamento. É o começo do histórico: mês anterior a ele "não
+ * existia", não "gastou zero".
+ */
+export function firstMonthOf(items: Transaction[]): string | null {
+  let first: string | null = null;
+  for (const item of items) {
+    const month = monthOf(item.occurredOn);
+    if (first === null || month < first) first = month;
+  }
+  return first;
 }
 
 /**
- * Ritmo de gastos: quanto já saiu até hoje contra quanto tinha saído até o
- * mesmo dia do mês anterior.
+ * Meses que formam "o seu normal" de `month`: os 3 anteriores, do mais antigo ao
+ * mais novo, só os que são do primeiro lançamento em diante (mesma regra do custo
+ * essencial). Dividir por 3 com um mês de histórico daria um normal três vezes
+ * menor que o real e todo mês pareceria "muito acima". Um mês vazio **depois**
+ * do primeiro lançamento conta, valendo zero: ele existiu.
+ */
+export function referenceMonths(items: Transaction[], month: string): string[] {
+  const first = firstMonthOf(items);
+  if (first === null) return [];
+  const months: string[] = [];
+  for (let back = NORMAL_MONTHS; back >= 1; back -= 1) {
+    const candidate = shiftMonth(month, -back);
+    if (candidate >= first) months.push(candidate);
+  }
+  return months;
+}
+
+export interface SpendingPace {
+  /** Acumulado por dia no mês escolhido. */
+  current: number[];
+  /**
+   * "Seu normal": média, dia a dia, do acumulado dos meses de referência, com um
+   * valor por dia do mês escolhido. Vazio quando não há mês de referência.
+   */
+  normal: number[];
+  /** Meses que entram no normal, do mais antigo ao mais novo. */
+  referenceMonths: string[];
+  /** Último dia que já aconteceu: hoje no mês corrente, o fim num mês passado. */
+  cutoff: number;
+  spentMinor: number;
+  /** Normal no dia do corte; `null` sem mês de referência. */
+  normalAtCutoffMinor: number | null;
+  /** Variação contra o normal no mesmo dia; `null` sem normal ou com normal zero. */
+  change: number | null;
+  /**
+   * `change` em porcentagem inteira, com sinal (`Math.round`, igual ao `js_round` do
+   * hub). Arredondar o módulo divergiria do hub em −x,5 e poderia escrever "0% acima".
+   */
+  changePercent: number | null;
+}
+
+/**
+ * Ritmo de gastos: quanto já saiu até hoje contra "o seu normal" no mesmo dia —
+ * a média dos 3 meses anteriores com dado.
  *
- * Comparar com o total do mês anterior seria injusto no dia 10 — sempre daria
- * "muito abaixo". O ponto de comparação é o mesmo dia; se o anterior é mais
- * curto (31 de março contra fevereiro), vale o último dia dele.
+ * Comparar com o total de um mês seria injusto no dia 10 — sempre daria "muito
+ * abaixo". O ponto de comparação é o mesmo dia; num mês de referência mais curto
+ * (31 de março contra fevereiro), vale o último dia dele. E a média de 3 meses,
+ * não só o anterior: um mês atípico (13º, viagem) não vira a régua do seguinte.
  */
 export function spendingPace(items: Transaction[], month: string, today: string): SpendingPace {
   const current = cumulativeExpense(items, month);
-  const previous = cumulativeExpense(items, shiftMonth(month, -1));
   const thisMonth = monthOf(today);
+  const months = referenceMonths(items, month);
+  const curves = months.map((reference) => cumulativeExpense(items, reference));
+  const normal =
+    curves.length === 0
+      ? []
+      : current.map((_, index) => {
+          const day = index + 1;
+          const sum = curves.reduce(
+            (acc, curve) => acc + (curve[Math.min(day, curve.length) - 1] ?? 0),
+            0,
+          );
+          return Math.round(sum / curves.length);
+        });
 
   const cutoff =
     month === thisMonth ? Number(today.slice(8, 10)) : month < thisMonth ? current.length : 0;
   const spentMinor = cutoff === 0 ? 0 : (current[cutoff - 1] ?? 0);
-  const previousAtCutoffMinor =
-    cutoff === 0 ? 0 : (previous[Math.min(cutoff, previous.length) - 1] ?? 0);
+  const normalAtCutoffMinor =
+    normal.length === 0 ? null : cutoff === 0 ? 0 : (normal[cutoff - 1] ?? 0);
+  // Mesma conta do hub (`gasto ÷ normal − 1`), para o ponto flutuante dar o mesmo resultado.
+  const change =
+    normalAtCutoffMinor === null || normalAtCutoffMinor === 0
+      ? null
+      : spentMinor / normalAtCutoffMinor - 1;
 
   return {
     current,
-    previous,
+    normal,
+    referenceMonths: months,
     cutoff,
     spentMinor,
-    previousAtCutoffMinor,
-    change:
-      previousAtCutoffMinor === 0
-        ? null
-        : (spentMinor - previousAtCutoffMinor) / previousAtCutoffMinor,
+    normalAtCutoffMinor,
+    change,
+    changePercent: change === null ? null : Math.round(change * 100),
   };
 }
 
@@ -199,9 +276,42 @@ export function categoryUsage(
   return counts;
 }
 
-/** Quanto sobrou, em média, por mês da janela. */
-export function averageSurplus(months: MonthTotals[]): number {
-  if (months.length === 0) return 0;
-  const sum = months.reduce((acc, month) => acc + month.incomeMinor - month.expenseMinor, 0);
-  return Math.round(sum / months.length);
+export interface SurplusAverage {
+  /** Média da sobra (receita − despesa); negativa quando faltou. */
+  averageMinor: number;
+  /** Quantos meses entraram na média. */
+  months: number;
+}
+
+/**
+ * Quantos meses fechados, no máximo, entram na sobra média: os 12 anteriores ao
+ * corrente. É o mesmo número do hub (`average_surplus_closed`); com janelas
+ * diferentes, quem tem 7 ou mais meses fechados via uma média no celular e outra no
+ * computador. Independe das barras do histórico, que mostram só 6.
+ */
+export const SURPLUS_WINDOW_MONTHS = 12;
+
+/**
+ * Quanto sobrou, em média, nos meses **fechados com dado** dos últimos
+ * `SURPLUS_WINDOW_MONTHS`: do mês do primeiro lançamento (`firstMonth`) até o
+ * anterior ao corrente, e nunca antes de 12 meses atrás. Mês antes do primeiro
+ * lançamento não existia — contá-lo como zero diluía a média (com 2 meses de
+ * histórico numa janela de 6, a sobra saía um terço da real). O mês corrente também
+ * fica de fora: pela metade, a receita já entrou e a despesa não. `months` pode
+ * trazer mais meses que a janela; o corte é aqui. `null` quando nenhum mês fechado
+ * sobra.
+ */
+export function averageSurplus(
+  months: MonthTotals[],
+  firstMonth: string | null,
+  currentMonth: string,
+): SurplusAverage | null {
+  if (firstMonth === null) return null;
+  const oldest = shiftMonth(currentMonth, -SURPLUS_WINDOW_MONTHS);
+  const closed = months.filter(
+    (item) => item.month >= firstMonth && item.month >= oldest && item.month < currentMonth,
+  );
+  if (closed.length === 0) return null;
+  const sum = closed.reduce((acc, item) => acc + item.incomeMinor - item.expenseMinor, 0);
+  return { averageMinor: Math.round(sum / closed.length), months: closed.length };
 }

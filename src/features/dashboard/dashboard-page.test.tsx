@@ -10,6 +10,8 @@ import type { PaymentMethod } from "../../domain/model/payment-method";
 import type { Recurrence } from "../../domain/model/recurrence";
 import { ALIVE } from "../../domain/model/row.fake";
 import type { Transaction } from "../../domain/model/transaction";
+import { GRAFITE_TODAY, grafiteState } from "../../domain/projections/grafite.fake";
+import { listTransactions } from "../../domain/projections/selectors";
 import { occurrenceKey } from "../../domain/recurrence/schedule";
 import { DashboardPage } from "./dashboard-page";
 
@@ -182,8 +184,10 @@ describe("DashboardPage", () => {
     render(
       <DashboardPage
         items={[
-          record({ id: "a", kind: "income", amountMinor: 60_000, occurredOn: "2026-08-02" }),
+          record({ id: "a", kind: "income", amountMinor: 60_000, occurredOn: "2026-07-02" }),
           record({ id: "b", amountMinor: 30_000, occurredOn: "2026-07-05" }),
+          // Agosto é o mês corrente: não entra na média dos fechados.
+          record({ id: "c", amountMinor: 99_999, occurredOn: "2026-08-02" }),
         ]}
         state={stateWith()}
         today={TODAY}
@@ -192,12 +196,62 @@ describe("DashboardPage", () => {
 
     tap("Últimos 6 meses");
     const sheet = within(openSheet("Últimos 6 meses") as HTMLElement);
-    // (600 − 300) / 6 meses da janela = 50; frase curta, sem ponto final.
-    expect(sheet.getByText(/Sobrou em média R\$\s50 por mês desde março$/u)).toBeDefined();
+    // Só julho é fechado e tem dado: (600 − 300) / 1 = 300. Frase curta, sem ponto final.
+    expect(sheet.getByText(/^Sobrou em média R\$\s300 por mês nos meses fechados$/u)).toBeDefined();
 
     fireEvent.click(sheet.getByRole("button", { name: "Fechar" }));
     expect(openSheet("Últimos 6 meses")).toBeNull();
     expect(screen.queryByTestId("bar-income-2026-08")).toBeNull();
+  });
+
+  it("a sobra média cobre os meses fechados dos últimos 12, não só os 6 das barras", () => {
+    render(
+      <DashboardPage
+        items={[
+          // Dezembro de 2025 abre o histórico: de dezembro a julho são 8 meses fechados.
+          record({ id: "a", kind: "income", amountMinor: 80_000, occurredOn: "2025-12-05" }),
+          // Agosto é o corrente: põe barra na janela de 6, mas fica fora da média.
+          record({ id: "b", amountMinor: 99_999, occurredOn: "2026-08-02" }),
+        ]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    tap("Últimos 6 meses");
+    const sheet = within(openSheet("Últimos 6 meses") as HTMLElement);
+    // 800 / 8 = 100, como o hub. Só com as barras (março a julho) daria R$ 0.
+    expect(sheet.getByText(/^Sobrou em média R\$\s100 por mês nos meses fechados$/u)).toBeDefined();
+    expect(screen.queryByTestId("bar-income-2025-12")).toBeNull();
+  });
+
+  it("a média diz que faltou quando os meses fechados gastaram mais que entrou", () => {
+    render(
+      <DashboardPage
+        items={[record({ id: "b", amountMinor: 30_000, occurredOn: "2026-07-05" })]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    tap("Últimos 6 meses");
+    const sheet = within(openSheet("Últimos 6 meses") as HTMLElement);
+    expect(sheet.getByText(/^Faltou em média R\$\s300 por mês nos meses fechados$/u)).toBeDefined();
+  });
+
+  it("sem mês fechado a série não mostra média", () => {
+    render(
+      <DashboardPage
+        items={[record({ id: "a", kind: "income", amountMinor: 60_000, occurredOn: "2026-08-02" })]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    tap("Últimos 6 meses");
+    const sheet = within(openSheet("Últimos 6 meses") as HTMLElement);
+    expect(sheet.getByText("Ainda não há mês fechado")).toBeDefined();
+    expect(sheet.queryByText(/em média/)).toBeNull();
   });
 
   it("marca o saldo do mês em vermelho quando fecha negativo", () => {
@@ -285,7 +339,26 @@ describe("DashboardPage", () => {
     expect(screen.getByTestId("total-expense").textContent).toContain("70,00");
   });
 
-  it("compara o saldo com o mês anterior", () => {
+  it("num mês fechado compara o saldo com o seu normal", () => {
+    render(
+      <DashboardPage
+        items={[
+          record({ id: "a", kind: "income", amountMinor: 50_000, occurredOn: "2026-07-02" }),
+          record({ id: "b", kind: "income", amountMinor: 8800, occurredOn: "2026-06-02" }),
+        ]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Mês anterior" }));
+
+    // Só junho é referência (o primeiro lançamento é de junho): 500 − 88 = 412.
+    expect(screen.getByText(/412,00 a mais que o seu normal/).className).toContain(
+      "text-income-fg",
+    );
+  });
+
+  it("no mês corrente o saldo não compara: parcial contra mês inteiro engana", () => {
     render(
       <DashboardPage
         items={[
@@ -297,10 +370,11 @@ describe("DashboardPage", () => {
       />,
     );
 
-    expect(screen.getByText(/412,00 a mais que julho/)).toBeDefined();
+    expect(screen.queryByText(/que o seu normal/)).toBeNull();
+    expect(screen.queryByText(/a (mais|menos) que/)).toBeNull();
   });
 
-  it("o ritmo compara com o mesmo dia do mês anterior", () => {
+  it("o ritmo compara com o seu normal no mesmo dia", () => {
     render(
       <DashboardPage
         items={[
@@ -313,11 +387,219 @@ describe("DashboardPage", () => {
       />,
     );
 
+    // Só julho tem dado (o primeiro lançamento é de julho): o normal é julho sozinho.
     // Frase curta não leva ponto final.
     expect(screen.getByTestId("pace-sentence").textContent).toMatch(
-      /^R\$\s92,00 até o dia 10 — 8% abaixo do mesmo ponto de julho$/u,
+      /^R\$\s92,00 até o dia 10 — 8% abaixo do seu normal$/u,
     );
-    expect(screen.getByText(/8% abaixo/)).toBeDefined();
+    expect(screen.getByText(/8% abaixo/).className).toContain("text-income-fg");
+    expect(screen.getByText("seu normal")).toBeDefined();
+  });
+
+  it("fixture grafite: 15% acima do seu normal, em atenção", () => {
+    const state = grafiteState();
+    render(<DashboardPage items={listTransactions(state)} state={state} today={GRAFITE_TODAY} />);
+
+    expect(screen.getByTestId("pace-sentence").textContent).toMatch(
+      /^R\$\s3\.113,41 até o dia 19 — 15% acima do seu normal$/u,
+    );
+    // Acima do normal é atenção, não erro: `warning`, não `expense-fg`.
+    expect(screen.getByText("15% acima").className).toContain("text-warning");
+  });
+
+  describe("previsão, fechar no zero e taxa de poupança (fixture grafite)", () => {
+    function renderGrafite(today = GRAFITE_TODAY) {
+      const state = grafiteState();
+      render(<DashboardPage items={listTransactions(state)} state={state} today={today} />);
+    }
+
+    it("no lugar da comparação, diz quanto vai faltar no fim do mês, em atenção", () => {
+      renderGrafite();
+      const line = screen.getByTestId("forecast-line");
+      expect(line.textContent).toMatch(
+        /^Vão faltar ~R\$\s960 no fim do mês, se continuar no ritmo atual$/u,
+      );
+      expect(line.className).toContain("text-warning");
+    });
+
+    it("taxa de poupança até agora, o alvo e a taxa no ritmo atual", () => {
+      renderGrafite();
+      expect(screen.getByTestId("savings-rate").textContent).toBe(
+        "Taxa de poupança 11% até agora · alvo: 20% da renda",
+      );
+      expect(screen.getByTestId("savings-pace").textContent).toBe("No ritmo atual, ~−27%");
+    });
+
+    it("o líquido das reservas: R$ 200 saíram neste mês", () => {
+      renderGrafite();
+      expect(screen.getByTestId("reserves-line").textContent).toMatch(
+        /^R\$\s200 saíram das reservas neste mês$/u,
+      );
+    });
+
+    it("fechar no zero com piso em reais e a média avulsa", () => {
+      renderGrafite();
+      const box = screen.getByTestId("zero-box").textContent ?? "";
+      expect(box).toMatch(/Para fechar no zero: ~R\$\s30 por dia até o dia 30/u);
+      expect(box).toMatch(
+        /Sua média até aqui: ~R\$\s118 por dia no gasto do dia a dia \(avulso\)/u,
+      );
+    });
+
+    it("o gráfico do ritmo prolonga a previsão tracejada até o fim do mês", () => {
+      renderGrafite();
+      expect(screen.getByTestId("pace-forecast")).toBeDefined();
+      expect(screen.getByText("previsão")).toBeDefined();
+    });
+
+    it("até o dia 5 não há previsão: fica o ritmo", () => {
+      renderGrafite("2026-11-05");
+      expect(screen.queryByTestId("forecast-line")).toBeNull();
+      expect(screen.queryByTestId("zero-box")).toBeNull();
+      expect(screen.queryByTestId("savings-pace")).toBeNull();
+      expect(screen.queryByTestId("pace-forecast")).toBeNull();
+      expect(screen.getByTestId("pace-sentence")).toBeDefined();
+    });
+
+    it("mês fechado: taxa do mês, sem previsão nem fechar no zero", () => {
+      renderGrafite();
+      fireEvent.click(screen.getByRole("button", { name: "Mês anterior" }));
+      expect(screen.getByTestId("savings-rate").textContent).toBe(
+        "Taxa de poupança 28% no mês · alvo: 20% da renda",
+      );
+      expect(screen.queryByTestId("forecast-line")).toBeNull();
+      expect(screen.queryByTestId("zero-box")).toBeNull();
+      expect(screen.queryByTestId("savings-pace")).toBeNull();
+    });
+
+    it("para onde foi: fixos e variáveis do mês e Compras acima do normal", () => {
+      renderGrafite();
+      expect(screen.getByTestId("fixed-variable").textContent).toMatch(
+        /^R\$\s876 fixos · R\$\s2\.237 variáveis$/u,
+      );
+      const marks = screen.getAllByTestId("above-normal");
+      expect(marks.map((mark) => mark.textContent)).toEqual(["↑ 38% do normal"]);
+      expect(screen.getByTestId("category-row-CAT-COMPRAS").textContent).toContain(
+        "↑ 38% do normal",
+      );
+    });
+
+    it("próximas saídas: a fatura vem antes das recorrentes, aberta com til e % da renda", () => {
+      renderGrafite();
+      const card = screen.getByRole("region", { name: "Próximas saídas" });
+      const rows = card.querySelectorAll("li");
+      expect(rows[0]?.getAttribute("data-testid")).toBe("upcoming-invoice");
+      expect(rows[0]?.textContent).toContain("Fatura Mercado Pago");
+      expect(screen.getByTestId("invoice-when").textContent).toBe(
+        "vence ter, 8 dez · em 19 dias · fatura aberta",
+      );
+      expect(screen.getByTestId("invoice-amount").textContent).toMatch(
+        /^aproximadamente ~R\$\s515,15$/u,
+      );
+      const note = screen.getByTestId("invoice-note");
+      expect(note.textContent).toBe(
+        "15% da renda. Já está nas despesas: é o dinheiro que precisa estar na conta no vencimento.",
+      );
+      // 15% não passa de 30%: sem atenção.
+      expect(note.querySelector(".text-warning")).toBeNull();
+      // 1 fatura + 8 recorrentes em (19/11, 19/12]: Cadeira 21/11, Prime, Meli+, Mesada, Salário,
+      // Contas, Spotify e Claude code de dezembro.
+      expect(within(card).getByRole("button", { name: "Ver todas as 9" })).toBeDefined();
+    });
+
+    it("fatura fechada vai sem til; acima de 30% da renda a porcentagem fica em atenção", () => {
+      const nubank: PaymentMethod = {
+        ...ALIVE,
+        id: "NU",
+        name: "Nubank",
+        icon: "credit-card",
+        color: "violet",
+        kind: "credit",
+        bank: "Nubank",
+        closingDay: 5,
+        dueDay: 20,
+      };
+      const salary = recurrence({
+        id: "SAL",
+        kind: "income",
+        amountMinor: 100_000,
+        scheduleN: 5,
+        startOn: "2026-06-05",
+      });
+      const state: AppState = {
+        ...stateWith(),
+        paymentMethods: { NU: nubank },
+        recurrences: { SAL: salary },
+      };
+      const items = [
+        record({ id: "a", amountMinor: 50_000, occurredOn: "2026-08-03", paymentMethodId: "NU" }),
+      ];
+      state.transactions = { a: items[0] as Transaction };
+      render(<DashboardPage items={items} state={state} today={TODAY} />);
+
+      expect(screen.getByTestId("invoice-when").textContent).toBe(
+        "vence qui, 20 ago · em 10 dias · fatura fechada",
+      );
+      expect(screen.getByTestId("invoice-amount").textContent).toMatch(/^R\$\s500,00$/u);
+      expect(screen.getByText("50% da renda.").className).toContain("text-warning");
+    });
+
+    it("a fatura nunca soma: despesas do mês continuam R$ 3.113,41", () => {
+      renderGrafite();
+      expect(screen.getByTestId("total-expense").textContent).toMatch(/^R\$\s3\.113,41$/u);
+    });
+
+    it("livre em dezembro: 25% da renda fixa já comprometido, com as marcas de 50% e 70%", () => {
+      renderGrafite();
+      expect(screen.getByTestId("free-money-expense").textContent).toMatch(
+        /^R\$\s876,00 já comprometido · 25% da renda fixa$/u,
+      );
+      expect(screen.getByTestId("committed-mark-50")).toBeDefined();
+      expect(screen.getByTestId("committed-mark-70")).toBeDefined();
+    });
+
+    it("sem receita no mês não mostra taxa", () => {
+      render(
+        <DashboardPage
+          items={[record({ id: "a", amountMinor: 9200, occurredOn: "2026-08-03" })]}
+          state={stateWith()}
+          today={TODAY}
+        />,
+      );
+      expect(screen.queryByTestId("savings-rate")).toBeNull();
+    });
+  });
+
+  it("num mês fechado o ritmo fala do mês inteiro", () => {
+    render(
+      <DashboardPage
+        items={[
+          record({ id: "a", amountMinor: 9200, occurredOn: "2026-07-03" }),
+          record({ id: "b", amountMinor: 9200, occurredOn: "2026-06-04" }),
+        ]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Mês anterior" }));
+
+    expect(screen.getByTestId("pace-sentence").textContent).toMatch(
+      /^R\$\s92,00 no mês — igual ao seu normal$/u,
+    );
+  });
+
+  it("sem mês de referência o ritmo não compara nem desenha o normal", () => {
+    render(
+      <DashboardPage
+        items={[record({ id: "a", amountMinor: 9200, occurredOn: "2026-08-03" })]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    expect(screen.getByTestId("pace-sentence").textContent).toMatch(/^R\$\s92,00 até o dia 10$/u);
+    expect(screen.queryByText("seu normal")).toBeNull();
+    expect(screen.getByRole("img", { name: "Gasto acumulado por dia" })).toBeDefined();
   });
 
   it("sem despesa no mês o ritmo não aparece", () => {
@@ -417,7 +699,7 @@ describe("DashboardPage", () => {
       expect(over.getByText("120% da meta").className).toContain("text-expense-fg");
       expect(over.getByTestId("category-fill").className).toContain("bg-expense");
       expect(warning.getByText("83% da meta").className).not.toContain("text-expense-fg");
-      expect(warning.getByTestId("category-fill").className).toContain("bg-tag-amber");
+      expect(warning.getByTestId("category-fill").className).toContain("bg-warning");
       // Sem meta: barra neutra, sem traço, e a legenda é a fatia do total.
       expect(plain.getByTestId("category-fill").className).toContain("bg-neutral-500");
       expect(plain.queryByTestId("category-limit")).toBeNull();
@@ -744,8 +1026,22 @@ describe("DashboardPage", () => {
       expect(screen.getByTestId("free-money").textContent).toContain("770");
       expect(screen.getByTestId("free-money-of").textContent).toMatch(/de R\$\s1\.000,00/u);
       expect(screen.getByTestId("free-money-expense").textContent).toMatch(
+        /^R\$\s230,00 já comprometido · 23% da renda fixa$/u,
+      );
+    });
+
+    it("sem entrada recorrente, sem porcentagem: convida a cadastrar o salário", () => {
+      const onlyExpense: AppState = {
+        ...stateWith(),
+        recurrences: { [series[1]?.id ?? ""]: series[1] as Recurrence },
+      };
+      render(<DashboardPage items={[record({ id: "a" })]} state={onlyExpense} today={TODAY} />);
+
+      expect(screen.getByTestId("free-money-expense").textContent).toMatch(
         /^R\$\s230,00 já comprometido$/u,
       );
+      expect(screen.getByText(/Cadastre o salário como recorrente/)).toBeDefined();
+      expect(screen.queryByTestId("committed-mark-50")).toBeNull();
     });
 
     it("a barra do comprometido é neutra e fala só em porcentagem", () => {
@@ -825,12 +1121,12 @@ describe("DashboardPage", () => {
       it("mostra as três primeiras e abre todas em um toque", () => {
         render(<DashboardPage items={[record({ id: "a" })]} state={busy} today={TODAY} />);
 
-        const card = within(screen.getByRole("region", { name: "Próximas recorrentes" }));
+        const card = within(screen.getByRole("region", { name: "Próximas saídas" }));
         expect(card.getAllByRole("listitem")).toHaveLength(3);
         expect(card.queryByText("Internet")).toBeNull();
 
         fireEvent.click(card.getByRole("button", { name: "Ver todas as 5" }));
-        const sheet = within(openSheet("Recorrentes a caminho") as HTMLElement);
+        const sheet = within(openSheet("Próximas saídas") as HTMLElement);
         expect(sheet.getAllByRole("listitem")).toHaveLength(5);
         expect(sheet.getByText("Academia")).toBeDefined();
       });
@@ -842,7 +1138,7 @@ describe("DashboardPage", () => {
         };
         render(<DashboardPage items={[record({ id: "a" })]} state={few} today={TODAY} />);
 
-        const card = within(screen.getByRole("region", { name: "Próximas recorrentes" }));
+        const card = within(screen.getByRole("region", { name: "Próximas saídas" }));
         expect(card.getAllByRole("listitem")).toHaveLength(3);
         expect(card.queryByRole("button", { name: /Ver todas/ })).toBeNull();
       });
@@ -859,9 +1155,9 @@ describe("DashboardPage", () => {
         expect(amounts[1]?.text).toMatch(/^R\$\s230,00$/u);
         expect(amounts[1]?.income).toBe(false);
         expect(amounts[2]?.text).toMatch(/^aproximadamente ~R\$\s179,91$/u);
-        expect(
-          screen.getByRole("region", { name: "Próximas recorrentes" }).textContent,
-        ).not.toContain("−");
+        expect(screen.getByRole("region", { name: "Próximas saídas" }).textContent).not.toContain(
+          "−",
+        );
       });
     });
   });
@@ -927,6 +1223,28 @@ describe("DashboardPage: bloco Negócio", () => {
     expect(blockText("business-result")).toContain("R$ 1.200,00");
     expect(blockText("total-income")).toBe("R$ 2.000,00");
     expect(blockText("total-expense")).toBe("R$ 800,00");
+  });
+
+  it('capital e dívidas dizem "hoje"; resultado, receitas e despesas continuam do mês', () => {
+    render(
+      <DashboardPage
+        items={[sales, supply, record({ id: "j", amountMinor: 5_000, occurredOn: "2026-07-03" })]}
+        state={withPatrimony}
+        today={TODAY}
+        business
+      />,
+    );
+    const block = within(screen.getByRole("region", { name: "Resultado e patrimônio do negócio" }));
+    expect(block.getByTestId("business-capital-today").textContent).toBe("hoje");
+    expect(block.getByTestId("business-debt-today").textContent).toBe("hoje");
+    expect(block.getByRole("heading", { name: "Resultado do mês" })).toBeDefined();
+
+    // Em julho o resultado muda; capital e dívidas, não (são de hoje).
+    fireEvent.click(screen.getByRole("button", { name: "Mês anterior" }));
+    expect(blockText("business-expense")).toBe("R$ 50,00");
+    expect(blockText("business-capital")).toBe("R$ 17.500,00");
+    expect(blockText("business-debt")).toBe("R$ 7.200,00");
+    expect(block.getByTestId("business-capital-today").textContent).toBe("hoje");
   });
 
   it('fica acima de "Como estou"', () => {

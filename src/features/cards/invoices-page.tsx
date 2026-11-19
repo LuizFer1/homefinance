@@ -48,7 +48,7 @@ function InvoiceBlock({
           </span>
           {/* O valor aberto muda a cada compra e ainda não é o que o banco fecha. */}
           {open && (
-            <span data-testid="invoice-estimate" class="mt-0.5 block text-xs text-tag-amber">
+            <span data-testid="invoice-estimate" class="mt-0.5 block text-xs text-warning">
               Estimativa, pode mudar até o fechamento
             </span>
           )}
@@ -144,9 +144,9 @@ export function InvoicesPage({
         <div
           role="status"
           data-testid="cards-pending"
-          class="mt-5 rounded-lg border border-tag-amber/35 bg-tag-amber/10 p-3.5"
+          class="mt-5 rounded-lg border border-warning/35 bg-warning/10 p-3.5"
         >
-          <p class="text-sm font-medium text-tag-amber">
+          <p class="text-sm font-medium text-warning">
             {pending === 1
               ? "1 lançamento em cartão por completar"
               : `${pending} lançamentos em cartões por completar`}
