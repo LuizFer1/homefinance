@@ -262,9 +262,29 @@ export function categoryUsage(
   return counts;
 }
 
-/** Quanto sobrou, em média, por mês da janela. */
-export function averageSurplus(months: MonthTotals[]): number {
-  if (months.length === 0) return 0;
-  const sum = months.reduce((acc, month) => acc + month.incomeMinor - month.expenseMinor, 0);
-  return Math.round(sum / months.length);
+export interface SurplusAverage {
+  /** Média da sobra (receita − despesa); negativa quando faltou. */
+  averageMinor: number;
+  /** Quantos meses entraram na média. */
+  months: number;
+}
+
+/**
+ * Quanto sobrou, em média, nos meses **fechados com dado** da janela: do mês do
+ * primeiro lançamento (`firstMonth`) até o anterior ao corrente. Mês antes do
+ * primeiro lançamento não existia — contá-lo como zero diluía a média (com 2 meses
+ * de histórico numa janela de 6, a sobra saía um terço da real). O mês corrente
+ * também fica de fora: pela metade, a receita já entrou e a despesa não. `null`
+ * quando nenhum mês fechado sobra.
+ */
+export function averageSurplus(
+  months: MonthTotals[],
+  firstMonth: string | null,
+  currentMonth: string,
+): SurplusAverage | null {
+  if (firstMonth === null) return null;
+  const closed = months.filter((item) => item.month >= firstMonth && item.month < currentMonth);
+  if (closed.length === 0) return null;
+  const sum = closed.reduce((acc, item) => acc + item.incomeMinor - item.expenseMinor, 0);
+  return { averageMinor: Math.round(sum / closed.length), months: closed.length };
 }

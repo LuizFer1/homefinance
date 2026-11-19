@@ -184,8 +184,10 @@ describe("DashboardPage", () => {
     render(
       <DashboardPage
         items={[
-          record({ id: "a", kind: "income", amountMinor: 60_000, occurredOn: "2026-08-02" }),
+          record({ id: "a", kind: "income", amountMinor: 60_000, occurredOn: "2026-07-02" }),
           record({ id: "b", amountMinor: 30_000, occurredOn: "2026-07-05" }),
+          // Agosto é o mês corrente: não entra na média dos fechados.
+          record({ id: "c", amountMinor: 99_999, occurredOn: "2026-08-02" }),
         ]}
         state={stateWith()}
         today={TODAY}
@@ -194,12 +196,41 @@ describe("DashboardPage", () => {
 
     tap("Últimos 6 meses");
     const sheet = within(openSheet("Últimos 6 meses") as HTMLElement);
-    // (600 − 300) / 6 meses da janela = 50; frase curta, sem ponto final.
-    expect(sheet.getByText(/Sobrou em média R\$\s50 por mês desde março$/u)).toBeDefined();
+    // Só julho é fechado e tem dado: (600 − 300) / 1 = 300. Frase curta, sem ponto final.
+    expect(sheet.getByText(/^Sobrou em média R\$\s300 por mês nos meses fechados$/u)).toBeDefined();
 
     fireEvent.click(sheet.getByRole("button", { name: "Fechar" }));
     expect(openSheet("Últimos 6 meses")).toBeNull();
     expect(screen.queryByTestId("bar-income-2026-08")).toBeNull();
+  });
+
+  it("a média diz que faltou quando os meses fechados gastaram mais que entrou", () => {
+    render(
+      <DashboardPage
+        items={[record({ id: "b", amountMinor: 30_000, occurredOn: "2026-07-05" })]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    tap("Últimos 6 meses");
+    const sheet = within(openSheet("Últimos 6 meses") as HTMLElement);
+    expect(sheet.getByText(/^Faltou em média R\$\s300 por mês nos meses fechados$/u)).toBeDefined();
+  });
+
+  it("sem mês fechado a série não mostra média", () => {
+    render(
+      <DashboardPage
+        items={[record({ id: "a", kind: "income", amountMinor: 60_000, occurredOn: "2026-08-02" })]}
+        state={stateWith()}
+        today={TODAY}
+      />,
+    );
+
+    tap("Últimos 6 meses");
+    const sheet = within(openSheet("Últimos 6 meses") as HTMLElement);
+    expect(sheet.getByText("Ainda não há mês fechado")).toBeDefined();
+    expect(sheet.queryByText(/em média/)).toBeNull();
   });
 
   it("marca o saldo do mês em vermelho quando fecha negativo", () => {

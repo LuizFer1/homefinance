@@ -9,8 +9,10 @@ import { capitalByKind, debtTotal } from "../../domain/projections/business";
 import { dailyExpenses, expensesOn } from "../../domain/projections/daily-expenses";
 import { nextMonthFreeMoney, recurringMonth } from "../../domain/projections/free-money";
 import {
+  averageSurplus,
   cashbackSummary,
   categoryBreakdown,
+  firstMonthOf,
   monthComparison,
   spendingPace,
 } from "../../domain/projections/insights";
@@ -162,6 +164,7 @@ export function DashboardPage({
   // Do mês do seletor, não de hoje: a barra de agosto mede contra a renda fixa de agosto.
   const categoryScale = recurringMonth(state, month).incomeMinor;
   const bars = monthlyTotals(items, lastMonths(`${month}-01`, HISTORY_MONTHS));
+  const surplus = averageSurplus(bars, firstMonthOf(items), current);
   const upcoming = isCurrent ? upcomingRecurrences(state, today, UPCOMING_DAYS) : [];
   // Só no mês corrente: "mês que vem" de um mês passado já aconteceu e está no extrato.
   const free = isCurrent ? nextMonthFreeMoney(state, today) : null;
@@ -274,7 +277,12 @@ export function DashboardPage({
         }}
         onClose={close("calendar")}
       />
-      <HistorySheet open={sheet === "history"} bars={bars} onClose={close("history")} />
+      <HistorySheet
+        open={sheet === "history"}
+        bars={bars}
+        average={surplus}
+        onClose={close("history")}
+      />
       <ListSheet
         open={sheet === "categories"}
         title="Todas as categorias"

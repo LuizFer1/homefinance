@@ -4,6 +4,7 @@ import type { Category } from "../model/category";
 import type { PaymentMethod } from "../model/payment-method";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
 import type { Transaction } from "../model/transaction";
+import { monthlyTotals } from "./breakdown";
 import { GRAFITE_TODAY, grafiteState } from "./grafite.fake";
 import {
   averageSurplus,
@@ -11,9 +12,11 @@ import {
   categoryBreakdown,
   categoryUsage,
   daysInMonth,
+  firstMonthOf,
   monthComparison,
   spendingPace,
 } from "./insights";
+import { lastMonths } from "./periods";
 import { listTransactions } from "./selectors";
 
 function record(overrides: Partial<Transaction> & { id: string }): Transaction {
@@ -323,16 +326,72 @@ describe("categoryUsage", () => {
 });
 
 describe("averageSurplus", () => {
-  it("é a média do que sobrou por mês na janela", () => {
-    expect(
-      averageSurplus([
-        { month: "2026-08", incomeMinor: 1000, expenseMinor: 400 },
-        { month: "2026-09", incomeMinor: 1000, expenseMinor: 800 },
-      ]),
-    ).toBe(400);
+  const month = (m: string, incomeMinor: number, expenseMinor: number) => ({
+    month: m,
+    incomeMinor,
+    expenseMinor,
   });
 
-  it("janela vazia não divide por zero", () => {
-    expect(averageSurplus([])).toBe(0);
+  it("é a média do que sobrou nos meses fechados com dado", () => {
+    expect(
+      averageSurplus(
+        [month("2026-08", 1000, 400), month("2026-09", 1000, 800)],
+        "2026-08",
+        "2026-10",
+      ),
+    ).toEqual({ averageMinor: 400, months: 2 });
+  });
+
+  it("não conta mês antes do primeiro lançamento", () => {
+    // Junho e julho não existiam: contá-los como zero dividiria a sobra pela metade.
+    expect(
+      averageSurplus(
+        [
+          month("2026-06", 0, 0),
+          month("2026-07", 0, 0),
+          month("2026-08", 1000, 400),
+          month("2026-09", 1000, 800),
+        ],
+        "2026-08",
+        "2026-10",
+      ),
+    ).toEqual({ averageMinor: 400, months: 2 });
+  });
+
+  it("não conta o mês corrente", () => {
+    // O mês pela metade sempre parece ter sobrado muito (a receita já entrou, a despesa não).
+    expect(
+      averageSurplus(
+        [month("2026-08", 1000, 400), month("2026-09", 1000, 800), month("2026-10", 5000, 0)],
+        "2026-08",
+        "2026-10",
+      ),
+    ).toEqual({ averageMinor: 400, months: 2 });
+  });
+
+  it("mês vazio depois do primeiro lançamento conta como zero", () => {
+    expect(
+      averageSurplus(
+        [month("2026-07", 1000, 400), month("2026-08", 0, 0), month("2026-09", 1000, 800)],
+        "2026-07",
+        "2026-10",
+      ),
+    ).toEqual({ averageMinor: 267, months: 3 });
+  });
+
+  it("sem mês fechado não mostra média", () => {
+    expect(averageSurplus([month("2026-10", 1000, 400)], "2026-10", "2026-10")).toBeNull();
+    expect(averageSurplus([month("2026-09", 0, 0)], null, "2026-10")).toBeNull();
+    expect(averageSurplus([], "2026-08", "2026-10")).toBeNull();
+  });
+
+  it("fixture grafite: só outubro, R$ 1.410,29", () => {
+    const items = listTransactions(grafiteState());
+    const bars = monthlyTotals(items, lastMonths(`2026-11-01`, 6));
+
+    expect(averageSurplus(bars, firstMonthOf(items), "2026-11")).toEqual({
+      averageMinor: 141_029,
+      months: 1,
+    });
   });
 });
