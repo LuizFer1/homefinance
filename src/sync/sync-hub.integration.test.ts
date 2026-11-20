@@ -1315,9 +1315,14 @@ describe("versões misturadas: ocorrência, depósito e importação", () => {
       await velhoDeposita(velho, SECOND);
       await sincroniza(novo, velho);
 
+      // Um segundo aparelho já atualizado recebe a v2 com `period` e não deposita de novo.
+      await novoDeposita(velho);
+      await sincroniza(novo, velho);
+      const v2 = stableEntityIdV2(depositSeed(SECOND, "2027-02"));
       for (const d of [novo, velho]) {
         expect(depositosDe(d, FIRST)).toEqual([depositId(FIRST, "2027-02")]);
-        expect(depositosDe(d, SECOND)).toEqual([stableEntityIdV2(depositSeed(SECOND, "2027-02"))]);
+        expect(depositosDe(d, SECOND)).toEqual([v2]);
+        expect(d.session.state.value.reserveMovements[v2]?.period).toBe("2027-02");
       }
     });
 
@@ -1416,6 +1421,40 @@ describe("versões misturadas: ocorrência, depósito e importação", () => {
         expect(ifood(d)).toEqual([I2]);
         expect(d.session.state.value.transactions[I1]?.recurrenceId).toBe(B);
       }
+    });
+
+    it("parcela com o lugar de outra série: nasce em v2 e o outro aparelho atualizado a reconhece", async () => {
+      const { novo, velho } = await dois();
+      const cartao: ImportContext = { paymentMethodId: "CARTAO-1", referenceMonth: "2027-02" };
+      const fatura = (lines: string[], ref: string) =>
+        parseStatement(lines, "card", ref).entries.map((e) => ({
+          ...e,
+          selected: true,
+          categoryId: null,
+        }));
+      const fev = fatura(["15/12 LOJA 03/10 150,00"], "2027-02");
+      const [seed = ""] = importSeeds(fev, cartao);
+      // Outra série (de outra compra) já mora no lugar v1 da série desta.
+      await novo.session.putRows({
+        recurrences: [{ ...serie(novo, stableEntityIdV1(seed), "2030-01-05"), amountMinor: 1 }],
+      });
+      await sincroniza(novo, velho);
+
+      await createImportStore(novo.session, createRecurrenceStore(novo.session)).commit(
+        planImport(fev, cartao, slotsDe(novo)),
+        HOJE,
+      );
+      await sincroniza(novo, velho);
+
+      const v2 = stableEntityIdV2(seed);
+      expect(velho.session.state.value.recurrences[v2]?.importKey).toBe(v2);
+      // A fatura seguinte, aberta no outro aparelho, acha a série.
+      const mar = fatura(["15/12 LOJA 04/10 150,00"], "2027-03");
+      expect(
+        classifyImport(mar, { ...cartao, referenceMonth: "2027-03" }, slotsDe(velho)).map(
+          (t) => t.status,
+        ),
+      ).toEqual(["imported"]);
     });
 
     it("(3) corrida: o velho em v1 (livre para ele) e o novo em v2: as duas ficam (documentado)", async () => {

@@ -1,5 +1,5 @@
 import type { ComponentChildren } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import type { PrepareResult } from "./data/import";
 import { listBudgets } from "./domain/budgets/list";
 import { isCompleteCard, listCreditCards } from "./domain/cards/card";
@@ -359,6 +359,16 @@ export function App({
     void books.repairActiveBook().catch(ignoreHandled);
   }, [books, ready, activeBook, business]);
 
+  // Competências perdidas pela colisão do id (spec do id estável, §6). Só depois
+  // do boot: antes da materialização, o mês corrente ainda não foi gravado. Some
+  // sozinho quando a pessoa (ou o outro aparelho, pelo sync) responde. Memo: varre
+  // as tabelas inteiras, e o App renderiza a cada quadro do arraste.
+  const fullState = session.fullState.value;
+  const lost = useMemo(
+    () => (booted ? recoveryCandidates(fullState, activeBook, today) : []),
+    [booted, fullState, activeBook, today],
+  );
+
   const tabs = screensFor(activeBook);
   // A aba Negócio só existe na comercial. Se a conta ativa voltar para a pessoal por
   // baixo dela (reparo, sync), a tela cairia em branco e o arraste ficaria sem índice:
@@ -448,10 +458,6 @@ export function App({
   const paymentMethods = listPaymentMethods(state);
   // O genérico que ninguém usa não é oferecido ao lançar (ver `unusedGenericCard`).
   const pickableMethods = listPickableMethods(state);
-  // Competências perdidas pela colisão do id (spec do id estável, §6). Só depois
-  // do boot: antes da materialização, o mês corrente ainda não foi gravado. Some
-  // sozinho quando a pessoa (ou o outro aparelho, pelo sync) responde.
-  const lost = booted ? recoveryCandidates(session.fullState.value, activeBook, today) : [];
   // Gatilho derivado do estado: some sozinho quando o último grupo é atribuído.
   const hasPendingCards = pendingCardGroups(state).length > 0;
   const otherSheetOpen =
@@ -460,6 +466,7 @@ export function App({
     adjusting !== null ||
     confirming !== null ||
     classifying ||
+    recovering ||
     creatingBusiness ||
     reserveSheet !== null ||
     reserveForm !== null ||
