@@ -19,7 +19,11 @@ import {
   splitInstallments,
 } from "../../domain/recurrence/installments";
 import { occurrenceIndex } from "../../domain/recurrence/occurrence-index";
-import { planOccurrences } from "../../domain/recurrence/plan";
+import {
+  type LostOccurrence,
+  type OccurrencePlan,
+  planOccurrences,
+} from "../../domain/recurrence/plan";
 import {
   describeError,
   type ExpectedVersions,
@@ -69,6 +73,17 @@ export interface RecurrenceStore {
    * boot, depois da materialização, e depois de cada pull.
    */
   repairDuplicates: () => Promise<void>;
+  /**
+   * Folha de recuperação (spec do id estável, §6): grava em v2 as competências
+   * perdidas que a pessoa quis recriar, e um tombstone v2 das que ela não quis —
+   * a escolha sincroniza, e nenhum outro aparelho pergunta de novo. É o único
+   * caminho que cria competência passada em v2. Um lote só; nunca sobrescreve
+   * (o outro aparelho pode ter respondido antes, no mesmo id).
+   */
+  recoverOccurrences: (
+    recreate: readonly LostOccurrence[],
+    dismiss: readonly LostOccurrence[],
+  ) => Promise<void>;
 }
 
 /**
@@ -192,6 +207,49 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
     }
   }
 
+  /**
+   * A linha de uma ocorrência planejada, igual venha da materialização ou da
+   * folha de recuperação.
+   */
+  function occurrenceRow(plan: OccurrencePlan): Transaction {
+    const clock = session.clock();
+    // O autor é o da série, não o deste aparelho: o mês que nasce no telefone
+    // de outra pessoa continua sendo lançamento de quem criou a série.
+    const userId = plan.userId ?? session.localUserId.value;
+    const row = buildRow<Transaction>(clock, { ...plan.draft, userId }, plan.entityId, plan.book);
+    // Estimativa nasce "velha" (ver `floorHlc`): se outro aparelho já
+    // confirmou esta competência e o sync ainda não trouxe, a confirmação
+    // tem que vencer esta linha no LWW, e não o contrário.
+    return plan.anchored
+      ? { ...row, updatedAt: floorHlc(plan.draft.occurredOn, clock.deviceId) }
+      : row;
+  }
+
+  async function recoverOccurrences(
+    recreate: readonly LostOccurrence[],
+    dismiss: readonly LostOccurrence[],
+  ): Promise<void> {
+    try {
+      const clock = session.clock();
+      // "Não recriar" é um tombstone com a chave (`recurrenceId` +
+      // `occurrenceKey`): é por ela que os outros aparelhos e o hub sabem que a
+      // competência já foi respondida.
+      const tombstones = dismiss.map((lost) => {
+        const row = occurrenceRow(lost);
+        const { hlc } = clock.stamp();
+        return { ...row, deletedAt: hlc, updatedAt: hlc };
+      });
+      const rows = [...recreate.map(occurrenceRow), ...tombstones];
+      if (rows.length === 0) return;
+      // `insertMissing`: o id é a v2 da chave, o mesmo em qualquer aparelho. Se o
+      // outro já respondeu (ou recriou), a linha dele fica.
+      await session.insertMissing("transactions", rows);
+    } catch (cause) {
+      session.error.value = describeError(cause);
+      throw cause;
+    }
+  }
+
   async function materializeDue(today: string): Promise<void> {
     // Todo o corpo entra no try: `clock()` chamado antes do `init` concluir é
     // um erro de uso, mas ainda tem que preencher `error` como qualquer outra
@@ -211,32 +269,13 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
       );
       if (plans.length === 0) return;
 
-      const clock = session.clock();
-      const localUserId = session.localUserId.value;
       // Monta as linhas fora da transação (`buildRow` não grava). O plano
       // veio do `state` em memória, que pode estar desatualizado (outra aba
       // ainda não recarregou); `insertMissing` — e não `putRows`/`bulkPut` —
       // é quem grava, porque ele nunca sobrescreve uma linha que já existe no
       // banco. Sem isso, a ocorrência que o usuário apagou nesta ou noutra
       // aba voltaria viva no próximo boot.
-      const rows = plans.map((plan) => {
-        // O autor é o da série, não o deste aparelho: o mês que nasce no telefone
-        // de outra pessoa continua sendo lançamento de quem criou a série.
-        const userId = plan.userId ?? localUserId;
-        const row = buildRow<Transaction>(
-          clock,
-          { ...plan.draft, userId },
-          plan.entityId,
-          plan.book,
-        );
-        // Estimativa nasce "velha" (ver `floorHlc`): se outro aparelho já
-        // confirmou esta competência e o sync ainda não trouxe, a confirmação
-        // tem que vencer esta linha no LWW, e não o contrário.
-        return plan.anchored
-          ? { ...row, updatedAt: floorHlc(plan.draft.occurredOn, clock.deviceId) }
-          : row;
-      });
-      await session.insertMissing("transactions", rows);
+      await session.insertMissing("transactions", plans.map(occurrenceRow));
     } catch (cause) {
       session.error.value = describeError(cause);
       throw cause;
@@ -485,5 +524,6 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
     removeAdjustment,
     repairAuthors,
     repairDuplicates,
+    recoverOccurrences,
   };
 }

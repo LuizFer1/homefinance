@@ -21,6 +21,7 @@ import {
   listTransactions,
 } from "./domain/projections/selectors";
 import { canEditFollowing, planSeriesEdit } from "./domain/recurrence/edit-plan";
+import { recoveryCandidates } from "./domain/recurrence/recovery";
 import { findSimilar, type SimilarQuery } from "./domain/transactions/similar";
 import { AssetSheet } from "./features/assets/asset-sheet";
 import type { AssetsStore } from "./features/assets/store";
@@ -51,6 +52,7 @@ import { ProfilePage } from "./features/profile/profile-page";
 import type { ProfileStore } from "./features/profile/store";
 import { AdjustSheet } from "./features/recurrence/adjust-sheet";
 import { ConfirmSheet } from "./features/recurrence/confirm-sheet";
+import { RecoveryBanner, RecoverySheet } from "./features/recurrence/recovery-sheet";
 import type { RecurrenceStore } from "./features/recurrence/store";
 import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
@@ -241,6 +243,8 @@ export function App({
   // espera por ele: as cópias antigas do genérico ainda estão para ser fundidas, e
   // abrir antes mostraria grupos que o boot está prestes a desfazer.
   const [booted, setBooted] = useState(false);
+  // Folha "Recuperar lançamentos" aberta (competências que a colisão do id engoliu).
+  const [recovering, setRecovering] = useState(false);
   // Reclassificação que oferece "aplicar às semelhantes", ou null.
   const [similar, setSimilar] = useState<SimilarQuery | null>(null);
   // Cor do brilho do topo enquanto o Perfil está aberto: acompanha a cor que a
@@ -444,6 +448,10 @@ export function App({
   const paymentMethods = listPaymentMethods(state);
   // O genérico que ninguém usa não é oferecido ao lançar (ver `unusedGenericCard`).
   const pickableMethods = listPickableMethods(state);
+  // Competências perdidas pela colisão do id (spec do id estável, §6). Só depois
+  // do boot: antes da materialização, o mês corrente ainda não foi gravado. Some
+  // sozinho quando a pessoa (ou o outro aparelho, pelo sync) responde.
+  const lost = booted ? recoveryCandidates(session.fullState.value, activeBook, today) : [];
   // Gatilho derivado do estado: some sozinho quando o último grupo é atribuído.
   const hasPendingCards = pendingCardGroups(state).length > 0;
   const otherSheetOpen =
@@ -673,6 +681,10 @@ export function App({
         <PrivacyToggle />
 
         {update.ready.value && <UpdateBanner onApply={update.apply} />}
+
+        {lost.length > 0 && (
+          <RecoveryBanner count={lost.length} onOpen={() => setRecovering(true)} />
+        )}
 
         {session.error.value !== null && (
           <p role="alert" class="mb-4 rounded-lg bg-expense/10 p-3 text-sm text-expense-fg">
@@ -958,6 +970,21 @@ export function App({
             query={similar}
             onApply={(ids, categoryId) => store.setCategory(ids, categoryId)}
             onClose={() => setSimilar(null)}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={recovering && lost.length > 0}
+        title="Recuperar lançamentos"
+        onClose={() => setRecovering(false)}
+      >
+        {/* Montada só enquanto aberta: fechar descarta as escolhas pela metade. */}
+        {recovering && lost.length > 0 && (
+          <RecoverySheet
+            lost={lost}
+            onApply={recurrence.recoverOccurrences}
+            onClose={() => setRecovering(false)}
           />
         )}
       </Modal>
