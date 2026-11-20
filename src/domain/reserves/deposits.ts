@@ -1,5 +1,5 @@
 import { dayOfMonthClamped } from "../dates/business-day";
-import { stableEntityIdV1 } from "../ids/stable-id";
+import { stableEntityIdV1, stableEntityIdV2 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
@@ -48,6 +48,42 @@ export function isDepositFor(row: DepositFields, reserveId: Ulid, month: string)
   return row.id === depositId(reserveId, month);
 }
 
+/**
+ * "O depósito mensal de `reserveId` em `month` já tem linha?" — viva ou apagada
+ * (quem apagou o depósito do mês não o vê voltar), em qualquer id.
+ */
+export function hasDeposit(
+  movements: Readonly<Record<Ulid, ReserveMovement>>,
+  reserveId: Ulid,
+  month: string,
+): boolean {
+  return Object.values(movements).some((row) => isDepositFor(row, reserveId, month));
+}
+
+/**
+ * Lugares de id ocupados: a tabela inteira (as duas contas) mais o que o lote
+ * já reservou. Duas reservas cujo depósito do mês cai no mesmo lugar livre não
+ * podem ir as duas para v1 — o `insertMissing` derrubaria o lote pelo id repetido.
+ */
+export interface DepositSlots {
+  pick: (reserveId: Ulid, month: string) => Ulid;
+}
+
+export function depositSlots(table: Readonly<Record<Ulid, unknown>>): DepositSlots {
+  const claimed = new Set<Ulid>();
+  return {
+    pick(reserveId, month) {
+      const v1 = depositId(reserveId, month);
+      const id =
+        table[v1] === undefined && !claimed.has(v1)
+          ? v1
+          : stableEntityIdV2(depositSeed(reserveId, month));
+      claimed.add(id);
+      return id;
+    },
+  };
+}
+
 export interface DepositPlan {
   id: Ulid;
   reserveId: Ulid;
@@ -61,10 +97,17 @@ export interface DepositPlan {
  * pessoa já viu fechar. Sem saldo no mês, pula sem gravar nada — a próxima
  * abertura tenta de novo, e o salário que cair depois destrava o depósito.
  *
- * Uma linha existente com o id do mês, **mesmo apagada**, encerra o assunto:
- * quem apagou o depósito do mês não o vê voltar.
+ * Uma linha existente do depósito do mês (pela chave, `isDepositFor`), **mesmo
+ * apagada**, encerra o assunto: quem apagou o depósito do mês não o vê voltar.
+ * Sem linha, o id é v1 com o lugar livre e v2 com o lugar de outro fato — viva
+ * ou apagada, nunca sobrescrita (spec do id estável, §4.2). `slots` é o da
+ * tabela inteira quando quem chama planeja uma conta por vez.
  */
-export function planDeposits(state: AppState, today: string): DepositPlan[] {
+export function planDeposits(
+  state: AppState,
+  today: string,
+  slots: DepositSlots = depositSlots(state.reserveMovements),
+): DepositPlan[] {
   const month = monthOf(today);
   let available = monthBalance(state, month);
   const plans: DepositPlan[] = [];
@@ -77,11 +120,15 @@ export function planDeposits(state: AppState, today: string): DepositPlan[] {
     // Linha corrompida ou de versão futura nunca pode planejar depósito zero ou negativo.
     if (rule === null || rule.amountMinor <= 0 || month < rule.since) continue;
     if (today < dayOfMonthClamped(month, rule.day)) continue;
-    const id = depositId(r.id, month);
-    if (state.reserveMovements[id] !== undefined) continue;
+    if (hasDeposit(state.reserveMovements, r.id, month)) continue;
     if (available < rule.amountMinor) continue;
     available -= rule.amountMinor;
-    plans.push({ id, reserveId: r.id, amountMinor: rule.amountMinor, occurredOn: today });
+    plans.push({
+      id: slots.pick(r.id, month),
+      reserveId: r.id,
+      amountMinor: rule.amountMinor,
+      occurredOn: today,
+    });
   }
   return plans;
 }

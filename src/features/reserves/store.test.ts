@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
+import { stableEntityIdV2 } from "../../domain/ids/stable-id";
 import { isAlive } from "../../domain/model/base";
 import type { Category } from "../../domain/model/category";
 import { ALIVE, DELETED_AT } from "../../domain/model/row.fake";
 import type { Transaction } from "../../domain/model/transaction";
 import { reserveBalance } from "../../domain/reserves/balances";
-import { depositId } from "../../domain/reserves/deposits";
+import { depositId, depositSeed } from "../../domain/reserves/deposits";
 import { movement } from "../../domain/reserves/fixtures.fake";
 import { createSession, type Session } from "../session/session";
 import { createReservesStore, type ReserveInput, type ReservesStore } from "./store";
@@ -412,5 +413,79 @@ describe("casos de borda do depósito e da exclusão", () => {
       description: "Reserva excluída",
     });
     expect(reserveBalance(session.state.value, r.id)).toBe(0);
+  });
+});
+
+describe("depósito mensal com o lugar v1 de outro fato", () => {
+  /** O depósito de outra reserva que já ocupa o lugar v1 do mês desta. */
+  async function ocupaLugar(reserveId: string, month: string) {
+    const slot = depositId(reserveId, month);
+    await session.putRows({
+      reserveMovements: [
+        movement(slot, "01JC00000000000000000OUTRA", 1, `${month}-01`, { recurring: true }),
+      ],
+    });
+    return slot;
+  }
+
+  it("materializeDue grava `period` e, com o lugar ocupado, o depósito vai para v2", async () => {
+    const r = await store.create(GOAL, "2026-09-01");
+    await session.putRows({
+      reserves: [{ ...r, recurring: { amountMinor: 50_000, day: 6, since: "2026-10" } }],
+    });
+    const slot = await ocupaLugar(r.id, "2026-10");
+    const antes = await db.reserveMovements.get(slot);
+
+    await store.materializeDue("2026-10-06");
+    await store.materializeDue("2026-10-07");
+
+    const v2 = stableEntityIdV2(depositSeed(r.id, "2026-10"));
+    expect(await db.reserveMovements.get(v2)).toMatchObject({
+      reserveId: r.id,
+      recurring: true,
+      period: "2026-10",
+      amountMinor: 50_000,
+    });
+    expect(await db.reserveMovements.get(slot)).toEqual(antes);
+    expect(reserveBalance(session.state.value, r.id)).toBe(50_000);
+  });
+
+  it("lugar livre: v1 com `period`", async () => {
+    const r = await store.create(GOAL, "2026-09-01");
+    await session.putRows({
+      reserves: [{ ...r, recurring: { amountMinor: 50_000, day: 6, since: "2026-10" } }],
+    });
+    await store.materializeDue("2026-10-06");
+    expect(await db.reserveMovements.get(depositId(r.id, "2026-10"))).toMatchObject({
+      period: "2026-10",
+    });
+  });
+
+  it("o 'Guardar' que liga a recorrência vira o depósito do mês em v2 e não repete", async () => {
+    const r = await store.create(GOAL, "2026-10-10");
+    const slot = await ocupaLugar(r.id, "2026-10");
+
+    await store.deposit(
+      r.id,
+      { amountMinor: 50_000, description: null, occurredOn: "2026-10-10" },
+      true,
+    );
+
+    const v2 = stableEntityIdV2(depositSeed(r.id, "2026-10"));
+    expect(session.state.value.reserveMovements[v2]).toMatchObject({
+      recurring: true,
+      period: "2026-10",
+    });
+    expect(session.state.value.reserveMovements[slot]?.reserveId).not.toBe(r.id);
+    await store.materializeDue("2026-10-25");
+    expect(reserveBalance(session.state.value, r.id)).toBe(50_000);
+  });
+
+  it("depósito manual não ganha `period`", async () => {
+    const r = await store.create(GOAL, "2026-10-10");
+    await store.deposit(r.id, { amountMinor: 1_000, description: null, occurredOn: "2026-10-10" });
+    const [row] = Object.values(session.state.value.reserveMovements);
+    expect(row?.recurring).toBe(false);
+    expect(row?.period).toBeUndefined();
   });
 });
