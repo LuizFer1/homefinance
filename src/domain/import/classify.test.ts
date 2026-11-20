@@ -28,6 +28,8 @@ function reviewed(lines: string[]): ReviewedEntry[] {
 
 const [IFOOD] = reviewed(["12/09 IFOOD 45,90"]);
 if (IFOOD === undefined) throw new Error("sem linha");
+/** Dentro de funções o estreitamento de `IFOOD` não vale. */
+const LINHA: ReviewedEntry = IFOOD;
 const [SEED = ""] = importSeeds([IFOOD], ctx);
 const V1 = stableEntityIdV1(SEED);
 const V2 = stableEntityIdV2(SEED);
@@ -287,7 +289,7 @@ describe("versões misturadas: a revisão do app velho (develop)", () => {
   /** A confirmação como o `import/store.ts` a grava. */
   function confirma(rows: Transaction[]): Transaction {
     const [item] = planImport(
-      [{ ...IFOOD, selected: true, linkTo: estimativa.id }],
+      [{ ...LINHA, selected: true, linkTo: estimativa.id }],
       ctx,
       slots(rows),
     ).confirmations;
