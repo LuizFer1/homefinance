@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app";
 import { deferCardMigration, readCardMigrationDeferral } from "./data/card-migration";
 import type { HomeFinanceDb } from "./data/db";
+import { HUB_KEYS } from "./data/hub-link";
 import { buildRow } from "./data/repository";
 import { openTestDb, TEST_DEVICE_ID, testSessionDeps } from "./data/test-db.fake";
 import { createRowClock } from "./domain/clock/row-clock";
@@ -117,6 +118,57 @@ function buildStores(db: HomeFinanceDb) {
   };
 }
 
+/**
+ * O lugar v1 da competência de julho da série A ocupado pela ocorrência de outra
+ * série (a colisão do id v1): julho é passado, então só a folha a recria.
+ */
+async function comCompetenciaPerdida(db: HomeFinanceDb): Promise<string> {
+  const A = "01JC0000000000000000000001";
+  const key = `${A}:2026-07`;
+  const clock = seedClock();
+  await db.recurrences.put(
+    buildRow<Recurrence>(
+      clock,
+      {
+        kind: "income",
+        description: "Salário",
+        amountMinor: 500_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        frequency: "monthly",
+        scheduleType: "dayOfMonth",
+        scheduleN: 5,
+        startOn: "2026-07-05",
+        endOn: "2026-07-05",
+        active: true,
+      },
+      A,
+    ),
+  );
+  await db.transactions.put(
+    buildRow<Transaction>(
+      clock,
+      {
+        kind: "expense",
+        description: "Luz",
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn: "2026-06-05",
+        userId: null,
+        recurrenceId: "01JC00000000000000000OUTRA",
+        occurrenceKey: "01JC00000000000000000OUTRA:2026-06",
+      },
+      stableEntityIdV1(key),
+    ),
+  );
+  return key;
+}
+
 /** O tema escreve num documento à parte para não sujar o do testing-library. */
 function fakeTheme() {
   const map = new Map<string, string>();
@@ -189,52 +241,8 @@ describe("App", () => {
   });
 
   it("competência perdida pela colisão do id: avisa, pergunta e só grava ao confirmar", async () => {
-    // O lugar v1 da competência de julho da série A está ocupado pela ocorrência de
-    // outra série (a colisão do id v1): julho é passado, então só a folha a recria.
     const db = await cadastrado();
-    const A = "01JC0000000000000000000001";
-    const key = `${A}:2026-07`;
-    const clock = seedClock();
-    await db.recurrences.put(
-      buildRow<Recurrence>(
-        clock,
-        {
-          kind: "income",
-          description: "Salário",
-          amountMinor: 500_000,
-          currency: "BRL",
-          categoryId: null,
-          paymentMethodId: null,
-          cashbackMinor: null,
-          frequency: "monthly",
-          scheduleType: "dayOfMonth",
-          scheduleN: 5,
-          startOn: "2026-07-05",
-          endOn: "2026-07-05",
-          active: true,
-        },
-        A,
-      ),
-    );
-    await db.transactions.put(
-      buildRow<Transaction>(
-        clock,
-        {
-          kind: "expense",
-          description: "Luz",
-          amountMinor: 10_000,
-          currency: "BRL",
-          categoryId: null,
-          paymentMethodId: null,
-          cashbackMinor: null,
-          occurredOn: "2026-06-05",
-          userId: null,
-          recurrenceId: "01JC00000000000000000OUTRA",
-          occurrenceKey: "01JC00000000000000000OUTRA:2026-06",
-        },
-        stableEntityIdV1(key),
-      ),
-    );
+    const key = await comCompetenciaPerdida(db);
     const stores = buildStores(db);
     render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
 
@@ -256,6 +264,46 @@ describe("App", () => {
     );
     await waitFor(() =>
       expect(screen.queryByText("1 lançamento de recorrente não foi gravado.")).toBeNull(),
+    );
+  });
+
+  it("com hub pareado, o aviso da competência perdida espera a primeira rodada do sync", async () => {
+    // O outro aparelho pode já ter respondido (ou gravado a competência): o que o
+    // hub tem para este aparelho chega na primeira rodada. Perguntar antes dela
+    // ofereceria recriar o que o outro já apagou.
+    const db = await cadastrado();
+    await comCompetenciaPerdida(db);
+    await db.meta.bulkPut([
+      { key: HUB_KEYS.address, value: "192.168.0.5:7777" },
+      { key: HUB_KEYS.key, value: "f".repeat(64) },
+      { key: HUB_KEYS.epoch, value: "1" },
+    ]);
+    let falha: (cause: unknown) => void = () => {};
+    const fetch = vi.fn(
+      () =>
+        new Promise<Response>((_, reject) => {
+          falha = reject;
+        }),
+    );
+    const stores = buildStores(db);
+    stores.sync = createSyncStore({
+      db,
+      session: stores.session,
+      fetch,
+      now: () => 0,
+      isOnline: () => true,
+      onStale: () => {},
+    });
+    render(<App {...stores} today="2026-08-08" hour={9} theme={fakeTheme()} />);
+
+    // A rodada começou: o boot (materialização e reparo) já terminou.
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(screen.queryByText("1 lançamento de recorrente não foi gravado.")).toBeNull();
+
+    // Hub fora de alcance: a rodada termina em falha e o aviso aparece mesmo assim.
+    falha(new TypeError("sem rede"));
+    await waitFor(() =>
+      expect(screen.getByText("1 lançamento de recorrente não foi gravado.")).toBeDefined(),
     );
   });
 
