@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stableEntityIdV2 } from "../ids/stable-id";
+import { stableEntityIdV1, stableEntityIdV2 } from "../ids/stable-id";
 import { parseStatement } from "./parse";
 import { identify, importSeeds, installmentAnchor, planImport, type ReviewedEntry } from "./plan";
 
@@ -132,7 +132,8 @@ describe("planImport", () => {
         transactionId: "OCORRENCIA",
         amountMinor: 32_000,
         occurredOn: "2026-09-12",
-        importKey: stableEntityIdV2(seed ?? ""),
+        // Lugar v1 livre: a chave é a v1, a que o app velho procura.
+        importKey: stableEntityIdV1(seed ?? ""),
       },
     ]);
   });

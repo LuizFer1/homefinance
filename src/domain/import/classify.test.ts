@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { stableEntityIdV1, stableEntityIdV2 } from "../ids/stable-id";
 import type { Recurrence } from "../model/recurrence";
+import { EMPTY_APP_STATE } from "../model/app-state";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
 import type { Transaction } from "../model/transaction";
+import { confirmedImportKeys } from "./link";
 import { parseStatement } from "./parse";
 import {
   classifyImport,
   type ImportSlots,
+  identify,
   importSeeds,
   planImport,
   type ReviewedEntry,
@@ -197,5 +200,67 @@ describe("classifyImport — parcela", () => {
       id: P1,
       importKey: P2,
     });
+  });
+});
+
+describe("versões misturadas: a revisão do app velho (develop)", () => {
+  // O predicado literal do `import-sheet.tsx` de develop: id v1 da linha em
+  // `transactions` ou `recurrences`, ou o id v1 em alguma `importKey`.
+  function velhoVeImportada(entry: ReviewedEntry, rows: Transaction[]): boolean {
+    const state = { ...EMPTY_APP_STATE, ...slots(rows) };
+    const [id = ""] = identify([entry], ctx);
+    return (
+      state.transactions[id] !== undefined ||
+      state.recurrences[id] !== undefined ||
+      confirmedImportKeys(state).has(id)
+    );
+  }
+
+  const estimativa = linha("OCORRENCIA", {
+    amountMinor: 1,
+    occurredOn: "2026-09-05",
+    recurrenceId: "S",
+    occurrenceKey: "S:2026-09",
+    estimated: true,
+  });
+
+  /** A confirmação como o `import/store.ts` a grava. */
+  function confirma(rows: Transaction[]): Transaction {
+    const [item] = planImport(
+      [{ ...IFOOD, selected: true, linkTo: estimativa.id }],
+      ctx,
+      slots(rows),
+    ).confirmations;
+    if (item === undefined) throw new Error("sem confirmação");
+    return {
+      ...estimativa,
+      amountMinor: item.amountMinor,
+      occurredOn: item.occurredOn,
+      estimated: false,
+      importKey: item.importKey,
+    };
+  }
+
+  it("confirmação com o lugar v1 livre grava importKey v1: o velho não a importa de novo", () => {
+    const confirmada = confirma([estimativa]);
+    expect(confirmada.importKey).toBe(V1);
+    expect(velhoVeImportada(IFOOD, [confirmada])).toBe(true);
+    expect(classifyImport([IFOOD], ctx, slots([confirmada]))[0]?.status).toBe("imported");
+  });
+
+  it("confirmação com o lugar v1 de outro fato grava importKey v2: o velho vê o lugar ocupado", () => {
+    const ocorrencia = linha(V1, { recurrenceId: "OUTRA", occurrenceKey: "OUTRA:2026-08" });
+    const confirmada = confirma([estimativa, ocorrencia]);
+    expect(confirmada.importKey).toBe(V2);
+    expect(velhoVeImportada(IFOOD, [ocorrencia, confirmada])).toBe(true);
+    expect(classifyImport([IFOOD], ctx, slots([ocorrencia, confirmada]))[0]?.status).toBe(
+      "imported",
+    );
+  });
+
+  it("avulsa com o lugar livre fica no id v1 (importKey v2): o velho a acha pelo id", () => {
+    const [plan] = planImport([{ ...IFOOD, selected: true }], ctx, slots()).transactions;
+    expect(plan?.id).toBe(V1);
+    expect(velhoVeImportada(IFOOD, [linha(V1, { importKey: plan?.draft.importKey })])).toBe(true);
   });
 });

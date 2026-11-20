@@ -25,8 +25,11 @@ export interface ImportConfirmation {
   amountMinor: number;
   occurredOn: string;
   /**
-   * A v2 da semente da linha: é o que faz reimportar o PDF não duplicar. (Antes
-   * desta versão era o id v1; `classifyImport` aceita os dois.)
+   * O lugar da linha (`ImportTarget.id`): a v1 da semente com o lugar livre, a v2
+   * com o lugar de outro fato. É o que faz reimportar o PDF não duplicar — também
+   * no app velho, que só procura a v1 em `importKey`: com a v2 sempre, ele não
+   * acharia a confirmação e importaria a linha de novo, dobrando a conta.
+   * `classifyImport` aceita as duas.
    */
   importKey: Ulid;
 }
@@ -242,11 +245,14 @@ export function planImport(
     const description = entry.description.trim() || entry.rawDescription;
 
     if (entry.installment === null && entry.linkTo != null) {
+      // A chave da confirmação é o lugar, não a v2: a confirmação não ocupa id
+      // nenhum, e o app velho a reconhece só pela v1 em `importKey`. Com o lugar
+      // de outro fato vai a v2 — e o velho já vê o lugar ocupado.
       plan.confirmations.push({
         transactionId: entry.linkTo,
         amountMinor: entry.amountMinor,
         occurredOn: entry.date,
-        importKey,
+        importKey: id,
       });
       return;
     }
