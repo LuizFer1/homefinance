@@ -263,9 +263,19 @@ describe("ImportSheet", () => {
   it("linha que já confirmou uma estimativa conta como importada", async () => {
     const entries = parseStatement(LINES, "card", "2026-10").entries;
     const [firstId] = identify(entries, { paymentMethodId: CARD.id, referenceMonth: "2026-10" });
-    const state = stateWith({
-      transactions: { [PAST.id]: PAST, CONF: { ...PAST, id: "CONF", importKey: firstId } },
-    });
+    const [first] = entries;
+    if (first === undefined) throw new Error("sem linha");
+    // A confirmação copia valor e data da linha: com a chave v1 (que colide), é o
+    // que prova que foi esta linha.
+    const conf = {
+      ...PAST,
+      id: "CONF",
+      importKey: firstId,
+      kind: first.kind,
+      amountMinor: first.amountMinor,
+      occurredOn: first.date,
+    };
+    const state = stateWith({ transactions: { [PAST.id]: PAST, CONF: conf } });
     renderSheet(() => Promise.resolve(itemsOf(LINES)), state);
     pickFile();
 

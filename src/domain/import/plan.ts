@@ -141,8 +141,11 @@ const NO_SLOTS: ImportSlots = { transactions: {}, recurrences: {} };
  * guardava a semente — só o id —, e com a colisão do v1 o id não basta.
  *
  * Avulsa (lugar na tabela `transactions`):
- * - `importKey` v1 ou v2 da semente em alguma transação (criada por ela, ou a
+ * - `importKey` v2 da semente em alguma transação (criada por ela, ou a
  *   estimativa que ela confirmou) → `imported`;
+ * - `importKey` v1 (confirmação de antes, ou de agora com o lugar livre): a v1
+ *   colide, então só → `imported` se a linha que a leva tem o tipo, o valor e a
+ *   data desta; senão → `maybe`, em v2;
  * - lugar v1 livre → `new` em v1;
  * - lugar v1 com avulsa de mesmos `kind`, `amountMinor`, `occurredOn` e
  *   `paymentMethodId` → `imported`, como sempre foi (inclusive apagada);
@@ -166,9 +169,12 @@ export function classifyImport(
   slots: ImportSlots = NO_SLOTS,
 ): ImportTarget[] {
   const seeds = importSeeds(entries, ctx);
-  const txKeys = new Set<string>();
+  const txKeys = new Map<string, Transaction[]>();
   for (const row of Object.values(slots.transactions)) {
-    if (typeof row.importKey === "string") txKeys.add(row.importKey);
+    if (typeof row.importKey !== "string") continue;
+    const list = txKeys.get(row.importKey) ?? [];
+    list.push(row);
+    txKeys.set(row.importKey, list);
   }
   const seriesKeys = new Set<string>();
   for (const row of Object.values(slots.recurrences)) {
@@ -189,8 +195,21 @@ export function classifyImport(
 
     if (entry.installment === null) {
       const slot = slots.transactions[v1];
-      if (txKeys.has(v1) || txKeys.has(v2)) target = at("imported", v1);
-      else if (claimedTx.has(v1)) target = at("new", v2);
+      const byV1 = txKeys.get(v1);
+      if (txKeys.has(v2)) target = at("imported", v1);
+      else if (byV1 !== undefined) {
+        // A v1 colide: a chave v1 pode ser de outra linha de PDF que confirmou uma
+        // estimativa. Só prova esta se a linha que a leva tem os campos que a
+        // confirmação copiou dela; senão, "talvez" — nunca nova em v1, que ao
+        // lado de uma confirmação desta mesma linha dobraria a conta.
+        const same = byV1.some(
+          (row) =>
+            row.kind === entry.kind &&
+            row.amountMinor === entry.amountMinor &&
+            row.occurredOn === entry.date,
+        );
+        target = same ? at("imported", v1) : at("maybe", v2);
+      } else if (claimedTx.has(v1)) target = at("new", v2);
       else if (slot === undefined) target = at("new", v1);
       else if (
         slot.occurrenceKey === null &&

@@ -105,6 +105,35 @@ describe("classifyImport — avulsa", () => {
     }
   });
 
+  it("importKey v1 que não casa nos campos: talvez (a v1 colide), em v2 — nunca nova em v1", () => {
+    // Outra linha de PDF, de semente que cai no mesmo v1, confirmou uma estimativa.
+    for (const extra of [
+      { amountMinor: 1 },
+      { occurredOn: "2026-09-13" },
+      { kind: "income" as const },
+    ]) {
+      const outra = linha("OCORRENCIA", {
+        importKey: V1,
+        recurrenceId: "S",
+        occurrenceKey: "S:1",
+        ...extra,
+      });
+      expect(classifyImport([IFOOD], ctx, slots([outra]))).toEqual([
+        { status: "maybe", id: V2, importKey: V2 },
+      ]);
+    }
+  });
+
+  it("importKey v1 que casa em tipo, valor e data: já importada (a forma da série não conta)", () => {
+    const confirmada = linha("OCORRENCIA", {
+      importKey: V1,
+      paymentMethodId: "FORMA-DA-SERIE",
+      recurrenceId: "S",
+      occurrenceKey: "S:1",
+    });
+    expect(classifyImport([IFOOD], ctx, slots([confirmada]))[0]?.status).toBe("imported");
+  });
+
   it("linha importada e apagada não volta (no v1 pelos campos, no v2 pela importKey)", () => {
     const noV1 = linha(V1, { deletedAt: DELETED_AT });
     const noV2 = linha(V2, { importKey: V2, deletedAt: DELETED_AT });
