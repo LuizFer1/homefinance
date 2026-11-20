@@ -1473,3 +1473,159 @@ describe("versões misturadas: ocorrência, depósito e importação", () => {
     });
   });
 });
+
+describe("folha de recuperação entre dois aparelhos: a resposta perde para escrita real", () => {
+  // Par verificado da spec (§2): A em 2027-02 e B em 2027-01 caem no mesmo v1.
+  const A = "01JC0000000000000000000001";
+  const B = "01JC0000000000000000000002";
+  const KA = occurrenceKey(A, "2027-02");
+  const KB = occurrenceKey(B, "2027-01");
+  const SLOT = stableEntityIdV1(KA);
+  const V2 = stableEntityIdV2(KA);
+  const MARCO = "2027-03-10";
+  // Os relógios andam com o calendário dos testes (março de 2027): uma resposta
+  // ancorada no passado só é "baixa" diante de uma escrita feita depois dela.
+  const EM_MARCO = Date.UTC(2027, 2, 10) - 1_754_697_600_000;
+
+  function serie(d: Device, variable = false): Recurrence {
+    return buildRow<Recurrence>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: "Luz",
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        frequency: "monthly",
+        scheduleType: "dayOfMonth",
+        scheduleN: 5,
+        startOn: "2027-02-05",
+        endOn: null,
+        active: true,
+        ...(variable ? { variable: true } : {}),
+      },
+      A,
+    );
+  }
+
+  function deB(d: Device): Transaction {
+    return buildRow<Transaction>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: "B",
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn: "2027-01-05",
+        userId: null,
+        recurrenceId: B,
+        occurrenceKey: KB,
+      },
+      SLOT,
+    );
+  }
+
+  /** `x` e `y` com a série e o lugar de fevereiro tomado por B, os dois já sincronizados. */
+  async function dois(ordem: "x-antes" | "y-antes" = "x-antes", variable = false) {
+    const hub = createFakeHub();
+    const [first, second] = ordem === "x-antes" ? [0, 60_000] : [60_000, 0];
+    const x = await device(hub, "x", EM_MARCO + first);
+    const y = await device(hub, "y", EM_MARCO + second);
+    await x.session.putRows({ recurrences: [serie(x, variable)], transactions: [deB(x)] });
+    await x.sync.sync();
+    await y.sync.sync();
+    return { x, y };
+  }
+
+  async function sincroniza(x: Device, y: Device) {
+    await x.sync.sync();
+    await y.sync.sync();
+    await x.sync.sync();
+  }
+
+  const v2De = (d: Device) => d.session.state.value.transactions[V2];
+
+  it("Recriar atrasado não revive a linha que o outro recriou e apagou", async () => {
+    const { x, y } = await dois();
+    const lost = recoveryCandidates(x.session.fullState.value, "personal", MARCO);
+    expect(lost.map((item) => item.entityId)).toEqual([V2]);
+
+    await createRecurrenceStore(x.session).recoverOccurrences(lost, []);
+    const recriada = v2De(x);
+    if (recriada === undefined) throw new Error("não recriou");
+    const { hlc } = x.session.clock().stamp();
+    await x.session.putRows({
+      transactions: [{ ...recriada, deletedAt: hlc, updatedAt: hlc, dirty: 1 }],
+    });
+    await x.sync.sync();
+
+    // y ainda não recebeu nada disso: para ele fevereiro segue perdido.
+    const lostY = recoveryCandidates(y.session.fullState.value, "personal", MARCO);
+    await createRecurrenceStore(y.session).recoverOccurrences(lostY, []);
+    await sincroniza(x, y);
+
+    for (const d of [x, y]) expect(v2De(d)?.deletedAt).not.toBeNull();
+  });
+
+  it("Não recriar atrasado não apaga a linha que o outro recriou e confirmou", async () => {
+    const { x, y } = await dois();
+    const lost = recoveryCandidates(x.session.fullState.value, "personal", MARCO);
+    await createRecurrenceStore(x.session).recoverOccurrences(lost, []);
+    const recriada = v2De(x);
+    if (recriada === undefined) throw new Error("não recriou");
+    await x.session.putRows({
+      transactions: [
+        { ...recriada, amountMinor: 12_345, updatedAt: x.session.clock().stamp().hlc, dirty: 1 },
+      ],
+    });
+    await x.sync.sync();
+
+    const lostY = recoveryCandidates(y.session.fullState.value, "personal", MARCO);
+    await createRecurrenceStore(y.session).recoverOccurrences([], lostY);
+    await sincroniza(x, y);
+
+    for (const d of [x, y]) {
+      expect(v2De(d)).toMatchObject({ deletedAt: null, amountMinor: 12_345 });
+    }
+  });
+
+  it("respostas diferentes nos dois aparelhos, offline: Recriar vence", async () => {
+    for (const ordem of ["x-antes", "y-antes"] as const) {
+      const { x, y } = await dois(ordem);
+      const lostX = recoveryCandidates(x.session.fullState.value, "personal", MARCO);
+      const lostY = recoveryCandidates(y.session.fullState.value, "personal", MARCO);
+      await createRecurrenceStore(x.session).recoverOccurrences([], lostX);
+      await createRecurrenceStore(y.session).recoverOccurrences(lostY, []);
+      await sincroniza(x, y);
+
+      for (const d of [x, y]) expect(v2De(d)?.deletedAt).toBeNull();
+    }
+  });
+
+  // Virada do mês com relógios diferentes (achado 6): para x ainda é fevereiro e
+  // ele grava fevereiro em v2 (mês corrente); y já está em março, ainda sem a
+  // linha de x, e vê fevereiro como perdido.
+  for (const variable of [false, true]) {
+    it(`virada do mês: o Não recriar de quem já está em março não apaga o mês corrente do outro${
+      variable ? " (estimativa ancorada)" : ""
+    }`, async () => {
+      for (const ordem of ["x-antes", "y-antes"] as const) {
+        const { x, y } = await dois(ordem, variable);
+        await createRecurrenceStore(x.session).materializeDue("2027-02-28");
+        expect(v2De(x)?.deletedAt).toBeNull();
+
+        const lostY = recoveryCandidates(y.session.fullState.value, "personal", "2027-03-01");
+        expect(lostY.map((item) => item.entityId)).toEqual([V2]);
+        await createRecurrenceStore(y.session).recoverOccurrences([], lostY);
+        await sincroniza(x, y);
+
+        for (const d of [x, y]) expect(v2De(d)?.deletedAt).toBeNull();
+      }
+    });
+  }
+});

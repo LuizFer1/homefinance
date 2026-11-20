@@ -1,5 +1,5 @@
 import { buildRow } from "../../data/repository";
-import { floorHlc } from "../../domain/clock/hlc";
+import { floorHlc, recoveryHlc } from "../../domain/clock/hlc";
 import { planDuplicateRepair } from "../../domain/ids/duplicate-repair";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { Draft } from "../../domain/model/base";
@@ -230,16 +230,28 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
     dismiss: readonly LostOccurrence[],
   ): Promise<void> {
     try {
-      const clock = session.clock();
-      // "Não recriar" é um tombstone com a chave (`recurrenceId` +
-      // `occurrenceKey`): é por ela que os outros aparelhos e o hub sabem que a
-      // competência já foi respondida.
-      const tombstones = dismiss.map((lost) => {
-        const row = occurrenceRow(lost);
-        const { hlc } = clock.stamp();
-        return { ...row, deletedAt: hlc, updatedAt: hlc };
-      });
-      const rows = [...recreate.map(occurrenceRow), ...tombstones];
+      const { deviceId } = session.clock();
+      // As duas respostas nascem abaixo de qualquer escrita real na linha v2
+      // (`recoveryHlc`): este aparelho pode não ter recebido ainda o que o outro
+      // gravou nela — a recriação apagada ou confirmada depois, ou a ocorrência
+      // do mês corrente dele numa virada de mês com relógios diferentes. Com um
+      // HLC do relógio, Recriar reviveria o apagado e Não recriar apagaria a
+      // única linha viva. Entre as duas respostas, Recriar vence.
+      const answer = (lost: LostOccurrence, recreated: boolean): Transaction => {
+        const hlc = recoveryHlc(lost.draft.occurredOn, deviceId, recreated);
+        return {
+          ...occurrenceRow(lost),
+          updatedAt: hlc,
+          // "Não recriar" é um tombstone com a chave (`recurrenceId` +
+          // `occurrenceKey`): é por ela que os outros aparelhos e o hub sabem
+          // que a competência já foi respondida.
+          deletedAt: recreated ? null : hlc,
+        };
+      };
+      const rows = [
+        ...recreate.map((lost) => answer(lost, true)),
+        ...dismiss.map((lost) => answer(lost, false)),
+      ];
       if (rows.length === 0) return;
       // `insertMissing`: o id é a v2 da chave, o mesmo em qualquer aparelho. Se o
       // outro já respondeu (ou recriou), a linha dele fica.
