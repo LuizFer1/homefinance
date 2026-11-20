@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { compareHlc, createHlcClock, floorHlc, formatHlc, parseHlc } from "./hlc";
+import {
+  bumpHlc,
+  compareHlc,
+  createHlcClock,
+  floorHlc,
+  formatHlc,
+  parseHlc,
+  recoveryHlc,
+} from "./hlc";
 
 const DEVICE_A = "01J9F3K2M7QX8YB4TVWZ0DCEHR";
 const DEVICE_B = "01J9F3K2M7QX8YB4TVWZ0DCEHS";
@@ -149,5 +157,64 @@ describe("floorHlc", () => {
 
   it("rejeita data fora do formato", () => {
     expect(() => floorHlc("10/10/2026", DEVICE_A)).toThrow(/YYYY-MM-DD/);
+  });
+});
+
+describe("recoveryHlc", () => {
+  it("fica abaixo de floorHlc da mesma data em qualquer aparelho, nas duas respostas", () => {
+    for (const recreate of [true, false]) {
+      for (const [mine, theirs] of [
+        [DEVICE_A, DEVICE_B],
+        [DEVICE_B, DEVICE_A],
+      ] as const) {
+        expect(
+          compareHlc(recoveryHlc("2027-02-05", mine, recreate), floorHlc("2027-02-05", theirs)),
+        ).toBeLessThan(0);
+      }
+    }
+  });
+
+  it("Recriar vence Não recriar da mesma competência, qualquer que seja o aparelho", () => {
+    expect(
+      compareHlc(
+        recoveryHlc("2027-02-05", DEVICE_A, true),
+        recoveryHlc("2027-02-05", DEVICE_B, false),
+      ),
+    ).toBeGreaterThan(0);
+    expect(
+      compareHlc(
+        recoveryHlc("2027-02-05", DEVICE_B, true),
+        recoveryHlc("2027-02-05", DEVICE_A, false),
+      ),
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe("bumpHlc", () => {
+  it("fica logo acima: mesmo milissegundo, contador + 1, o aparelho de quem grava", () => {
+    const base = formatHlc({ millis: WALL, counter: 7, deviceId: DEVICE_B });
+    const bumped = bumpHlc(base, DEVICE_A);
+
+    expect(bumped).toBe(formatHlc({ millis: WALL, counter: 8, deviceId: DEVICE_A }));
+    expect(compareHlc(bumped, base)).toBeGreaterThan(0);
+  });
+
+  it("perde para uma escrita feita depois, num milissegundo seguinte", () => {
+    const base = formatHlc({ millis: WALL, counter: 0, deviceId: DEVICE_A });
+    const later = createHlcClock(DEVICE_B).tick(WALL + 1);
+
+    expect(compareHlc(bumpHlc(base, DEVICE_A), later)).toBeLessThan(0);
+  });
+
+  it("contador no teto passa para o milissegundo seguinte, sem quebrar a largura", () => {
+    const base = formatHlc({ millis: WALL, counter: 0xffff, deviceId: DEVICE_A });
+
+    expect(bumpHlc(base, DEVICE_A)).toBe(
+      formatHlc({ millis: WALL + 1, counter: 0, deviceId: DEVICE_A }),
+    );
+  });
+
+  it("rejeita HLC fora do formato", () => {
+    expect(() => bumpHlc("não é um hlc", DEVICE_A)).toThrow(/HLC/);
   });
 });

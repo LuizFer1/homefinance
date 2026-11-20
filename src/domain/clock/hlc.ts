@@ -61,10 +61,48 @@ const DAY_MS = 86_400_000;
  * regride por causa dele.
  */
 export function floorHlc(date: string, deviceId: Ulid): string {
+  return formatHlc({ millis: floorMillis(date), counter: 0, deviceId });
+}
+
+function floorMillis(date: string): number {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (match === null) throw new Error(`floorHlc exige 'YYYY-MM-DD', recebeu ${date}`);
-  const millis = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) - DAY_MS;
-  return formatHlc({ millis, counter: 0, deviceId });
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) - DAY_MS;
+}
+
+/**
+ * Carimbo da resposta da folha de recuperação a uma competência de `date`: um
+ * milissegundo **abaixo** de `floorHlc(date)`, de qualquer aparelho.
+ *
+ * A resposta é dada por um aparelho que pode ainda não ter recebido o que o
+ * outro gravou na mesma linha v2 (a ocorrência do mês corrente dele, a
+ * estimativa ancorada em `floorHlc`, uma edição ou exclusão). Com um HLC do
+ * relógio, "Recriar" reviveria o que o outro apagou e "Não recriar" apagaria a
+ * única linha viva. Abaixo do piso, qualquer escrita real na linha vence; igual
+ * ao piso, o empate cairia no `deviceId`, um sorteio.
+ *
+ * Entre as duas respostas, "Recriar" (contador 1) vence "Não recriar"
+ * (contador 0) de qualquer aparelho: na dúvida, o lançamento fica.
+ */
+export function recoveryHlc(date: string, deviceId: Ulid, recreate: boolean): string {
+  return formatHlc({ millis: floorMillis(date) - 1, counter: recreate ? 1 : 0, deviceId });
+}
+
+/**
+ * O HLC logo acima de `value`: mesmo milissegundo, contador + 1, com o
+ * `deviceId` de quem grava. Para a escrita que só precisa vencer **aquela**
+ * versão da linha e perder para qualquer edição feita depois dela noutro
+ * aparelho (que já nasce num milissegundo seguinte) — o reparo de duplicatas.
+ *
+ * Não passa pelo relógio do aparelho, como `floorHlc`. Contador no teto vai
+ * para o milissegundo seguinte, como no `tick`, para a largura fixa não quebrar.
+ */
+export function bumpHlc(value: string, deviceId: Ulid): string {
+  const parsed = parseHlc(value);
+  if (parsed === null) throw new Error(`bumpHlc exige um HLC, recebeu ${value}`);
+  return parsed.counter >= MAX_COUNTER
+    ? formatHlc({ millis: parsed.millis + 1, counter: 0, deviceId })
+    : formatHlc({ millis: parsed.millis, counter: parsed.counter + 1, deviceId });
 }
 
 export interface HlcClock {
