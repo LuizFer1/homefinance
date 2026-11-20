@@ -1,5 +1,5 @@
 import { dayOfMonthClamped } from "../dates/business-day";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
@@ -12,7 +12,7 @@ import { monthBalance } from "./balances";
  * o LWW converge em vez de guardar duas vezes.
  */
 export function depositId(reserveId: Ulid, month: string): Ulid {
-  return stableEntityId(`reserve:${reserveId}:${month}`);
+  return stableEntityIdV1(`reserve:${reserveId}:${month}`);
 }
 
 export interface DepositPlan {

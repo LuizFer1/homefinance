@@ -1,15 +1,18 @@
 import type { Signal } from "@preact/signals";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeFinanceDb } from "../../data/db";
+import { buildRow } from "../../data/repository";
 import { openTestDb, testSessionDeps } from "../../data/test-db.fake";
 import { floorHlc } from "../../domain/clock/hlc";
-import { stableEntityId } from "../../domain/ids/stable-id";
+import { collidingId } from "../../domain/ids/collision.fake";
+import { stableEntityIdV1, stableEntityIdV2 } from "../../domain/ids/stable-id";
 import type { AppState } from "../../domain/model/app-state";
 import { isAlive } from "../../domain/model/base";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
+import type { RecurrenceAdjustment } from "../../domain/model/recurrence-adjustment";
 import type { TransactionDraft } from "../../domain/model/transaction";
 import { MAX_MINOR } from "../../domain/money/mask";
-import { adjustmentId } from "../../domain/recurrence/adjustments";
+import { adjustmentId, adjustmentSeed } from "../../domain/recurrence/adjustments";
 import { occurrenceKey } from "../../domain/recurrence/schedule";
 import { createSession, type Session, StaleRowsError } from "../session/session";
 import { createRecurrenceStore, type RecurrenceStore } from "./store";
@@ -91,7 +94,7 @@ function onlySeries(): Recurrence {
 }
 
 function amountOf(seriesId: string, period: string): number | undefined {
-  return session.state.value.transactions[stableEntityId(occurrenceKey(seriesId, period))]
+  return session.state.value.transactions[stableEntityIdV1(occurrenceKey(seriesId, period))]
     ?.amountMinor;
 }
 
@@ -250,7 +253,7 @@ describe("adjustSeries", () => {
   it("retroativo atualiza as lançadas e mantém a editada à mão", async () => {
     await store.createSeries(DRAFT, MENSAL, "2026-08-10");
     const series = onlySeries();
-    const agosto = stableEntityId(occurrenceKey(series.id, "2026-08"));
+    const agosto = stableEntityIdV1(occurrenceKey(series.id, "2026-08"));
     await session.mutate("transactions", (repo) => repo.update(agosto, { amountMinor: 520_000 }));
 
     await store.adjustSeries({
@@ -262,7 +265,7 @@ describe("adjustSeries", () => {
     expect(amountOf(series.id, "2026-06")).toBe(500_000);
     expect(amountOf(series.id, "2026-07")).toBe(550_000);
     expect(amountOf(series.id, "2026-08")).toBe(520_000);
-    const julho = await db.transactions.get(stableEntityId(occurrenceKey(series.id, "2026-07")));
+    const julho = await db.transactions.get(stableEntityIdV1(occurrenceKey(series.id, "2026-07")));
     expect(julho).toMatchObject({ amountMinor: 550_000, dirty: 1 });
   });
 
@@ -283,7 +286,7 @@ describe("adjustSeries", () => {
 
     expect(session.error.value).toBe("quota exceeded");
     expect(amountOf(series.id, "2026-07")).toBe(500_000);
-    const julho = await db.transactions.get(stableEntityId(occurrenceKey(series.id, "2026-07")));
+    const julho = await db.transactions.get(stableEntityIdV1(occurrenceKey(series.id, "2026-07")));
     expect(julho?.amountMinor).toBe(500_000);
     expect(await db.recurrenceAdjustments.count()).toBe(0);
   });
@@ -298,14 +301,14 @@ describe("adjustSeries", () => {
 
     expect(session.error.value).toBe("Valor de reajuste inválido");
     expect(await db.recurrenceAdjustments.count()).toBe(0);
-    const julho = await db.transactions.get(stableEntityId(occurrenceKey(series.id, "2026-07")));
+    const julho = await db.transactions.get(stableEntityIdV1(occurrenceKey(series.id, "2026-07")));
     expect(julho?.amountMinor).toBe(500_000);
   });
 
   it("sessão desatualizada não revive ocorrência apagada por outra sessão", async () => {
     await store.createSeries(DRAFT, MENSAL, "2026-08-10");
     const series = onlySeries();
-    const julho = stableEntityId(occurrenceKey(series.id, "2026-07"));
+    const julho = stableEntityIdV1(occurrenceKey(series.id, "2026-07"));
 
     // A sessão B nasce depois da materialização e apaga julho; a sessão A
     // continua com julho vivo no `state` em memória.
@@ -382,6 +385,184 @@ describe("adjustSeries", () => {
   });
 });
 
+/**
+ * Spec do id estável, §4.2/§4.3: A e B são séries cujas sementes de reajuste em
+ * setembro colidem na v1, o mesmo lugar. Antes da correção, reajustar B achava a
+ * linha de A pelo id e trocava o valor **de A**, para sempre.
+ */
+describe("adjustSeries com colisão do id estável", () => {
+  const SERIE_A = "01JZ0000000000000000000SRA";
+  const seedOf = (series: string) => adjustmentSeed(series, "2026-09");
+  const SERIE_B = collidingId("01JZ0000000000000000000", SERIE_A, seedOf);
+  const SLOT = stableEntityIdV1(seedOf(SERIE_A));
+  const V2_B = stableEntityIdV2(seedOf(SERIE_B));
+
+  /** Série gravada direto, com id escolhido. */
+  async function serie(id: string, over: Partial<RecurrenceDraft> = {}, book?: "business") {
+    const row = buildRow<Recurrence>(
+      session.clock(),
+      { ...mensalDraft(), userId: "AUTOR-1", ...over },
+      id,
+      book,
+    );
+    await session.putRows({ recurrences: [row] });
+    return row;
+  }
+
+  const reajustar = (recurrenceId: string, amountMinor: number) =>
+    store.adjustSeries({ recurrenceId, fromPeriod: "2026-09", amountMinor });
+
+  const linha = (id: string): RecurrenceAdjustment | undefined =>
+    session.fullState.value.recurrenceAdjustments[id];
+
+  beforeEach(async () => {
+    expect(adjustmentId(SERIE_B, "2026-09")).toBe(SLOT);
+    // A começa longe: não materializa nada que dispute lugar com as ocorrências de B.
+    await serie(SERIE_A, { startOn: "2030-01-05" });
+    await serie(SERIE_B);
+  });
+
+  it("(e) lugar livre: B vai para o v1, igual ao app de hoje", async () => {
+    await reajustar(SERIE_B, 550_000);
+
+    expect(await db.recurrenceAdjustments.count()).toBe(1);
+    expect(await db.recurrenceAdjustments.get(SLOT)).toMatchObject({
+      recurrenceId: SERIE_B,
+      amountMinor: 550_000,
+    });
+  });
+
+  it("(a) lugar com o reajuste vivo de A: B vai para o v2 e A fica intacto", async () => {
+    await reajustar(SERIE_A, 350_000);
+    const deA = await db.recurrenceAdjustments.get(SLOT);
+
+    await reajustar(SERIE_B, 550_000);
+
+    expect(await db.recurrenceAdjustments.get(SLOT)).toEqual(deA);
+    expect(await db.recurrenceAdjustments.get(V2_B)).toMatchObject({
+      recurrenceId: SERIE_B,
+      fromPeriod: "2026-09",
+      amountMinor: 550_000,
+      deletedAt: null,
+      dirty: 1,
+    });
+    expect(linha(SLOT)).toEqual(deA);
+  });
+
+  it("(b) lugar com o reajuste apagado de A: B vai para o v2 e o tombstone fica", async () => {
+    await reajustar(SERIE_A, 350_000);
+    await store.removeAdjustment(SLOT);
+    const tombstone = await db.recurrenceAdjustments.get(SLOT);
+    expect(tombstone?.deletedAt).not.toBeNull();
+
+    await reajustar(SERIE_B, 550_000);
+
+    expect(await db.recurrenceAdjustments.get(SLOT)).toEqual(tombstone);
+    expect(await db.recurrenceAdjustments.get(V2_B)).toMatchObject({ amountMinor: 550_000 });
+  });
+
+  it("(c) reajustar B de novo atualiza a linha v2 de B, pela chave", async () => {
+    await reajustar(SERIE_A, 350_000);
+    await reajustar(SERIE_B, 550_000);
+    const createdAt = linha(V2_B)?.createdAt;
+
+    await reajustar(SERIE_B, 600_000);
+
+    expect(await db.recurrenceAdjustments.count()).toBe(2);
+    expect(await db.recurrenceAdjustments.get(V2_B)).toMatchObject({
+      amountMinor: 600_000,
+      createdAt,
+    });
+    expect((await db.recurrenceAdjustments.get(SLOT))?.amountMinor).toBe(350_000);
+  });
+
+  it("(d) reajuste apagado de B na competência é revivido, não criado outro", async () => {
+    await reajustar(SERIE_A, 350_000);
+    await reajustar(SERIE_B, 550_000);
+    await store.removeAdjustment(V2_B);
+
+    await reajustar(SERIE_B, 600_000);
+
+    expect(await db.recurrenceAdjustments.count()).toBe(2);
+    expect(await db.recurrenceAdjustments.get(V2_B)).toMatchObject({
+      amountMinor: 600_000,
+      deletedAt: null,
+    });
+  });
+
+  it("(f) Este e os próximos, com valor, passa pelo mesmo caminho", async () => {
+    await reajustar(SERIE_A, 350_000);
+    const deA = await db.recurrenceAdjustments.get(SLOT);
+    await store.materializeDue("2026-09-10");
+    const setembro =
+      session.state.value.transactions[stableEntityIdV1(occurrenceKey(SERIE_B, "2026-09"))];
+    if (setembro === undefined) throw new Error("setembro de B não materializou");
+
+    await store.editFollowing(setembro.id, {
+      kind: setembro.kind,
+      description: setembro.description,
+      amountMinor: 560_000,
+      currency: "BRL",
+      categoryId: setembro.categoryId,
+      paymentMethodId: setembro.paymentMethodId,
+      cashbackMinor: setembro.cashbackMinor,
+      occurredOn: setembro.occurredOn,
+      recurrenceId: setembro.recurrenceId,
+      occurrenceKey: setembro.occurrenceKey,
+    });
+
+    expect(await db.recurrenceAdjustments.get(SLOT)).toEqual(deA);
+    expect(await db.recurrenceAdjustments.get(V2_B)).toMatchObject({
+      recurrenceId: SERIE_B,
+      amountMinor: 560_000,
+    });
+  });
+
+  it("lugar com reajuste da outra conta, que a visão esconde: B vai para o v2", async () => {
+    // Série C e o reajuste dela moram na conta comercial; a tela está na pessoal.
+    const SERIE_C = collidingId("01JZ0000000000000000001", SERIE_B, seedOf);
+    await serie(SERIE_C, { startOn: "2030-01-05" }, "business");
+    const deC = buildRow<RecurrenceAdjustment>(
+      session.clock(),
+      { recurrenceId: SERIE_C, fromPeriod: "2026-09", amountMinor: 1_000 },
+      SLOT,
+      "business",
+    );
+    await session.putRows({ recurrenceAdjustments: [deC] });
+    expect(session.state.value.recurrenceAdjustments[SLOT]).toBeUndefined();
+
+    await reajustar(SERIE_B, 550_000);
+
+    expect(await db.recurrenceAdjustments.get(SLOT)).toEqual(deC);
+    expect(await db.recurrenceAdjustments.get(V2_B)).toMatchObject({
+      recurrenceId: SERIE_B,
+      amountMinor: 550_000,
+    });
+  });
+
+  it("removeAdjustment apaga todas as linhas vivas da competência, não só a mostrada", async () => {
+    // Duplicata da chave (aparelho velho num id, novo noutro): a tela mostra uma
+    // só, e apagar só ela faria a outra reaparecer valendo.
+    await reajustar(SERIE_A, 350_000);
+    await reajustar(SERIE_B, 550_000);
+    const duplicata = buildRow<RecurrenceAdjustment>(
+      session.clock(),
+      { recurrenceId: SERIE_B, fromPeriod: "2026-09", amountMinor: 540_000 },
+      "01JZ000000000000000000DUPB",
+    );
+    await session.putRows({ recurrenceAdjustments: [duplicata] });
+
+    const removed = await store.removeAdjustment(duplicata.id);
+
+    expect(removed).toMatchObject({ id: duplicata.id, dirty: 1 });
+    expect(removed.deletedAt).not.toBeNull();
+    expect((await db.recurrenceAdjustments.get(duplicata.id))?.deletedAt).not.toBeNull();
+    expect((await db.recurrenceAdjustments.get(V2_B))?.deletedAt).not.toBeNull();
+    // O reajuste de A só divide o lugar v1, não é da chave: fica.
+    expect((await db.recurrenceAdjustments.get(SLOT))?.deletedAt).toBeNull();
+  });
+});
+
 describe("série variável", () => {
   const VARIAVEL: RecurrenceRule = { ...MENSAL, variable: true };
   const LUZ: TransactionDraft = {
@@ -397,7 +578,7 @@ describe("série variável", () => {
     const series = onlySeries();
     expect(series.variable).toBe(true);
     const junho =
-      session.state.value.transactions[stableEntityId(occurrenceKey(series.id, "2026-06"))];
+      session.state.value.transactions[stableEntityIdV1(occurrenceKey(series.id, "2026-06"))];
     expect(junho).toMatchObject({ amountMinor: 20_000, estimated: true });
     expect(junho?.updatedAt).toBe(floorHlc("2026-06-05", session.clock().deviceId));
     expect((await db.transactions.get(junho?.id ?? ""))?.updatedAt).toBe(junho?.updatedAt);
@@ -406,7 +587,7 @@ describe("série variável", () => {
   it("a próxima ocorrência nasce com a média das confirmadas", async () => {
     await store.createSeries(LUZ, VARIAVEL, "2026-06-10");
     const series = onlySeries();
-    const junho = stableEntityId(occurrenceKey(series.id, "2026-06"));
+    const junho = stableEntityIdV1(occurrenceKey(series.id, "2026-06"));
     await session.mutate("transactions", (repo) =>
       repo.update(junho, { amountMinor: 32_000, estimated: false }),
     );
@@ -512,7 +693,7 @@ describe("autoria", () => {
     await session.mutate("recurrences", (repo) => repo.create(mensalDraft(), "SERIE-ANTIGA"));
     await store.materializeDue("2026-06-10");
     session.localUserId.value = "AUTOR-2";
-    const julhoId = stableEntityId(occurrenceKey("SERIE-ANTIGA", "2026-07"));
+    const julhoId = stableEntityIdV1(occurrenceKey("SERIE-ANTIGA", "2026-07"));
     const junho = alive()[0];
     if (junho === undefined) throw new Error("junho não materializou");
     await session.putRows({
@@ -545,7 +726,7 @@ describe("autoria", () => {
 describe("editFollowing", () => {
   /** Rascunho que o formulário mandaria para a ocorrência da competência. */
   function rascunhoDe(seriesId: string, period: string, over: Partial<TransactionDraft> = {}) {
-    const row = session.state.value.transactions[stableEntityId(occurrenceKey(seriesId, period))];
+    const row = session.state.value.transactions[stableEntityIdV1(occurrenceKey(seriesId, period))];
     if (row === undefined) throw new Error(`${period} não materializou`);
     const draft: TransactionDraft = {
       kind: row.kind,
@@ -564,7 +745,7 @@ describe("editFollowing", () => {
   }
 
   function categoriaDe(seriesId: string, period: string) {
-    return session.state.value.transactions[stableEntityId(occurrenceKey(seriesId, period))]
+    return session.state.value.transactions[stableEntityIdV1(occurrenceKey(seriesId, period))]
       ?.categoryId;
   }
 

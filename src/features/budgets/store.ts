@@ -1,5 +1,5 @@
 import { buildRow } from "../../data/repository";
-import { budgetIdFor } from "../../domain/budgets/budget-id";
+import { budgetForCategory, budgetTargetId } from "../../domain/budgets/budget-id";
 import type { Ulid } from "../../domain/ids/ulid";
 import { isAlive } from "../../domain/model/base";
 import { bookOf } from "../../domain/model/book";
@@ -38,16 +38,27 @@ export function createBudgetsStore(session: Session): BudgetsStore {
         const category = findCategory(state, categoryId);
         if (category === null) throw new Error("Categoria não existe");
 
-        const id = budgetIdFor(categoryId);
-        const existing = state.budgets[id];
+        // Mesma categoria é a mesma linha, achada pelo `categoryId` e não pelo id
+        // (spec do id estável, §4.3): inclusive uma apagada — refazer a meta é o
+        // mesmo fato — e, com duas vivas, a da regra R, a que a tela mostra. Sem
+        // linha da categoria, v1 se o lugar está livre e v2 se é de outra meta: o
+        // v1 sozinho, com a colisão, tomava a meta de outra categoria.
+        //
+        // A tabela inteira (`fullState`), não a visão: o lugar v1 pode ser de uma
+        // meta da outra conta, e a visão ainda zera `categoryId` que aponta para a
+        // outra conta — espalhar uma linha dela gravaria isso no disco.
+        const full = session.fullState.value;
+        const existing = budgetForCategory(full, categoryId);
         const clock = session.clock();
-        // Mesma categoria é a mesma linha (id determinístico), inclusive uma apagada:
-        // refazer a meta é o mesmo fato, e criar outra linha com o mesmo id
-        // derrubaria o lote.
         const row: Budget =
-          existing === undefined
+          existing === null
             ? // A meta é filha da categoria: herda a conta dela.
-              buildRow<Budget>(clock, { categoryId, limitMinor }, id, bookOf(category))
+              buildRow<Budget>(
+                clock,
+                { categoryId, limitMinor },
+                budgetTargetId(full, categoryId),
+                bookOf(category),
+              )
             : {
                 ...existing,
                 categoryId,
@@ -58,7 +69,7 @@ export function createBudgetsStore(session: Session): BudgetsStore {
               };
         await session.putRowsIfCurrent(
           { budgets: [row] },
-          { budgets: { [id]: existing?.updatedAt ?? null } },
+          { budgets: { [row.id]: existing?.updatedAt ?? null } },
         );
       }),
 

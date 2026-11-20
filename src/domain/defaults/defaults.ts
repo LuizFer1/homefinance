@@ -1,5 +1,5 @@
 import { formatHlc } from "../clock/hlc";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import { type Book, DEFAULT_BOOK } from "../model/book";
 import type { Category, CategoryDraft } from "../model/category";
@@ -34,7 +34,7 @@ export interface DefaultEntry<D> {
  */
 export function defaultId(table: string, key: string, book: Book = DEFAULT_BOOK): Ulid {
   const scope = book === DEFAULT_BOOK ? "" : `${book}:`;
-  return stableEntityId(`default:${scope}${table}:${key}`);
+  return stableEntityIdV1(`default:${scope}${table}:${key}`);
 }
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compareHlc, formatHlc, parseHlc } from "../clock/hlc";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import {
   buildDefaultRows,
   DEFAULT_CATEGORIES,
@@ -53,7 +53,7 @@ describe("GENESIS_HLC", () => {
 
 describe("padrões por conta", () => {
   it("a conta pessoal mantém o id e os bytes de sempre (sem book)", () => {
-    expect(defaultId("categories", "food")).toBe(stableEntityId("default:categories:food"));
+    expect(defaultId("categories", "food")).toBe(stableEntityIdV1("default:categories:food"));
     for (const row of [
       ...buildDefaultRows().categories,
       ...buildDefaultRows("personal").paymentMethods,
@@ -64,7 +64,7 @@ describe("padrões por conta", () => {
 
   it("o id da conta comercial inclui o book e nunca colide com o da pessoal", () => {
     const business = defaultId("categories", "food", "business");
-    expect(business).toBe(stableEntityId("default:business:categories:food"));
+    expect(business).toBe(stableEntityIdV1("default:business:categories:food"));
     expect(business).not.toBe(defaultId("categories", "food"));
   });
 

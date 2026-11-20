@@ -1,4 +1,4 @@
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { type Book, bookOf } from "../model/book";
@@ -58,7 +58,7 @@ export function planOccurrences(state: AppState, today: string): OccurrencePlan[
       if (series.endOn !== null && occurredOn > series.endOn) continue;
 
       const key = occurrenceKey(series.id, period);
-      const entityId = stableEntityId(key);
+      const entityId = stableEntityIdV1(key);
       // A linha pode existir apagada (o usuário removeu a ocorrência): não
       // recriar é a regra, não um detalhe — recriar traria de volta um
       // lançamento que o usuário decidiu que não existe.

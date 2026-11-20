@@ -1,4 +1,4 @@
-import { compareHlc } from "../clock/hlc";
+import { newerByRuleR } from "../ids/stable-slot";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
@@ -20,16 +20,11 @@ export function listBudgets(state: AppState): Budget[] {
   for (const budget of Object.values(state.budgets)) {
     if (!isAlive(budget) || findCategory(state, budget.categoryId) === null) continue;
     const current = byCategory.get(budget.categoryId);
-    if (current === undefined || newerBudget(budget, current)) {
+    if (current === undefined || newerByRuleR(budget, current)) {
       byCategory.set(budget.categoryId, budget);
     }
   }
   return [...byCategory.values()];
-}
-
-function newerBudget(budget: Budget, current: Budget): boolean {
-  const byVersion = compareHlc(budget.updatedAt, current.updatedAt);
-  return byVersion !== 0 ? byVersion > 0 : budget.id > current.id;
 }
 
 /** Meta vigente de uma categoria, ou `null`. */

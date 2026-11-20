@@ -1,5 +1,5 @@
-import { compareHlc } from "../clock/hlc";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
+import { newerByRuleR, pickStableId, rowForKey } from "../ids/stable-slot";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import type { Recurrence } from "../model/recurrence";
@@ -17,23 +17,73 @@ export type AdjustmentLike = Pick<
   "id" | "recurrenceId" | "fromPeriod" | "amountMinor" | "deletedAt"
 > & { updatedAt: string | null };
 
+/** Semente do id do reajuste: a chave `(série, competência)`. */
+export function adjustmentSeed(recurrenceId: Ulid, fromPeriod: string): string {
+  return `${recurrenceId}:adj:${fromPeriod}`;
+}
+
 /**
- * Id do reajuste de uma série numa competência, derivado só dos dois.
+ * O lugar v1 do reajuste de uma série numa competência, derivado só dos dois.
  *
  * Reajustar de novo o mesmo mês atualiza a mesma linha, e dois aparelhos que
  * reajustam o mesmo mês offline convergem nela pelo LWW. Com ULID aleatório
- * seriam dois reajustes vivos para a mesma competência, sem regra que escolha
- * entre eles.
+ * seriam dois reajustes vivos para a mesma competência.
+ *
+ * É o lugar, não a identidade: a v1 colide (spec do id estável, §1), e a linha
+ * do lugar pode ser o reajuste de outra série. Quem procura o reajuste usa
+ * `adjustmentForKey`; quem grava, `adjustmentTargetId`.
  */
 export function adjustmentId(recurrenceId: Ulid, fromPeriod: string): Ulid {
-  return stableEntityId(`${recurrenceId}:adj:${fromPeriod}`);
+  return stableEntityIdV1(adjustmentSeed(recurrenceId, fromPeriod));
 }
 
-/** Reajustes vivos da série, do mais antigo para o mais novo. */
+/**
+ * A linha do reajuste da série na competência, procurada pelos campos — viva ou
+ * apagada, em qualquer id (ver `rowForKey`). Pelo id derivado acharia, depois de
+ * uma colisão, o reajuste de outra série, e o escritor reescreveria o valor dela.
+ */
+export function adjustmentForKey(
+  state: AppState,
+  recurrenceId: Ulid,
+  fromPeriod: string,
+): RecurrenceAdjustment | null {
+  return rowForKey(
+    Object.values(state.recurrenceAdjustments).filter(
+      (row) => row.recurrenceId === recurrenceId && row.fromPeriod === fromPeriod,
+    ),
+  );
+}
+
+/**
+ * Id onde gravar o reajuste: o da linha que a chave já tem, ou, sem nenhuma, v1
+ * se o lugar está livre e v2 se é de outro reajuste (`pickStableId`).
+ *
+ * Quem grava passa a tabela inteira (`fullState`), não a visão de uma conta: o
+ * lugar v1 pode ser de um reajuste da outra conta, que a visão esconde.
+ */
+export function adjustmentTargetId(state: AppState, recurrenceId: Ulid, fromPeriod: string): Ulid {
+  return (
+    adjustmentForKey(state, recurrenceId, fromPeriod)?.id ??
+    pickStableId(state.recurrenceAdjustments, adjustmentSeed(recurrenceId, fromPeriod))
+  );
+}
+
+/**
+ * Reajustes vivos da série, do mais antigo para o mais novo, **um por
+ * competência**: com duas linhas vivas na mesma (aparelho velho e novo), só a
+ * vencedora da regra R, a que `amountFor` usa. O histórico da tela não mostra o
+ * mês duas vezes, e o valor listado é o que vale.
+ */
 export function adjustmentsOf(state: AppState, recurrenceId: Ulid): RecurrenceAdjustment[] {
-  return Object.values(state.recurrenceAdjustments)
-    .filter((row) => row.deletedAt === null && row.recurrenceId === recurrenceId)
-    .sort((a, b) => (a.fromPeriod < b.fromPeriod ? -1 : a.fromPeriod > b.fromPeriod ? 1 : 0));
+  const byPeriod = new Map<string, RecurrenceAdjustment>();
+  for (const row of Object.values(state.recurrenceAdjustments)) {
+    if (row.deletedAt !== null || row.recurrenceId !== recurrenceId) continue;
+    const current = byPeriod.get(row.fromPeriod);
+    if (current === undefined || newerByRuleR(row, current)) byPeriod.set(row.fromPeriod, row);
+  }
+  return [...byPeriod.values()].sort((a, b) =>
+    a.fromPeriod < b.fromPeriod ? -1 : a.fromPeriod > b.fromPeriod ? 1 : 0,
+  );
 }
 
 /**
@@ -75,12 +125,17 @@ export function amountFor(
  */
 function newerAdjustment(row: AdjustmentLike, best: AdjustmentLike): boolean {
   if (row.fromPeriod !== best.fromPeriod) return row.fromPeriod > best.fromPeriod;
-  if (row.updatedAt !== best.updatedAt) {
-    if (row.updatedAt === null) return true;
-    if (best.updatedAt === null) return false;
-    return compareHlc(row.updatedAt, best.updatedAt) > 0;
+  if (row.updatedAt === null || best.updatedAt === null) {
+    if (row.updatedAt === best.updatedAt) return row.id > best.id;
+    return row.updatedAt === null;
   }
-  return row.id > best.id;
+  return newerByRuleR(
+    { id: row.id, updatedAt: row.updatedAt },
+    {
+      id: best.id,
+      updatedAt: best.updatedAt,
+    },
+  );
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stableEntityId } from "../ids/stable-id";
+import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Recurrence } from "../model/recurrence";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
 import type { Transaction } from "../model/transaction";
@@ -34,7 +34,7 @@ function occurrence(
   const key = occurrenceKey(series.id, period);
   return {
     ...ALIVE,
-    id: stableEntityId(key),
+    id: stableEntityIdV1(key),
     kind: series.kind,
     description: series.description,
     amountMinor,
