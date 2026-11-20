@@ -93,6 +93,13 @@ export interface ReserveMovement extends BaseRow, BookScoped {
   reason: WithdrawReason | null;
   /** Nasceu do depósito mensal. */
   recurring: boolean;
+  /**
+   * Depósito mensal: o mês ('YYYY-MM') de que ele é o depósito. A data é
+   * editável (`editMovement`), então o mês pela data não identifica o fato, e o
+   * id também não (a v1 colide; spec do id estável, §4.3). Ausente nas linhas
+   * anteriores ao campo e nos movimentos manuais: ver `isDepositFor`.
+   */
+  period?: string | null;
 }
 
 export type ReserveMovementDraft = Draft<ReserveMovement>;

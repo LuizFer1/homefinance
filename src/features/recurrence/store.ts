@@ -1,5 +1,6 @@
 import { buildRow } from "../../data/repository";
 import { floorHlc } from "../../domain/clock/hlc";
+import { planDuplicateRepair } from "../../domain/ids/duplicate-repair";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { Draft } from "../../domain/model/base";
 import { BOOKS, bookOf } from "../../domain/model/book";
@@ -61,6 +62,12 @@ export interface RecurrenceStore {
    * Idempotente: com tudo certo não grava nada. Roda no boot e depois do sync.
    */
   repairAuthors: () => Promise<void>;
+  /**
+   * Apaga a cópia v2 das ocorrências e depósitos mensais que ficaram duas vezes
+   * (`planDuplicateRepair`). Idempotente: sem duplicata não grava nada. Roda no
+   * boot, depois da materialização, e depois de cada pull.
+   */
+  repairDuplicates: () => Promise<void>;
 }
 
 /**
@@ -356,6 +363,56 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
     }
   }
 
+  async function repairDuplicates(): Promise<void> {
+    // Trabalho de fundo: um `StaleRowsError` aqui não é falha da pessoa, e o aviso
+    // que a sessão põe nele não pode tomar o lugar de um erro que já estava lá.
+    const before = session.error.value;
+    try {
+      // A tabela inteira: o par é decidido só pelos ids, e as duas cópias moram
+      // na conta da série (o tombstone preserva `book` pelo spread).
+      const plan = planDuplicateRepair(session.fullState.value);
+      if (plan.transactions.length === 0 && plan.reserveMovements.length === 0) return;
+
+      const clock = session.clock();
+      const tombstone = <T extends { deletedAt: string | null; updatedAt: string }>(row: T): T => {
+        const { hlc } = clock.stamp();
+        return { ...row, deletedAt: hlc, updatedAt: hlc, dirty: 1 };
+      };
+      const transactions: Transaction[] = plan.transactions.flatMap(({ loser, survivor }) => [
+        tombstone(loser),
+        ...(survivor === null
+          ? []
+          : [{ ...survivor, updatedAt: clock.stamp().hlc, dirty: 1 as const }]),
+      ]);
+      const reserveMovements = plan.reserveMovements.map(({ loser }) => tombstone(loser));
+      // As duas linhas de cada par entram com a versão lida, a v1 inclusive mesmo
+      // sem ser regravada: se o sync ou outra aba a apagou, apagar a v2 deixaria o
+      // fato sem nenhuma linha viva. Divergiu: espera o próximo boot ou pull.
+      const expected: ExpectedVersions = {
+        transactions: Object.fromEntries(
+          plan.transactions.flatMap(({ loser, keeper }) => [
+            [loser.id, loser.updatedAt],
+            [keeper.id, keeper.updatedAt],
+          ]),
+        ),
+        reserveMovements: Object.fromEntries(
+          plan.reserveMovements.flatMap(({ loser, keeper }) => [
+            [loser.id, loser.updatedAt],
+            [keeper.id, keeper.updatedAt],
+          ]),
+        ),
+      };
+      await session.putRowsIfCurrent({ transactions, reserveMovements }, expected);
+    } catch (cause) {
+      if (cause instanceof StaleRowsError) {
+        session.error.value = before;
+        return;
+      }
+      session.error.value = describeError(cause);
+      throw cause;
+    }
+  }
+
   return {
     async createSeries(draft, input, today) {
       // Parcelado, a regra sai do número de vezes e da data da compra, e não do
@@ -420,5 +477,6 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
     editFollowing,
     removeAdjustment,
     repairAuthors,
+    repairDuplicates,
   };
 }

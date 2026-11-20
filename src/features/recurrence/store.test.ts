@@ -10,10 +10,12 @@ import type { AppState } from "../../domain/model/app-state";
 import { isAlive } from "../../domain/model/base";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
 import type { RecurrenceAdjustment } from "../../domain/model/recurrence-adjustment";
-import type { TransactionDraft } from "../../domain/model/transaction";
+import type { ReserveMovement } from "../../domain/model/reserve";
+import type { Transaction, TransactionDraft } from "../../domain/model/transaction";
 import { MAX_MINOR } from "../../domain/money/mask";
 import { adjustmentId, adjustmentSeed } from "../../domain/recurrence/adjustments";
 import { occurrenceKey } from "../../domain/recurrence/schedule";
+import { depositSeed } from "../../domain/reserves/deposits";
 import { createSession, type Session, StaleRowsError } from "../session/session";
 import { createRecurrenceStore, type RecurrenceStore } from "./store";
 
@@ -847,5 +849,96 @@ describe("editFollowing", () => {
 
     expect(categoriaDe(series.id, "2026-07")).toBe("CAT-NOVA");
     expect(categoriaDe(series.id, "2026-08")).toBe("CAT-NOVA");
+  });
+});
+
+describe("repairDuplicates", () => {
+  const S = "01JC0000000000000000000001";
+  const K = occurrenceKey(S, "2026-08");
+  const V1 = stableEntityIdV1(K);
+  const V2 = stableEntityIdV2(K);
+  const R = "01JC0000000000000000000R01";
+  const D1 = stableEntityIdV1(depositSeed(R, "2026-08"));
+  const D2 = stableEntityIdV2(depositSeed(R, "2026-08"));
+
+  function ocorrencia(id: string, over: Partial<TransactionDraft> = {}) {
+    return buildRow<Transaction>(
+      session.clock(),
+      {
+        ...DRAFT,
+        occurredOn: "2026-08-05",
+        recurrenceId: S,
+        occurrenceKey: K,
+        userId: "AUTOR-1",
+        ...over,
+      },
+      id,
+    );
+  }
+
+  function deposito(id: string, period?: string) {
+    return buildRow<ReserveMovement>(
+      session.clock(),
+      {
+        reserveId: R,
+        amountMinor: 5_000,
+        occurredOn: "2026-08-10",
+        userId: "AUTOR-1",
+        description: null,
+        reason: null,
+        recurring: true,
+        ...(period === undefined ? {} : { period }),
+      },
+      id,
+    );
+  }
+
+  it("apaga a cópia v2 e deixa a v1 viva; a confirmação da v2 vai para a v1", async () => {
+    await session.putRows({
+      transactions: [
+        ocorrencia(V1, { estimated: true, amountMinor: 1_000 }),
+        ocorrencia(V2, { estimated: false, amountMinor: 1_234, importKey: "K2" }),
+      ],
+      reserveMovements: [deposito(D1), deposito(D2, "2026-08")],
+    });
+
+    await store.repairDuplicates();
+
+    expect(await db.transactions.get(V1)).toMatchObject({
+      deletedAt: null,
+      estimated: false,
+      amountMinor: 1_234,
+      importKey: "K2",
+      dirty: 1,
+    });
+    expect((await db.transactions.get(V2))?.deletedAt).not.toBeNull();
+    expect((await db.reserveMovements.get(D1))?.deletedAt).toBeNull();
+    expect((await db.reserveMovements.get(D2))?.deletedAt).not.toBeNull();
+    expect(session.fullState.value.transactions[V2]?.deletedAt).not.toBeNull();
+  });
+
+  it("sem duplicata não grava nada", async () => {
+    await session.putRows({ transactions: [ocorrencia(V1)] });
+    const antes = await db.transactions.get(V1);
+    const putRows = vi.spyOn(session, "putRowsIfCurrent");
+
+    await store.repairDuplicates();
+
+    expect(putRows).not.toHaveBeenCalled();
+    expect(await db.transactions.get(V1)).toEqual(antes);
+  });
+
+  it("a v1 mudou no banco desde a leitura: não apaga a v2 (nunca zero vivas)", async () => {
+    await session.putRows({ transactions: [ocorrencia(V1), ocorrencia(V2)] });
+    // Outra aba apaga a v1 sem a sessão saber.
+    const v1 = await db.transactions.get(V1);
+    if (v1 === undefined) throw new Error("sem v1");
+    const hlc = v1.updatedAt.replace(/^\d/, "9");
+    await db.transactions.put({ ...v1, deletedAt: hlc, updatedAt: hlc });
+
+    await store.repairDuplicates();
+
+    expect((await db.transactions.get(V2))?.deletedAt).toBeNull();
+    expect(session.error.value).toBeNull();
   });
 });

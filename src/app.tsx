@@ -311,6 +311,9 @@ export function App({
       .then(() => registry.mergeLegacyDefaults().catch(ignoreHandled))
       .then(() => recurrence.materializeDue(today).catch(ignoreHandled))
       .then(() => reserves.materializeDue(today).catch(ignoreHandled))
+      // Duplicata v1/v2 que um sync anterior deixou (o pull já repara, mas o app
+      // pode ter fechado antes): fica a v1.
+      .then(() => recurrence.repairDuplicates().catch(ignoreHandled))
       .then(() => setBooted(true))
       .then(() => sync.init())
       .then(() => sync.sync({ auto: true }).catch(ignoreHandled))

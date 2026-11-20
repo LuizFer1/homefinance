@@ -139,6 +139,10 @@ const sync = createSyncStore({
     // O pull pode trazer meses gerados por um aparelho ainda na versão que
     // carimbava o próprio usuário: voltam para o autor da série.
     await recurrence.repairAuthors().catch(ignoreHandled);
+    // O pull pode trazer a cópia v1 de uma ocorrência ou depósito que este
+    // aparelho gravou em v2 (ou o contrário): fica uma só, a v1. Antes do
+    // depósito, cuja falha não é engolida aqui.
+    await recurrence.repairDuplicates().catch(ignoreHandled);
     await reserves.materializeDue(today);
   },
 });

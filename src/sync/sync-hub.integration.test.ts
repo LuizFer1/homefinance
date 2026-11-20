@@ -24,6 +24,7 @@ import type { Category } from "../domain/model/category";
 import type { PaymentMethod } from "../domain/model/payment-method";
 import type { Recurrence } from "../domain/model/recurrence";
 import type { RecurrenceAdjustment } from "../domain/model/recurrence-adjustment";
+import type { Transaction } from "../domain/model/transaction";
 import {
   adjustmentForKey,
   adjustmentId,
@@ -31,6 +32,7 @@ import {
   adjustmentsOf,
   amountFor,
 } from "../domain/recurrence/adjustments";
+import { occurrenceKey } from "../domain/recurrence/schedule";
 import { movement, reserve } from "../domain/reserves/fixtures.fake";
 import { createBudgetsStore } from "../features/budgets/store";
 import { createCardsStore } from "../features/cards/store";
@@ -920,5 +922,100 @@ describe("versões misturadas: reajuste e meta", () => {
         });
       }
     });
+  });
+});
+
+describe("reparo de duplicatas entre dois aparelhos", () => {
+  const S = "01JC0000000000000000000001";
+  const K = occurrenceKey(S, "2027-02");
+  const V1 = stableEntityIdV1(K);
+  const V2 = stableEntityIdV2(K);
+
+  function ocorrencia(d: Device, id: string, over: Partial<Transaction> = {}) {
+    return buildRow<Transaction>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: "Luz",
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn: "2027-02-05",
+        userId: null,
+        recurrenceId: S,
+        occurrenceKey: K,
+        estimated: true,
+        ...over,
+      },
+      id,
+    );
+  }
+
+  const vivas = (d: Device) =>
+    Object.values(d.session.state.value.transactions)
+      .filter((row) => row.deletedAt === null && row.occurrenceKey === K)
+      .map((row) => row.id);
+
+  it("estados divergentes (A sem a confirmação, B com ela): exatamente uma viva, a v1", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+    // O cenário C já aconteceu: as duas cópias chegaram aos dois aparelhos.
+    await a.session.putRows({ transactions: [ocorrencia(a, V1), ocorrencia(a, V2)] });
+    await a.sync.sync();
+    await b.sync.sync();
+
+    // B confirma a cópia v2 (a que a tela dele mostrou) antes de reparar.
+    const v2 = b.session.state.value.transactions[V2];
+    if (v2 === undefined) throw new Error("v2 não chegou");
+    await b.session.putRows({
+      transactions: [
+        {
+          ...v2,
+          estimated: false,
+          amountMinor: 12_345,
+          updatedAt: b.session.clock().stamp().hlc,
+          dirty: 1,
+        },
+      ],
+    });
+
+    // Os dois reparam offline, cada um com o seu estado.
+    await createRecurrenceStore(a.session).repairDuplicates();
+    await createRecurrenceStore(b.session).repairDuplicates();
+
+    await a.sync.sync();
+    await b.sync.sync();
+    await a.sync.sync();
+
+    for (const d of [a, b]) {
+      expect(vivas(d)).toEqual([V1]);
+      // A confirmação feita só na v2 sobreviveu na v1: A não regravou a v1 (para
+      // ele a v2 era estimativa), então a cópia de B é a última versão dela.
+      expect(d.session.state.value.transactions[V1]).toMatchObject({
+        estimated: false,
+        amountMinor: 12_345,
+      });
+    }
+  });
+
+  it("os dois reparam o mesmo par sem divergência: ainda uma viva, a v1", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+    await a.session.putRows({ transactions: [ocorrencia(a, V1), ocorrencia(a, V2)] });
+    await a.sync.sync();
+    await b.sync.sync();
+
+    await createRecurrenceStore(a.session).repairDuplicates();
+    await createRecurrenceStore(b.session).repairDuplicates();
+    await a.sync.sync();
+    await b.sync.sync();
+    await a.sync.sync();
+
+    expect(vivas(a)).toEqual([V1]);
+    expect(vivas(b)).toEqual([V1]);
   });
 });

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { stableEntityIdV1 } from "../ids/stable-id";
+import type { ReserveMovement } from "../model/reserve";
 import { DELETED_AT } from "../model/row.fake";
-import { depositId, planDeposits } from "./deposits";
+import { depositId, isDepositFor, planDeposits } from "./deposits";
 import { movement, reserve, stateOf, tx } from "./fixtures.fake";
 
 const SALARIO = tx("SAL", "income", 300_000, "2026-10-05");
@@ -119,5 +120,60 @@ describe("planDeposits", () => {
     expect(
       planDeposits(stateOf({ transactions: [SALARIO], reserves: [dead, none] }), "2026-10-20"),
     ).toEqual([]);
+  });
+});
+
+describe("isDepositFor", () => {
+  const RES = "01JC0000000000000000000R01";
+  const dep = (id: string, occurredOn: string, extra: Partial<ReserveMovement> = {}) =>
+    movement(id, RES, 5_000, occurredOn, { recurring: true, ...extra });
+
+  /** Dois meses da mesma reserva cujo depósito cai no mesmo lugar v1. */
+  function collidingMonths(): [string, string] {
+    const seen = new Map<string, string>();
+    for (let year = 2020; year < 2120; year += 1) {
+      for (let m = 1; m <= 12; m += 1) {
+        const month = `${year}-${String(m).padStart(2, "0")}`;
+        const id = depositId(RES, month);
+        const first = seen.get(id);
+        if (first !== undefined) return [first, month];
+        seen.set(id, month);
+      }
+    }
+    throw new Error("nenhuma colisão");
+  }
+
+  it("linha nova: vale o `period`, não a data nem o id", () => {
+    const row = dep("QUALQUER", "2027-03-02", { period: "2027-02" });
+    expect(isDepositFor(row, RES, "2027-02")).toBe(true);
+    expect(isDepositFor(row, RES, "2027-03")).toBe(false);
+  });
+
+  it("linha antiga com a data no próprio mês: é o depósito desse mês", () => {
+    const row = dep(depositId(RES, "2027-02"), "2027-02-10");
+    expect(isDepositFor(row, RES, "2027-02")).toBe(true);
+    expect(isDepositFor(row, RES, "2027-03")).toBe(false);
+  });
+
+  it("linha antiga com a data movida: vale pelo lugar e não bloqueia o mês para onde foi", () => {
+    const row = dep(depositId(RES, "2027-02"), "2027-03-01");
+    expect(isDepositFor(row, RES, "2027-02")).toBe(true);
+    expect(isDepositFor(row, RES, "2027-03")).toBe(false);
+  });
+
+  it("dois meses da mesma reserva no mesmo lugar v1: um não bloqueia o outro", () => {
+    const [first, second] = collidingMonths();
+    const row = dep(depositId(RES, first), `${first}-10`);
+    expect(isDepositFor(row, RES, first)).toBe(true);
+    expect(isDepositFor(row, RES, second)).toBe(false);
+  });
+
+  it("outra reserva ou movimento manual: nunca", () => {
+    const outra = movement(depositId(RES, "2027-02"), "R2", 5_000, "2027-02-10", {
+      recurring: true,
+    });
+    const manual = dep(depositId(RES, "2027-02"), "2027-02-10", { recurring: false });
+    expect(isDepositFor(outra, RES, "2027-02")).toBe(false);
+    expect(isDepositFor(manual, RES, "2027-02")).toBe(false);
   });
 });

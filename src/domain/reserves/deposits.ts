@@ -3,6 +3,7 @@ import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
+import type { ReserveMovement } from "../model/reserve";
 import { monthOf } from "../projections/periods";
 import { monthBalance } from "./balances";
 
@@ -12,7 +13,39 @@ import { monthBalance } from "./balances";
  * o LWW converge em vez de guardar duas vezes.
  */
 export function depositId(reserveId: Ulid, month: string): Ulid {
-  return stableEntityIdV1(`reserve:${reserveId}:${month}`);
+  return stableEntityIdV1(depositSeed(reserveId, month));
+}
+
+/** Semente do id do depósito mensal (v1 quando o lugar está livre, v2 na colisão). */
+export function depositSeed(reserveId: Ulid, month: string): string {
+  return `reserve:${reserveId}:${month}`;
+}
+
+type DepositFields = Pick<ReserveMovement, "id" | "reserveId" | "recurring" | "occurredOn"> & {
+  period?: string | null;
+};
+
+/**
+ * "Esta linha é o depósito mensal de `reserveId` em `month`?" — pela chave, não
+ * pelo id (spec do id estável, §4.3): a v1 colide, e outra reserva (ou outro mês
+ * da mesma) pode morar no lugar.
+ *
+ * Linha nova grava `period`. Linha antiga não tem: sempre está num id v1, porque
+ * só o planejador e o "Guardar" que liga a recorrência gravam `recurring: true`,
+ * e os dois usavam `depositId`. Então, em ordem:
+ * 1. o mês da data, **se** o id é o v1 desse mês (a data não foi editada);
+ * 2. senão (a data foi movida para outro mês), vale pelo lugar: é o de `month`
+ *    se o id é o v1 de `month`.
+ * A ordem importa: só o lugar deixaria dois meses da mesma reserva que colidem
+ * na v1 bloquearem um ao outro, e só a data faria a data editada bloquear o mês
+ * para onde foi e liberar de novo o mês de onde saiu.
+ */
+export function isDepositFor(row: DepositFields, reserveId: Ulid, month: string): boolean {
+  if (row.reserveId !== reserveId || row.recurring !== true) return false;
+  if (typeof row.period === "string") return row.period === month;
+  const dated = monthOf(row.occurredOn);
+  if (row.id === depositId(reserveId, dated)) return dated === month;
+  return row.id === depositId(reserveId, month);
 }
 
 export interface DepositPlan {
