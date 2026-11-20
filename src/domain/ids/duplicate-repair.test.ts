@@ -141,3 +141,41 @@ describe("planDuplicateRepair — depósito mensal", () => {
     expect(planDuplicateRepair(stateOf({ movements: [fev, mar] })).reserveMovements).toEqual([]);
   });
 });
+
+describe("planDuplicateRepair — avulsa importada (achado 8)", () => {
+  // Dois aparelhos novos importam a mesma linha: um vê o lugar v1 livre e grava
+  // lá, o outro o vê ocupado e grava em v2. As duas levam `importKey = v2(seed)`.
+  const SEMENTE = "2027-02-05|expense|10000|mercado|-";
+  const L1 = stableEntityIdV1(SEMENTE);
+  const L2 = stableEntityIdV2(SEMENTE);
+  const linha = (id: string, extra: Partial<Transaction> = {}) =>
+    tx(id, "expense", 10_000, "2027-02-05", null, { importKey: L2, ...extra });
+
+  it("a mesma importKey v2 em duas avulsas vivas: sobrevive a que não está no id v2", () => {
+    const state = stateOf({ transactions: [linha(L1), linha(L2)] });
+    expect(planDuplicateRepair(state).transactions).toEqual([
+      { loser: state.transactions[L2], keeper: state.transactions[L1], survivor: null },
+    ]);
+  });
+
+  it("só pelos ids: a edição de uma das cópias não muda quem sobrevive", () => {
+    const state = stateOf({
+      transactions: [linha(L1), linha(L2, { description: "editada", amountMinor: 9_999 })],
+    });
+    expect(planDuplicateRepair(state).transactions.map((r) => r.loser.id)).toEqual([L2]);
+  });
+
+  it("fora do par: uma cópia apagada, a ocorrência que a linha confirmou, ou a chave v1", () => {
+    for (const rows of [
+      [linha(L1, { deletedAt: DELETED_AT }), linha(L2)],
+      [linha(L1), linha(L2, { deletedAt: DELETED_AT })],
+      // A confirmação de uma estimativa leva a mesma chave, mas é outro fato.
+      [occ(V1, { importKey: L2 }), linha(L2)],
+      // Duas avulsas com a mesma chave, nenhuma no id dela: não veio da corrida.
+      [linha("01JC00000000000000000OUTR1"), linha("01JC00000000000000000OUTR2")],
+      [linha(L2)],
+    ]) {
+      expect(planDuplicateRepair(stateOf({ transactions: rows })).transactions).toEqual([]);
+    }
+  });
+});

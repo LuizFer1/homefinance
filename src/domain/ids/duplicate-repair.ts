@@ -20,6 +20,10 @@ export interface OccurrenceRepair {
 }
 
 export interface DuplicateRepairPlan {
+  /**
+   * Ocorrências `{v1(K), v2(K)}` e avulsas importadas com a mesma `importKey`
+   * v2 (a cópia no id da chave perde; nas avulsas `survivor` é sempre `null`).
+   */
   transactions: OccurrenceRepair[];
   /** Cópias v2 de depósito mensal (`loser`, vira tombstone) e a v1 que fica (`keeper`). */
   reserveMovements: { loser: ReserveMovement; keeper: ReserveMovement }[];
@@ -77,6 +81,30 @@ export function planDuplicateRepair(state: AppState): DuplicateRepairPlan {
           }
         : null,
     });
+  }
+
+  // Avulsa importada (achado 8 da revisão): dois aparelhos novos importam a mesma
+  // linha, um com o lugar v1 livre (grava lá) e o outro ocupado (grava em v2); as
+  // duas levam `importKey = v2(semente)`, que prova o mesmo fato. A linha não
+  // guarda a semente, mas a avulsa só leva a própria v2 como chave quando está
+  // nela: `id === importKey` é a cópia v2. Mesma regra só pelos ids — sobrevive a
+  // outra. Só avulsa (`occurrenceKey === null`): a ocorrência que a linha
+  // confirmou leva a mesma chave e é outro fato.
+  const importedByKey = new Map<string, Transaction[]>();
+  for (const row of Object.values(state.transactions)) {
+    if (row.deletedAt !== null || row.occurrenceKey != null) continue;
+    if (typeof row.importKey !== "string" || row.importKey === row.id) continue;
+    const list = importedByKey.get(row.importKey) ?? [];
+    list.push(row);
+    importedByKey.set(row.importKey, list);
+  }
+  for (const [key, partners] of importedByKey) {
+    const loser = state.transactions[key];
+    if (loser === undefined || loser.deletedAt !== null || loser.occurrenceKey != null) continue;
+    if (loser.importKey !== key) continue;
+    const [keeper] = [...partners].sort((a, b) => (a.id < b.id ? -1 : 1));
+    if (keeper === undefined) continue;
+    transactions.push({ loser, keeper, survivor: null });
   }
 
   const reserveMovements: DuplicateRepairPlan["reserveMovements"] = [];

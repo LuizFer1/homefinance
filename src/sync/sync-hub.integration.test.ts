@@ -1641,6 +1641,25 @@ describe("versões misturadas: ocorrência, depósito e importação", () => {
       for (const d of [novo, velho]) expect(ifood(d)).toEqual([I1, I2].sort());
       expect(classifyImport(linhas(), ctx, slotsDe(novo))[0]?.status).toBe("imported");
     });
+
+    it("corrida entre dois aparelhos novos (v1 e v2 com a mesma importKey): o reparo deixa a v1", async () => {
+      // As duas cópias levam `importKey = v2(semente)`: aí a chave prova o mesmo fato.
+      const { novo, velho: outroNovo } = await dois();
+      await novo.session.putRows({ transactions: [ocorrencia(novo, I1, B, KB, "2027-01-05")] });
+      await novoImporta(novo);
+      await novoImporta(outroNovo);
+      await sincroniza(novo, outroNovo);
+      expect(ifood(novo)).toEqual([I1, I2].sort());
+
+      await createRecurrenceStore(novo.session).repairDuplicates();
+      await sincroniza(novo, outroNovo);
+
+      for (const d of [novo, outroNovo]) {
+        expect(ifood(d)).toEqual([I1]);
+        expect(d.session.state.value.transactions[I2]?.mergedInto).toBe(I1);
+      }
+      expect(classifyImport(linhas(), ctx, slotsDe(novo))[0]?.status).toBe("imported");
+    });
   });
 });
 
