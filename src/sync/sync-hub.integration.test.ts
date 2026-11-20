@@ -17,6 +17,8 @@ import {
 import { collidingId } from "../domain/ids/collision.fake";
 import { stableEntityIdV1, stableEntityIdV2 } from "../domain/ids/stable-id";
 import type { RandomChunk } from "../domain/ids/ulid";
+import { parseStatement } from "../domain/import/parse";
+import { classifyImport, type ImportContext, importSeeds, planImport } from "../domain/import/plan";
 import { bookOf } from "../domain/model/book";
 import { BUSINESS_BOOK_ID } from "../domain/model/book-account";
 import type { Budget } from "../domain/model/budget";
@@ -24,6 +26,7 @@ import type { Category } from "../domain/model/category";
 import type { PaymentMethod } from "../domain/model/payment-method";
 import type { Recurrence } from "../domain/model/recurrence";
 import type { RecurrenceAdjustment } from "../domain/model/recurrence-adjustment";
+import type { Transaction } from "../domain/model/transaction";
 import {
   adjustmentForKey,
   adjustmentId,
@@ -31,11 +34,16 @@ import {
   adjustmentsOf,
   amountFor,
 } from "../domain/recurrence/adjustments";
+import { recoveryCandidates } from "../domain/recurrence/recovery";
+import { occurrenceKey } from "../domain/recurrence/schedule";
+import { depositId, depositSeed } from "../domain/reserves/deposits";
 import { movement, reserve } from "../domain/reserves/fixtures.fake";
 import { createBudgetsStore } from "../features/budgets/store";
 import { createCardsStore } from "../features/cards/store";
+import { createImportStore } from "../features/import/store";
 import { createRecurrenceStore } from "../features/recurrence/store";
 import { createRegistryStore, type RegistryStore } from "../features/registry/store";
+import { createReservesStore } from "../features/reserves/store";
 import { createSession, type Session } from "../features/session/session";
 import { createSyncStore, type SyncStore } from "../features/sync/store";
 import { createFakeHub, type FakeHub } from "./fake-hub.fake";
@@ -921,4 +929,955 @@ describe("versões misturadas: reajuste e meta", () => {
       }
     });
   });
+});
+
+describe("reparo de duplicatas entre dois aparelhos", () => {
+  const S = "01JC0000000000000000000001";
+  const K = occurrenceKey(S, "2027-02");
+  const V1 = stableEntityIdV1(K);
+  const V2 = stableEntityIdV2(K);
+
+  function ocorrencia(d: Device, id: string, over: Partial<Transaction> = {}) {
+    return buildRow<Transaction>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: "Luz",
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn: "2027-02-05",
+        userId: null,
+        recurrenceId: S,
+        occurrenceKey: K,
+        estimated: true,
+        ...over,
+      },
+      id,
+    );
+  }
+
+  const vivas = (d: Device) =>
+    Object.values(d.session.state.value.transactions)
+      .filter((row) => row.deletedAt === null && row.occurrenceKey === K)
+      .map((row) => row.id);
+
+  it("estados divergentes (A sem a confirmação, B com ela): exatamente uma viva, a v1", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+    // O cenário C já aconteceu: as duas cópias chegaram aos dois aparelhos.
+    await a.session.putRows({ transactions: [ocorrencia(a, V1), ocorrencia(a, V2)] });
+    await a.sync.sync();
+    await b.sync.sync();
+
+    // B confirma a cópia v2 (a que a tela dele mostrou) antes de reparar.
+    const v2 = b.session.state.value.transactions[V2];
+    if (v2 === undefined) throw new Error("v2 não chegou");
+    await b.session.putRows({
+      transactions: [
+        {
+          ...v2,
+          estimated: false,
+          amountMinor: 12_345,
+          updatedAt: b.session.clock().stamp().hlc,
+          dirty: 1,
+        },
+      ],
+    });
+
+    // Os dois reparam offline, cada um com o seu estado.
+    await createRecurrenceStore(a.session).repairDuplicates();
+    await createRecurrenceStore(b.session).repairDuplicates();
+
+    await a.sync.sync();
+    await b.sync.sync();
+    await a.sync.sync();
+
+    for (const d of [a, b]) {
+      expect(vivas(d)).toEqual([V1]);
+      // A confirmação feita só na v2 sobreviveu na v1: A não regravou a v1 (para
+      // ele a v2 era estimativa), então a cópia de B é a última versão dela.
+      expect(d.session.state.value.transactions[V1]).toMatchObject({
+        estimated: false,
+        amountMinor: 12_345,
+      });
+    }
+  });
+
+  /**
+   * Relógios e quem grava as cópias, nas combinações que importam ao reparo
+   * ancorado: `a` repara, `b` confirma sem saber do reparo. Com `a` à frente e
+   * gravando as cópias, `b` observa a versão delas e confirma no **mesmo**
+   * milissegundo, contador + 1 — o mesmo HLC do carimbo do reparo, menos o
+   * `deviceId`. Nas duas ordens de `deviceId`, a confirmação tem de vencer.
+   */
+  const CASOS = [
+    { a: 60_000, b: 0, copias: "b" },
+    { a: 60_000, b: 0, copias: "a" },
+    { a: 0, b: 60_000, copias: "a" },
+    { a: 0, b: 60_000, copias: "b" },
+  ] as const;
+
+  async function caso(c: (typeof CASOS)[number], copias: (d: Device) => Transaction[]) {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", c.a);
+    const b = await device(hub, "B", c.b);
+    const w = c.copias === "a" ? a : b;
+    await w.session.putRows({ transactions: copias(w) });
+    await w.sync.sync();
+    await a.sync.sync();
+    await b.sync.sync();
+    return { a, b };
+  }
+
+  async function confirma(d: Device, id: string, amountMinor: number) {
+    const row = d.session.state.value.transactions[id];
+    if (row === undefined) throw new Error(`${id} não chegou`);
+    await d.session.putRows({
+      transactions: [
+        {
+          ...row,
+          estimated: false,
+          amountMinor,
+          updatedAt: d.session.clock().stamp().hlc,
+          dirty: 1,
+        },
+      ],
+    });
+  }
+
+  it("confirmação na v2 feita noutro aparelho depois do reparo: revive a v2 e o próximo reparo a leva para a v1", async () => {
+    for (const c of CASOS) {
+      const { a, b } = await caso(c, (d) => [ocorrencia(d, V1), ocorrencia(d, V2)]);
+
+      await createRecurrenceStore(a.session).repairDuplicates();
+      await confirma(b, V2, 12_345);
+      await a.sync.sync();
+      await b.sync.sync();
+      await a.sync.sync();
+      // A confirmação venceu o tombstone do reparo: a v2 voltou.
+      expect(vivas(a).sort(), JSON.stringify(c)).toEqual([V1, V2].sort());
+
+      await createRecurrenceStore(a.session).repairDuplicates();
+      await a.sync.sync();
+      await b.sync.sync();
+
+      for (const d of [a, b]) {
+        expect(vivas(d)).toEqual([V1]);
+        expect(d.session.state.value.transactions[V1], JSON.stringify(c)).toMatchObject({
+          estimated: false,
+          amountMinor: 12_345,
+        });
+      }
+    }
+  });
+
+  it("a cópia da confirmação para a v1 não passa por cima da confirmação feita na própria v1", async () => {
+    for (const c of CASOS) {
+      // Cenário C com a v2 já confirmada e a v1 ainda estimada.
+      const { a, b } = await caso(c, (d) => [
+        ocorrencia(d, V1),
+        ocorrencia(d, V2, { estimated: false, amountMinor: 11_111 }),
+      ]);
+
+      // `b` confirma a v1 (a que a tela dele mostra) com outro valor; `a`, ainda
+      // sem isso, repara copiando a confirmação da v2.
+      await confirma(b, V1, 22_222);
+      await createRecurrenceStore(a.session).repairDuplicates();
+      await a.sync.sync();
+      await b.sync.sync();
+      await a.sync.sync();
+
+      for (const d of [a, b]) {
+        expect(vivas(d)).toEqual([V1]);
+        expect(d.session.state.value.transactions[V1], JSON.stringify(c)).toMatchObject({
+          estimated: false,
+          amountMinor: 22_222,
+        });
+      }
+    }
+  });
+
+  function serieS(d: Device): Recurrence {
+    return buildRow<Recurrence>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: "Luz",
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        frequency: "monthly",
+        scheduleType: "dayOfMonth",
+        scheduleN: 5,
+        startOn: "2027-02-05",
+        endOn: "2027-02-05",
+        active: true,
+      },
+      S,
+    );
+  }
+
+  /**
+   * O cenário do achado 4: o novo repara (apaga a v2) enquanto o velho, que ainda
+   * vê as duas cópias, apaga a v1 como "a duplicata". Depois do sync, zero vivas.
+   */
+  async function reparoEApagaV1() {
+    const hub = createFakeHub();
+    const novo = await device(hub, "novo", 0);
+    const velho = await device(hub, "velho", 60_000);
+    await novo.session.putRows({
+      recurrences: [serieS(novo)],
+      transactions: [ocorrencia(novo, V1), ocorrencia(novo, V2)],
+    });
+    await novo.sync.sync();
+    await velho.sync.sync();
+
+    await createRecurrenceStore(novo.session).repairDuplicates();
+    const v1 = velho.session.state.value.transactions[V1];
+    if (v1 === undefined) throw new Error("v1 não chegou");
+    const { hlc } = velho.session.clock().stamp();
+    await velho.session.putRows({
+      transactions: [{ ...v1, deletedAt: hlc, updatedAt: hlc, dirty: 1 }],
+    });
+    await novo.sync.sync();
+    await velho.sync.sync();
+    await novo.sync.sync();
+    for (const d of [novo, velho]) expect(vivas(d)).toEqual([]);
+    return { novo, velho };
+  }
+
+  it("reparo e exclusão da v1 no velho ao mesmo tempo: a folha pergunta, e Recriar revive a v2", async () => {
+    const { novo, velho } = await reparoEApagaV1();
+    const lost = recoveryCandidates(novo.session.fullState.value, "personal", "2027-03-10");
+    expect(lost.map((item) => item.entityId)).toEqual([V2]);
+
+    await createRecurrenceStore(novo.session).recoverOccurrences(lost, []);
+    await novo.sync.sync();
+    await velho.sync.sync();
+
+    for (const d of [novo, velho]) {
+      expect(vivas(d)).toEqual([V2]);
+      expect(recoveryCandidates(d.session.fullState.value, "personal", "2027-03-10")).toEqual([]);
+    }
+    // A v2 revivida não é mais par de ninguém: a v1 está apagada.
+    await createRecurrenceStore(novo.session).repairDuplicates();
+    expect(vivas(novo)).toEqual([V2]);
+  });
+
+  it("reparo e exclusão da v1 no velho: Não recriar tira a pergunta dos dois aparelhos", async () => {
+    const { novo, velho } = await reparoEApagaV1();
+    const lost = recoveryCandidates(velho.session.fullState.value, "personal", "2027-03-10");
+    expect(lost.map((item) => item.entityId)).toEqual([V2]);
+
+    await createRecurrenceStore(velho.session).recoverOccurrences([], lost);
+    await velho.sync.sync();
+    await novo.sync.sync();
+
+    for (const d of [novo, velho]) {
+      expect(vivas(d)).toEqual([]);
+      expect(recoveryCandidates(d.session.fullState.value, "personal", "2027-03-10")).toEqual([]);
+    }
+  });
+
+  it("resposta atrasada à pergunta do reparo não revive o que o outro recriou e apagou", async () => {
+    const { novo, velho } = await reparoEApagaV1();
+    const lostNovo = recoveryCandidates(novo.session.fullState.value, "personal", "2027-03-10");
+    const lostVelho = recoveryCandidates(velho.session.fullState.value, "personal", "2027-03-10");
+
+    await createRecurrenceStore(novo.session).recoverOccurrences(lostNovo, []);
+    const revivida = novo.session.state.value.transactions[V2];
+    if (revivida === undefined) throw new Error("não reviveu");
+    const { hlc } = novo.session.clock().stamp();
+    await novo.session.putRows({
+      transactions: [{ ...revivida, deletedAt: hlc, updatedAt: hlc, dirty: 1 }],
+    });
+    await novo.sync.sync();
+
+    // O velho (relógio à frente), ainda sem nada disso, responde Recriar também.
+    await createRecurrenceStore(velho.session).recoverOccurrences(lostVelho, []);
+    await velho.sync.sync();
+    await novo.sync.sync();
+    await velho.sync.sync();
+
+    for (const d of [novo, velho]) expect(vivas(d)).toEqual([]);
+  });
+
+  it("Não recriar atrasado à pergunta do reparo não apaga o que o outro recriou e confirmou", async () => {
+    const { novo, velho } = await reparoEApagaV1();
+    const lostNovo = recoveryCandidates(novo.session.fullState.value, "personal", "2027-03-10");
+    const lostVelho = recoveryCandidates(velho.session.fullState.value, "personal", "2027-03-10");
+
+    await createRecurrenceStore(novo.session).recoverOccurrences(lostNovo, []);
+    const revivida = novo.session.state.value.transactions[V2];
+    if (revivida === undefined) throw new Error("não reviveu");
+    await novo.session.putRows({
+      transactions: [
+        {
+          ...revivida,
+          estimated: false,
+          amountMinor: 12_345,
+          updatedAt: novo.session.clock().stamp().hlc,
+          dirty: 1,
+        },
+      ],
+    });
+    await novo.sync.sync();
+
+    await createRecurrenceStore(velho.session).recoverOccurrences([], lostVelho);
+    await velho.sync.sync();
+    await novo.sync.sync();
+    await velho.sync.sync();
+
+    for (const d of [novo, velho]) {
+      expect(vivas(d)).toEqual([V2]);
+      expect(d.session.state.value.transactions[V2]?.amountMinor).toBe(12_345);
+    }
+  });
+
+  it("os dois reparam o mesmo par sem divergência: ainda uma viva, a v1", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 0);
+    const b = await device(hub, "B", 60_000);
+    await a.session.putRows({ transactions: [ocorrencia(a, V1), ocorrencia(a, V2)] });
+    await a.sync.sync();
+    await b.sync.sync();
+
+    await createRecurrenceStore(a.session).repairDuplicates();
+    await createRecurrenceStore(b.session).repairDuplicates();
+    await a.sync.sync();
+    await b.sync.sync();
+    await a.sync.sync();
+
+    expect(vivas(a)).toEqual([V1]);
+    expect(vivas(b)).toEqual([V1]);
+  });
+});
+
+describe("versões misturadas: ocorrência, depósito e importação", () => {
+  // Par verificado da spec (§2): A em 2027-02 e B em 2027-01 caem no mesmo v1.
+  const A = "01JC0000000000000000000001";
+  const B = "01JC0000000000000000000002";
+  const KA = occurrenceKey(A, "2027-02");
+  const KB = occurrenceKey(B, "2027-01");
+  const SLOT = stableEntityIdV1(KA);
+  const HOJE = "2027-02-10";
+
+  function serie(d: Device, id: string, startOn: string): Recurrence {
+    return buildRow<Recurrence>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: id,
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        frequency: "monthly",
+        scheduleType: "dayOfMonth",
+        scheduleN: 5,
+        startOn,
+        endOn: null,
+        active: true,
+      },
+      id,
+    );
+  }
+
+  /** Uma ocorrência como o app (velho ou novo) a grava, no id pedido. */
+  function ocorrencia(d: Device, id: string, series: string, key: string, occurredOn: string) {
+    return buildRow<Transaction>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: series,
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn,
+        userId: null,
+        recurrenceId: series,
+        occurrenceKey: key,
+      },
+      id,
+    );
+  }
+
+  /** O `planOccurrences` do app velho para uma chave: id v1, pula se o id existe. */
+  async function velhoMaterializa(d: Device, series: string, period: string) {
+    const key = occurrenceKey(series, period);
+    const id = stableEntityIdV1(key);
+    if (d.session.state.value.transactions[id] !== undefined) return;
+    await d.session.putRows({ transactions: [ocorrencia(d, id, series, key, `${period}-05`)] });
+  }
+
+  const novoMaterializa = (d: Device, today = HOJE) =>
+    createRecurrenceStore(d.session).materializeDue(today);
+
+  const vivasDa = (d: Device, key: string) =>
+    Object.values(d.session.state.value.transactions)
+      .filter((row) => row.deletedAt === null && row.occurrenceKey === key)
+      .map((row) => row.id)
+      .sort();
+
+  async function dois() {
+    const hub = createFakeHub();
+    const novo = await device(hub, "novo", 0);
+    const velho = await device(hub, "velho", 60_000);
+    return { novo, velho };
+  }
+
+  async function sincroniza(novo: Device, velho: Device) {
+    await novo.sync.sync();
+    await velho.sync.sync();
+    await novo.sync.sync();
+  }
+
+  describe("ocorrência", () => {
+    it("(1) lugar livre: o novo grava em v1, o velho grava a mesma chave depois: uma linha", async () => {
+      const { novo, velho } = await dois();
+      await novo.session.putRows({ recurrences: [serie(novo, A, "2027-02-05")] });
+      await sincroniza(novo, velho);
+
+      await novoMaterializa(novo);
+      // O velho, offline, gera a mesma competência antes de receber a do novo.
+      await velhoMaterializa(velho, A, "2027-02");
+      await sincroniza(novo, velho);
+
+      expect(vivasDa(novo, KA)).toEqual([SLOT]);
+      expect(vivasDa(velho, KA)).toEqual([SLOT]);
+    });
+
+    it("(2) lugar de outro fato: o novo grava em v2; o velho pula (o bug dele) e a v2 fica", async () => {
+      const { novo, velho } = await dois();
+      await novo.session.putRows({
+        recurrences: [serie(novo, A, "2027-02-05")],
+        transactions: [ocorrencia(novo, SLOT, B, KB, "2027-01-05")],
+      });
+      await sincroniza(novo, velho);
+
+      await novoMaterializa(novo);
+      await velhoMaterializa(velho, A, "2027-02");
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(vivasDa(d, KA)).toEqual([stableEntityIdV2(KA)]);
+        expect(vivasDa(d, KB)).toEqual([SLOT]);
+      }
+    });
+
+    it("(3) corrida: a mesma chave em v1 (velho) e v2 (novo): o reparo deixa uma, a v1", async () => {
+      const { novo, velho } = await dois();
+      await novo.session.putRows({ recurrences: [serie(novo, A, "2027-02-05")] });
+      await sincroniza(novo, velho);
+      // Só o novo tem a ocorrência de B no lugar (o velho ainda não a recebeu).
+      await novo.session.putRows({ transactions: [ocorrencia(novo, SLOT, B, KB, "2027-01-05")] });
+
+      await novoMaterializa(novo);
+      await velhoMaterializa(velho, A, "2027-02");
+      await sincroniza(novo, velho);
+      // O cenário C: as duas cópias vivas (o A do velho venceu o lugar de B).
+      expect(vivasDa(novo, KA)).toEqual([SLOT, stableEntityIdV2(KA)].sort());
+      // O pull roda o reparo (como o `afterPull` do app novo).
+      await createRecurrenceStore(novo.session).repairDuplicates();
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) expect(vivasDa(d, KA)).toEqual([SLOT]);
+    });
+
+    it("B: fatos diferentes no mesmo lugar livre, offline: os dois existem depois do boot novo", async () => {
+      const { novo, velho } = await dois();
+      const C = collidingId("01JC0000000000000000000", A, (id) => occurrenceKey(id, "2027-02"));
+      const KC = occurrenceKey(C, "2027-02");
+      // Cada aparelho só conhece uma das séries quando materializa, offline.
+      await novo.session.putRows({ recurrences: [serie(novo, A, "2027-02-05")] });
+      await velho.session.putRows({ recurrences: [serie(velho, C, "2027-02-05")] });
+      await novoMaterializa(novo);
+      await velhoMaterializa(velho, C, "2027-02");
+
+      // O velho grava depois (relógio à frente): o LWW do lugar fica com C.
+      await sincroniza(novo, velho);
+      expect(vivasDa(novo, KA)).toEqual([]);
+
+      // O boot (ou o pull) seguinte do novo grava A em v2: o mês é o corrente.
+      await novoMaterializa(novo);
+      await sincroniza(novo, velho);
+      for (const d of [novo, velho]) {
+        expect(vivasDa(d, KA)).toEqual([stableEntityIdV2(KA)]);
+        expect(vivasDa(d, KC)).toEqual([SLOT]);
+      }
+    });
+
+    it("E: apagada no velho não volta no novo", async () => {
+      const { novo, velho } = await dois();
+      await novo.session.putRows({ recurrences: [serie(novo, A, "2027-02-05")] });
+      await novoMaterializa(novo);
+      await sincroniza(novo, velho);
+
+      const row = velho.session.state.value.transactions[SLOT];
+      if (row === undefined) throw new Error("não chegou");
+      const { hlc } = velho.session.clock().stamp();
+      await velho.session.putRows({
+        transactions: [{ ...row, deletedAt: hlc, updatedAt: hlc, dirty: 1 }],
+      });
+      await sincroniza(novo, velho);
+      await novoMaterializa(novo);
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(vivasDa(d, KA)).toEqual([]);
+        expect(Object.keys(d.session.state.value.transactions)).toEqual([SLOT]);
+      }
+    });
+
+    it("folha de recuperação: a resposta de um aparelho tira a pergunta do outro", async () => {
+      const { novo, velho } = await dois();
+      // Fevereiro de A perdido: o lugar é de B, e hoje já é março.
+      const marco = "2027-03-10";
+      await novo.session.putRows({
+        recurrences: [serie(novo, A, "2027-02-05")],
+        transactions: [ocorrencia(novo, SLOT, B, KB, "2027-01-05")],
+      });
+      await novoMaterializa(novo, marco);
+      await sincroniza(novo, velho);
+
+      const lost = recoveryCandidates(novo.session.fullState.value, "personal", marco);
+      expect(lost.map((item) => item.draft.occurrenceKey)).toEqual([KA]);
+      // O outro aparelho, com o mesmo estado, acha a mesma candidata.
+      expect(
+        recoveryCandidates(velho.session.fullState.value, "personal", marco).map(
+          (item) => item.entityId,
+        ),
+      ).toEqual(lost.map((item) => item.entityId));
+
+      await createRecurrenceStore(novo.session).recoverOccurrences([], lost);
+      await sincroniza(novo, velho);
+
+      expect(recoveryCandidates(velho.session.fullState.value, "personal", marco)).toEqual([]);
+      const resposta = velho.session.state.value.transactions[stableEntityIdV2(KA)];
+      expect(resposta?.deletedAt).not.toBeNull();
+      expect(resposta?.occurrenceKey).toBe(KA);
+    });
+  });
+
+  describe("depósito mensal", () => {
+    const R1 = "01JC0000000000000000000001";
+    const R2 = collidingId("01JC0000000000000000000", R1, (id) => depositSeed(id, "2027-02"));
+    const [FIRST = "", SECOND = ""] = [R1, R2].sort();
+    const regra = { amountMinor: 1_000, day: 1, since: "2027-01" };
+
+    async function comSaldo(d: Device, reservas: string[]) {
+      await d.session.putRows({
+        reserves: reservas.map((id) =>
+          reserve(id, { recurring: regra, updatedAt: d.session.clock().stamp().hlc, dirty: 1 }),
+        ),
+        transactions: [
+          buildRow<Transaction>(d.session.clock(), {
+            kind: "income",
+            description: "Salário",
+            amountMinor: 900_000,
+            currency: "BRL",
+            categoryId: null,
+            paymentMethodId: null,
+            cashbackMinor: null,
+            occurredOn: "2027-02-01",
+            userId: null,
+            recurrenceId: null,
+            occurrenceKey: null,
+          }),
+        ],
+      });
+    }
+
+    /** O `planDeposits` do app velho: id v1, pula se o id existe. */
+    async function velhoDeposita(d: Device, reserveId: string) {
+      const id = depositId(reserveId, "2027-02");
+      if (d.session.state.value.reserveMovements[id] !== undefined) return;
+      await d.session.putRows({
+        reserveMovements: [
+          movement(id, reserveId, 1_000, HOJE, {
+            recurring: true,
+            updatedAt: d.session.clock().stamp().hlc,
+            dirty: 1,
+          }),
+        ],
+      });
+    }
+
+    const novoDeposita = (d: Device) => createReservesStore(d.session).materializeDue(HOJE);
+
+    const depositosDe = (d: Device, reserveId: string) =>
+      Object.values(d.session.state.value.reserveMovements)
+        .filter(
+          (row) => row.deletedAt === null && row.reserveId === reserveId && row.recurring === true,
+        )
+        .map((row) => row.id)
+        .sort();
+
+    it("o par colide na v1", () => {
+      expect(depositId(R2, "2027-02")).toBe(depositId(R1, "2027-02"));
+    });
+
+    it("(1) lugar livre: o novo grava em v1, o velho grava o mesmo depois: uma linha", async () => {
+      const { novo, velho } = await dois();
+      await comSaldo(novo, [R1]);
+      await sincroniza(novo, velho);
+      await novoDeposita(novo);
+      await velhoDeposita(velho, R1);
+      await sincroniza(novo, velho);
+      for (const d of [novo, velho]) expect(depositosDe(d, R1)).toEqual([depositId(R1, "2027-02")]);
+    });
+
+    it("(2) lugar de outra reserva: o novo grava em v2; o velho pula e a v2 fica", async () => {
+      const { novo, velho } = await dois();
+      await comSaldo(novo, [FIRST, SECOND]);
+      await sincroniza(novo, velho);
+      // O velho deposita a primeira reserva antes, e o novo recebe.
+      await velhoDeposita(velho, FIRST);
+      await sincroniza(novo, velho);
+
+      await novoDeposita(novo);
+      await velhoDeposita(velho, SECOND);
+      await sincroniza(novo, velho);
+
+      // Um segundo aparelho já atualizado recebe a v2 com `period` e não deposita de novo.
+      await novoDeposita(velho);
+      await sincroniza(novo, velho);
+      const v2 = stableEntityIdV2(depositSeed(SECOND, "2027-02"));
+      for (const d of [novo, velho]) {
+        expect(depositosDe(d, FIRST)).toEqual([depositId(FIRST, "2027-02")]);
+        expect(depositosDe(d, SECOND)).toEqual([v2]);
+        expect(d.session.state.value.reserveMovements[v2]?.period).toBe("2027-02");
+      }
+    });
+
+    it("(3) corrida: o mesmo depósito em v1 (velho) e v2 (novo): o reparo deixa uma, a v1", async () => {
+      const { novo, velho } = await dois();
+      await comSaldo(novo, [SECOND]);
+      await sincroniza(novo, velho);
+      // Só o novo tem o depósito da outra reserva no lugar.
+      await novo.session.putRows({
+        reserveMovements: [
+          movement(depositId(FIRST, "2027-02"), FIRST, 1_000, HOJE, {
+            recurring: true,
+            period: "2027-02",
+            updatedAt: novo.session.clock().stamp().hlc,
+            dirty: 1,
+          }),
+        ],
+      });
+
+      await novoDeposita(novo);
+      await velhoDeposita(velho, SECOND);
+      await sincroniza(novo, velho);
+      expect(depositosDe(novo, SECOND)).toEqual(
+        [depositId(SECOND, "2027-02"), stableEntityIdV2(depositSeed(SECOND, "2027-02"))].sort(),
+      );
+      await createRecurrenceStore(novo.session).repairDuplicates();
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(depositosDe(d, SECOND)).toEqual([depositId(SECOND, "2027-02")]);
+      }
+    });
+  });
+
+  describe("importação", () => {
+    const ctx: ImportContext = { paymentMethodId: null, referenceMonth: "2027-02" };
+    const linhas = () =>
+      parseStatement(["12/02 IFOOD 45,90"], "account", "2027-02").entries.map((e) => ({
+        ...e,
+        selected: true,
+        categoryId: null,
+      }));
+    const [SEED = ""] = importSeeds(linhas(), ctx);
+    const I1 = stableEntityIdV1(SEED);
+    const I2 = stableEntityIdV2(SEED);
+
+    const slotsDe = (d: Device) => ({
+      transactions: d.session.fullState.value.transactions,
+      recurrences: d.session.fullState.value.recurrences,
+    });
+
+    const novoImporta = (d: Device) =>
+      createImportStore(d.session, createRecurrenceStore(d.session)).commit(
+        planImport(linhas(), ctx, slotsDe(d)),
+        HOJE,
+      );
+
+    /** A revisão do app velho: "Já importado" se o id v1 existe; senão grava em v1. */
+    async function velhoImporta(d: Device) {
+      if (d.session.state.value.transactions[I1] !== undefined) return;
+      const [plan] = planImport(linhas(), ctx).transactions;
+      if (plan === undefined) throw new Error("sem linha");
+      const { importKey: _novo, ...antigo } = plan.draft;
+      await d.session.putRows({
+        transactions: [buildRow<Transaction>(d.session.clock(), { ...antigo, userId: null }, I1)],
+      });
+    }
+
+    const ifood = (d: Device) =>
+      Object.values(d.session.state.value.transactions)
+        .filter((row) => row.deletedAt === null && row.description === "IFOOD")
+        .map((row) => row.id)
+        .sort();
+
+    it("(1) lugar livre: o novo grava em v1, o velho reimporta depois: uma linha", async () => {
+      const { novo, velho } = await dois();
+      await novoImporta(novo);
+      await sincroniza(novo, velho);
+      await velhoImporta(velho);
+      await sincroniza(novo, velho);
+      for (const d of [novo, velho]) expect(ifood(d)).toEqual([I1]);
+      expect(classifyImport(linhas(), ctx, slotsDe(novo))[0]?.status).toBe("imported");
+    });
+
+    it("(2) lugar de outro fato: o novo grava em v2; o velho vê 'Já importado' e a v2 fica", async () => {
+      const { novo, velho } = await dois();
+      await novo.session.putRows({ transactions: [ocorrencia(novo, I1, B, KB, "2027-01-05")] });
+      await sincroniza(novo, velho);
+      expect(classifyImport(linhas(), ctx, slotsDe(novo))[0]?.status).toBe("maybe");
+
+      await novoImporta(novo);
+      await velhoImporta(velho);
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(ifood(d)).toEqual([I2]);
+        expect(d.session.state.value.transactions[I1]?.recurrenceId).toBe(B);
+      }
+    });
+
+    it("parcela com o lugar de outra série: nasce em v2 e o outro aparelho atualizado a reconhece", async () => {
+      const { novo, velho } = await dois();
+      const cartao: ImportContext = { paymentMethodId: "CARTAO-1", referenceMonth: "2027-02" };
+      const fatura = (lines: string[], ref: string) =>
+        parseStatement(lines, "card", ref).entries.map((e) => ({
+          ...e,
+          selected: true,
+          categoryId: null,
+        }));
+      const fev = fatura(["15/12 LOJA 03/10 150,00"], "2027-02");
+      const [seed = ""] = importSeeds(fev, cartao);
+      // Outra série (de outra compra) já mora no lugar v1 da série desta.
+      await novo.session.putRows({
+        recurrences: [{ ...serie(novo, stableEntityIdV1(seed), "2030-01-05"), amountMinor: 1 }],
+      });
+      await sincroniza(novo, velho);
+
+      await createImportStore(novo.session, createRecurrenceStore(novo.session)).commit(
+        planImport(fev, cartao, slotsDe(novo)),
+        HOJE,
+      );
+      await sincroniza(novo, velho);
+
+      const v2 = stableEntityIdV2(seed);
+      expect(velho.session.state.value.recurrences[v2]?.importKey).toBe(v2);
+      // A fatura seguinte, aberta no outro aparelho, acha a série.
+      const mar = fatura(["15/12 LOJA 04/10 150,00"], "2027-03");
+      expect(
+        classifyImport(mar, { ...cartao, referenceMonth: "2027-03" }, slotsDe(velho)).map(
+          (t) => t.status,
+        ),
+      ).toEqual(["imported"]);
+    });
+
+    it("(3) corrida: o velho em v1 (livre para ele) e o novo em v2: as duas ficam (documentado)", async () => {
+      // Sem reparo automático: a avulsa do velho não tem chave gravada que prove
+      // ser o mesmo fato. O LWW do lugar v1 fica com ela (gravou depois), a
+      // ocorrência que estava lá some (cenário B) e a compra aparece duas vezes.
+      // A reimportação a reconhece; a duplicata se apaga à mão.
+      const { novo, velho } = await dois();
+      await novo.session.putRows({ transactions: [ocorrencia(novo, I1, B, KB, "2027-01-05")] });
+      await novoImporta(novo);
+      await velhoImporta(velho);
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) expect(ifood(d)).toEqual([I1, I2].sort());
+      expect(classifyImport(linhas(), ctx, slotsDe(novo))[0]?.status).toBe("imported");
+    });
+
+    it("corrida entre dois aparelhos novos (v1 e v2 com a mesma importKey): o reparo deixa a v1", async () => {
+      // As duas cópias levam `importKey = v2(semente)`: aí a chave prova o mesmo fato.
+      const { novo, velho: outroNovo } = await dois();
+      await novo.session.putRows({ transactions: [ocorrencia(novo, I1, B, KB, "2027-01-05")] });
+      await novoImporta(novo);
+      await novoImporta(outroNovo);
+      await sincroniza(novo, outroNovo);
+      expect(ifood(novo)).toEqual([I1, I2].sort());
+
+      await createRecurrenceStore(novo.session).repairDuplicates();
+      await sincroniza(novo, outroNovo);
+
+      for (const d of [novo, outroNovo]) {
+        expect(ifood(d)).toEqual([I1]);
+        expect(d.session.state.value.transactions[I2]?.mergedInto).toBe(I1);
+      }
+      expect(classifyImport(linhas(), ctx, slotsDe(novo))[0]?.status).toBe("imported");
+    });
+  });
+});
+
+describe("folha de recuperação entre dois aparelhos: a resposta perde para escrita real", () => {
+  // Par verificado da spec (§2): A em 2027-02 e B em 2027-01 caem no mesmo v1.
+  const A = "01JC0000000000000000000001";
+  const B = "01JC0000000000000000000002";
+  const KA = occurrenceKey(A, "2027-02");
+  const KB = occurrenceKey(B, "2027-01");
+  const SLOT = stableEntityIdV1(KA);
+  const V2 = stableEntityIdV2(KA);
+  const MARCO = "2027-03-10";
+  // Os relógios andam com o calendário dos testes (março de 2027): uma resposta
+  // ancorada no passado só é "baixa" diante de uma escrita feita depois dela.
+  const EM_MARCO = Date.UTC(2027, 2, 10) - 1_754_697_600_000;
+
+  function serie(d: Device, variable = false): Recurrence {
+    return buildRow<Recurrence>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: "Luz",
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        frequency: "monthly",
+        scheduleType: "dayOfMonth",
+        scheduleN: 5,
+        startOn: "2027-02-05",
+        endOn: null,
+        active: true,
+        ...(variable ? { variable: true } : {}),
+      },
+      A,
+    );
+  }
+
+  function deB(d: Device): Transaction {
+    return buildRow<Transaction>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: "B",
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn: "2027-01-05",
+        userId: null,
+        recurrenceId: B,
+        occurrenceKey: KB,
+      },
+      SLOT,
+    );
+  }
+
+  /** `x` e `y` com a série e o lugar de fevereiro tomado por B, os dois já sincronizados. */
+  async function dois(ordem: "x-antes" | "y-antes" = "x-antes", variable = false) {
+    const hub = createFakeHub();
+    const [first, second] = ordem === "x-antes" ? [0, 60_000] : [60_000, 0];
+    const x = await device(hub, "x", EM_MARCO + first);
+    const y = await device(hub, "y", EM_MARCO + second);
+    await x.session.putRows({ recurrences: [serie(x, variable)], transactions: [deB(x)] });
+    await x.sync.sync();
+    await y.sync.sync();
+    return { x, y };
+  }
+
+  async function sincroniza(x: Device, y: Device) {
+    await x.sync.sync();
+    await y.sync.sync();
+    await x.sync.sync();
+  }
+
+  const v2De = (d: Device) => d.session.state.value.transactions[V2];
+
+  it("Recriar atrasado não revive a linha que o outro recriou e apagou", async () => {
+    const { x, y } = await dois();
+    const lost = recoveryCandidates(x.session.fullState.value, "personal", MARCO);
+    expect(lost.map((item) => item.entityId)).toEqual([V2]);
+
+    await createRecurrenceStore(x.session).recoverOccurrences(lost, []);
+    const recriada = v2De(x);
+    if (recriada === undefined) throw new Error("não recriou");
+    const { hlc } = x.session.clock().stamp();
+    await x.session.putRows({
+      transactions: [{ ...recriada, deletedAt: hlc, updatedAt: hlc, dirty: 1 }],
+    });
+    await x.sync.sync();
+
+    // y ainda não recebeu nada disso: para ele fevereiro segue perdido.
+    const lostY = recoveryCandidates(y.session.fullState.value, "personal", MARCO);
+    await createRecurrenceStore(y.session).recoverOccurrences(lostY, []);
+    await sincroniza(x, y);
+
+    for (const d of [x, y]) expect(v2De(d)?.deletedAt).not.toBeNull();
+  });
+
+  it("Não recriar atrasado não apaga a linha que o outro recriou e confirmou", async () => {
+    const { x, y } = await dois();
+    const lost = recoveryCandidates(x.session.fullState.value, "personal", MARCO);
+    await createRecurrenceStore(x.session).recoverOccurrences(lost, []);
+    const recriada = v2De(x);
+    if (recriada === undefined) throw new Error("não recriou");
+    await x.session.putRows({
+      transactions: [
+        { ...recriada, amountMinor: 12_345, updatedAt: x.session.clock().stamp().hlc, dirty: 1 },
+      ],
+    });
+    await x.sync.sync();
+
+    const lostY = recoveryCandidates(y.session.fullState.value, "personal", MARCO);
+    await createRecurrenceStore(y.session).recoverOccurrences([], lostY);
+    await sincroniza(x, y);
+
+    for (const d of [x, y]) {
+      expect(v2De(d)).toMatchObject({ deletedAt: null, amountMinor: 12_345 });
+    }
+  });
+
+  it("respostas diferentes nos dois aparelhos, offline: Recriar vence", async () => {
+    for (const ordem of ["x-antes", "y-antes"] as const) {
+      const { x, y } = await dois(ordem);
+      const lostX = recoveryCandidates(x.session.fullState.value, "personal", MARCO);
+      const lostY = recoveryCandidates(y.session.fullState.value, "personal", MARCO);
+      await createRecurrenceStore(x.session).recoverOccurrences([], lostX);
+      await createRecurrenceStore(y.session).recoverOccurrences(lostY, []);
+      await sincroniza(x, y);
+
+      for (const d of [x, y]) expect(v2De(d)?.deletedAt).toBeNull();
+    }
+  });
+
+  // Virada do mês com relógios diferentes (achado 6): para x ainda é fevereiro e
+  // ele grava fevereiro em v2 (mês corrente); y já está em março, ainda sem a
+  // linha de x, e vê fevereiro como perdido.
+  for (const variable of [false, true]) {
+    it(`virada do mês: o Não recriar de quem já está em março não apaga o mês corrente do outro${
+      variable ? " (estimativa ancorada)" : ""
+    }`, async () => {
+      for (const ordem of ["x-antes", "y-antes"] as const) {
+        const { x, y } = await dois(ordem, variable);
+        await createRecurrenceStore(x.session).materializeDue("2027-02-28");
+        expect(v2De(x)?.deletedAt).toBeNull();
+
+        const lostY = recoveryCandidates(y.session.fullState.value, "personal", "2027-03-01");
+        expect(lostY.map((item) => item.entityId)).toEqual([V2]);
+        await createRecurrenceStore(y.session).recoverOccurrences([], lostY);
+        await sincroniza(x, y);
+
+        for (const d of [x, y]) expect(v2De(d)?.deletedAt).toBeNull();
+      }
+    });
+  }
 });

@@ -1,5 +1,5 @@
 import type { ComponentChildren } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import type { PrepareResult } from "./data/import";
 import { listBudgets } from "./domain/budgets/list";
 import { isCompleteCard, listCreditCards } from "./domain/cards/card";
@@ -21,6 +21,7 @@ import {
   listTransactions,
 } from "./domain/projections/selectors";
 import { canEditFollowing, planSeriesEdit } from "./domain/recurrence/edit-plan";
+import { recoveryCandidates } from "./domain/recurrence/recovery";
 import { findSimilar, type SimilarQuery } from "./domain/transactions/similar";
 import { AssetSheet } from "./features/assets/asset-sheet";
 import type { AssetsStore } from "./features/assets/store";
@@ -51,6 +52,7 @@ import { ProfilePage } from "./features/profile/profile-page";
 import type { ProfileStore } from "./features/profile/store";
 import { AdjustSheet } from "./features/recurrence/adjust-sheet";
 import { ConfirmSheet } from "./features/recurrence/confirm-sheet";
+import { RecoveryBanner, RecoverySheet } from "./features/recurrence/recovery-sheet";
 import type { RecurrenceStore } from "./features/recurrence/store";
 import { RegistryPage } from "./features/registry/registry-page";
 import type { RegistryStore } from "./features/registry/store";
@@ -241,6 +243,12 @@ export function App({
   // espera por ele: as cópias antigas do genérico ainda estão para ser fundidas, e
   // abrir antes mostraria grupos que o boot está prestes a desfazer.
   const [booted, setBooted] = useState(false);
+  // A primeira rodada do sync terminou (bem ou mal), ou não há hub. O aviso da
+  // folha de recuperação espera por ela: o outro aparelho pode já ter respondido ou
+  // gravado a competência, e perguntar antes ofereceria recriar o que ele apagou.
+  const [firstSyncSettled, setFirstSyncSettled] = useState(false);
+  // Folha "Recuperar lançamentos" aberta (competências que a colisão do id engoliu).
+  const [recovering, setRecovering] = useState(false);
   // Reclassificação que oferece "aplicar às semelhantes", ou null.
   const [similar, setSimilar] = useState<SimilarQuery | null>(null);
   // Cor do brilho do topo enquanto o Perfil está aberto: acompanha a cor que a
@@ -311,9 +319,19 @@ export function App({
       .then(() => registry.mergeLegacyDefaults().catch(ignoreHandled))
       .then(() => recurrence.materializeDue(today).catch(ignoreHandled))
       .then(() => reserves.materializeDue(today).catch(ignoreHandled))
+      // Duplicata v1/v2 que um sync anterior deixou (o pull já repara, mas o app
+      // pode ter fechado antes): fica a v1.
+      .then(() => recurrence.repairDuplicates().catch(ignoreHandled))
       .then(() => setBooted(true))
-      .then(() => sync.init())
-      .then(() => sync.sync({ auto: true }).catch(ignoreHandled))
+      // Falha do `init` ou da rodada não pode esconder o aviso para sempre (hub
+      // desligado): "assentou" é terminar, não dar certo. Sem hub, `sync` volta na
+      // hora. A falha do `init` segue adiante (o reparo de autoria não roda sem sync).
+      .then(() =>
+        sync
+          .init()
+          .then(() => sync.sync({ auto: true }).catch(ignoreHandled))
+          .finally(() => setFirstSyncSettled(true)),
+      )
       // Ocorrências que nasceram com o autor do aparelho (versões anteriores à
       // coluna `userId` na série) voltam para quem criou a série. Depois do
       // sync, e não antes: com dados parciais o autor deduzido poderia sair
@@ -351,6 +369,17 @@ export function App({
     if (!ready || activeBook !== "business" || business !== null) return;
     void books.repairActiveBook().catch(ignoreHandled);
   }, [books, ready, activeBook, business]);
+
+  // Competências perdidas pela colisão do id (spec do id estável, §6). Só depois
+  // do boot (antes da materialização, o mês corrente ainda não foi gravado) e da
+  // primeira rodada do sync (o que o outro aparelho já gravou na linha). Some
+  // sozinho quando a pessoa (ou o outro aparelho, pelo sync) responde. Memo: varre
+  // as tabelas inteiras, e o App renderiza a cada quadro do arraste.
+  const fullState = session.fullState.value;
+  const lost = useMemo(
+    () => (booted && firstSyncSettled ? recoveryCandidates(fullState, activeBook, today) : []),
+    [booted, firstSyncSettled, fullState, activeBook, today],
+  );
 
   const tabs = screensFor(activeBook);
   // A aba Negócio só existe na comercial. Se a conta ativa voltar para a pessoal por
@@ -449,6 +478,7 @@ export function App({
     adjusting !== null ||
     confirming !== null ||
     classifying ||
+    recovering ||
     creatingBusiness ||
     reserveSheet !== null ||
     reserveForm !== null ||
@@ -671,6 +701,10 @@ export function App({
 
         {update.ready.value && <UpdateBanner onApply={update.apply} />}
 
+        {lost.length > 0 && (
+          <RecoveryBanner count={lost.length} onOpen={() => setRecovering(true)} />
+        )}
+
         {session.error.value !== null && (
           <p role="alert" class="mb-4 rounded-lg bg-expense/10 p-3 text-sm text-expense-fg">
             {session.error.value}
@@ -846,6 +880,7 @@ export function App({
         {importing && (
           <ImportSheet
             state={state}
+            fullState={session.fullState.value}
             book={session.activeBook.value}
             today={today}
             readPdf={readPdf}
@@ -954,6 +989,21 @@ export function App({
             query={similar}
             onApply={(ids, categoryId) => store.setCategory(ids, categoryId)}
             onClose={() => setSimilar(null)}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={recovering && lost.length > 0}
+        title="Recuperar lançamentos"
+        onClose={() => setRecovering(false)}
+      >
+        {/* Montada só enquanto aberta: fechar descarta as escolhas pela metade. */}
+        {recovering && lost.length > 0 && (
+          <RecoverySheet
+            lost={lost}
+            onApply={recurrence.recoverOccurrences}
+            onClose={() => setRecovering(false)}
           />
         )}
       </Modal>

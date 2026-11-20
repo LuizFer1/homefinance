@@ -1,11 +1,12 @@
 import { shiftDay } from "../dates/calendar";
-import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
+import { bookOf } from "../model/book";
 import type { RecurrenceFrequency, ScheduleType } from "../model/recurrence";
 import { amountFor } from "./adjustments";
 import { estimateFor } from "./estimate";
+import { occurrenceIndex } from "./occurrence-index";
 import {
   eachPeriod,
   FREQUENCY_DAYS,
@@ -43,7 +44,8 @@ function isScheduleType(value: string): value is ScheduleType {
  * Calculado, nunca gravado. A materialização só escreve o que já venceu — o
  * extrato não mente sobre o futuro —, então o que está por vir é projetado da
  * regra na hora de desenhar. Ocorrência que já existe no banco (materializada ou
- * apagada pelo usuário) fica de fora pela mesma chave determinística.
+ * apagada pelo usuário) fica de fora pela chave (`occurrenceIndex`), e não pelo
+ * id: a ocorrência cujo lugar v1 é de outro fato continua prometida.
  */
 export function upcomingRecurrences(
   state: AppState,
@@ -66,6 +68,7 @@ export function projectRecurrences(
   const found: UpcomingOccurrence[] = [];
   const adjustments = Object.values(state.recurrenceAdjustments);
   const transactions = Object.values(state.transactions);
+  const index = occurrenceIndex(state.transactions);
 
   for (const series of Object.values(state.recurrences)) {
     if (!isAlive(series) || !series.active) continue;
@@ -76,9 +79,7 @@ export function projectRecurrences(
       const date = occurrenceOn(period, series.scheduleType, series.scheduleN);
       if (date <= after || date > limit) continue;
       if (series.endOn !== null && date > series.endOn) continue;
-      if (state.transactions[stableEntityIdV1(occurrenceKey(series.id, period))] !== undefined) {
-        continue;
-      }
+      if (index.knows(series.id, occurrenceKey(series.id, period), bookOf(series))) continue;
 
       const variable = series.variable === true;
       found.push({

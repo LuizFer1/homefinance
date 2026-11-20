@@ -6,7 +6,7 @@ import type { Reserve, ReserveMovement } from "../../domain/model/reserve";
 import { MAX_MINOR, minorOf, onlyDigits } from "../../domain/money/mask";
 import { monthOf } from "../../domain/projections/periods";
 import { actsAsEmergency, monthBalance, reserveBalance } from "../../domain/reserves/balances";
-import { depositId } from "../../domain/reserves/deposits";
+import { hasDeposit } from "../../domain/reserves/deposits";
 import { emergencyTarget } from "../../domain/reserves/essential";
 import { formatMonths, monthsCovered } from "../../domain/reserves/goals";
 import { Icon } from "../icons/icon";
@@ -48,7 +48,8 @@ function nextDepositLabel(state: AppState, reserve: Reserve, today: string): str
   const thisMonth = dayOfMonthClamped(month, day);
   const pending =
     reserve.recurring !== null &&
-    state.reserveMovements[depositId(reserve.id, month)] === undefined &&
+    // Pela chave: o lugar v1 do mês pode ser do depósito de outra reserva.
+    !hasDeposit(state.reserveMovements, reserve.id, month) &&
     thisMonth > today;
   const date = pending ? thisMonth : dayOfMonthClamped(shiftMonth(month, 1), day);
   return movementDateLabel(date);

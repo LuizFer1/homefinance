@@ -22,7 +22,7 @@ import type { ColorToken, IconKey } from "../../domain/model/tokens";
 import { MAX_MINOR } from "../../domain/money/mask";
 import { monthOf } from "../../domain/projections/periods";
 import { emergencyOf, reserveBalance } from "../../domain/reserves/balances";
-import { depositId, planDeposits } from "../../domain/reserves/deposits";
+import { depositSlots, hasDeposit, planDeposits } from "../../domain/reserves/deposits";
 import { findEssentialCategoryIds } from "../../domain/reserves/essential";
 import { describeError, ignoreHandled, type Session } from "../session/session";
 import { dayOfDate } from "./format";
@@ -183,9 +183,14 @@ export function createReservesStore(session: Session): ReservesStore {
     await guarded(async () => {
       // Uma conta por vez, incluindo a inativa: o saldo do mês que paga o depósito
       // é o da conta da reserva, e nunca soma receita da outra conta.
+      //
+      // O lugar do id é visto na tabela inteira: o v1 pode ser de um movimento da
+      // outra conta, e o id reservado por uma conta vale para a outra no lote.
+      const full = session.fullState.value;
+      const slots = depositSlots(full.reserveMovements);
       const plans = BOOKS.flatMap((book) => {
-        const view = stateForBook(session.fullState.value, book);
-        return planDeposits(view, today).map((plan) => ({ ...plan, book }));
+        const view = stateForBook(full, book);
+        return planDeposits(view, today, slots).map((plan) => ({ ...plan, book }));
       });
       if (plans.length === 0) return;
       const clock = session.clock();
@@ -205,6 +210,8 @@ export function createReservesStore(session: Session): ReservesStore {
               description: null,
               reason: null,
               recurring: true,
+              // O mês do fato, gravado: a data é editável, e o id pode ser v2.
+              period: monthOf(p.occurredOn),
             },
             p.id,
             // O depósito é filho da reserva: herda a conta dela.
@@ -290,16 +297,19 @@ export function createReservesStore(session: Session): ReservesStore {
         assertAmount(input.amountMinor);
         const current = aliveReserve(reserveId);
         const month = monthOf(input.occurredOn);
-        const monthId = depositId(reserveId, month);
         const turningOn = setRecurring === true && current.recurring === null;
         // Ligar a recorrência no Guardar: este depósito **é** o do mês (id
-        // estável), senão a materialização guardaria de novo no mesmo dia.
-        const asMonthly = turningOn && session.state.value.reserveMovements[monthId] === undefined;
+        // estável), senão a materialização guardaria de novo no mesmo dia. O
+        // depósito do mês é achado pela chave, e o lugar do id visto na tabela
+        // inteira: com o v1 de outro fato, este vai para v2 em vez de sumir.
+        const full = session.fullState.value;
+        const asMonthly = turningOn && !hasDeposit(full.reserveMovements, reserveId, month);
         const clock = session.clock();
+        const draft = movementDraft(reserveId, input.amountMinor, input, null, asMonthly);
         const movement = buildRow<ReserveMovement>(
           clock,
-          movementDraft(reserveId, input.amountMinor, input, null, asMonthly),
-          asMonthly ? monthId : undefined,
+          asMonthly ? { ...draft, period: month } : draft,
+          asMonthly ? depositSlots(full.reserveMovements).pick(reserveId, month) : undefined,
         );
         let recurring = current.recurring;
         if (turningOn) {

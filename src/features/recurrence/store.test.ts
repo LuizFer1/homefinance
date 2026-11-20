@@ -10,10 +10,13 @@ import type { AppState } from "../../domain/model/app-state";
 import { isAlive } from "../../domain/model/base";
 import type { Recurrence, RecurrenceDraft, RecurrenceRule } from "../../domain/model/recurrence";
 import type { RecurrenceAdjustment } from "../../domain/model/recurrence-adjustment";
-import type { TransactionDraft } from "../../domain/model/transaction";
+import type { ReserveMovement } from "../../domain/model/reserve";
+import type { Transaction, TransactionDraft } from "../../domain/model/transaction";
 import { MAX_MINOR } from "../../domain/money/mask";
 import { adjustmentId, adjustmentSeed } from "../../domain/recurrence/adjustments";
+import { recoveryCandidates } from "../../domain/recurrence/recovery";
 import { occurrenceKey } from "../../domain/recurrence/schedule";
+import { depositSeed } from "../../domain/reserves/deposits";
 import { createSession, type Session, StaleRowsError } from "../session/session";
 import { createRecurrenceStore, type RecurrenceStore } from "./store";
 
@@ -847,5 +850,220 @@ describe("editFollowing", () => {
 
     expect(categoriaDe(series.id, "2026-07")).toBe("CAT-NOVA");
     expect(categoriaDe(series.id, "2026-08")).toBe("CAT-NOVA");
+  });
+});
+
+describe("repairDuplicates", () => {
+  const S = "01JC0000000000000000000001";
+  const K = occurrenceKey(S, "2026-08");
+  const V1 = stableEntityIdV1(K);
+  const V2 = stableEntityIdV2(K);
+  const R = "01JC0000000000000000000R01";
+  const D1 = stableEntityIdV1(depositSeed(R, "2026-08"));
+  const D2 = stableEntityIdV2(depositSeed(R, "2026-08"));
+
+  function ocorrencia(id: string, over: Partial<TransactionDraft> = {}) {
+    return buildRow<Transaction>(
+      session.clock(),
+      {
+        ...DRAFT,
+        occurredOn: "2026-08-05",
+        recurrenceId: S,
+        occurrenceKey: K,
+        userId: "AUTOR-1",
+        ...over,
+      },
+      id,
+    );
+  }
+
+  function deposito(id: string, period?: string) {
+    return buildRow<ReserveMovement>(
+      session.clock(),
+      {
+        reserveId: R,
+        amountMinor: 5_000,
+        occurredOn: "2026-08-10",
+        userId: "AUTOR-1",
+        description: null,
+        reason: null,
+        recurring: true,
+        ...(period === undefined ? {} : { period }),
+      },
+      id,
+    );
+  }
+
+  it("apaga a cópia v2 e deixa a v1 viva; a confirmação da v2 vai para a v1", async () => {
+    await session.putRows({
+      transactions: [
+        ocorrencia(V1, { estimated: true, amountMinor: 1_000 }),
+        ocorrencia(V2, { estimated: false, amountMinor: 1_234, importKey: "K2" }),
+      ],
+      reserveMovements: [deposito(D1), deposito(D2, "2026-08")],
+    });
+
+    await store.repairDuplicates();
+
+    expect(await db.transactions.get(V1)).toMatchObject({
+      deletedAt: null,
+      estimated: false,
+      amountMinor: 1_234,
+      importKey: "K2",
+      dirty: 1,
+    });
+    expect((await db.transactions.get(V2))?.deletedAt).not.toBeNull();
+    // A exclusão é marcada como do reparo (achado 4): a folha distingue da exclusão da pessoa.
+    expect((await db.transactions.get(V2))?.mergedInto).toBe(V1);
+    expect((await db.reserveMovements.get(D1))?.deletedAt).toBeNull();
+    expect((await db.reserveMovements.get(D2))?.deletedAt).not.toBeNull();
+    expect((await db.reserveMovements.get(D2))?.mergedInto).toBe(D1);
+    expect(session.fullState.value.transactions[V2]?.deletedAt).not.toBeNull();
+  });
+
+  it("sem duplicata não grava nada", async () => {
+    await session.putRows({ transactions: [ocorrencia(V1)] });
+    const antes = await db.transactions.get(V1);
+    const putRows = vi.spyOn(session, "putRowsIfCurrent");
+
+    await store.repairDuplicates();
+
+    expect(putRows).not.toHaveBeenCalled();
+    expect(await db.transactions.get(V1)).toEqual(antes);
+  });
+
+  it("a v1 mudou no banco desde a leitura: não apaga a v2 (nunca zero vivas)", async () => {
+    await session.putRows({ transactions: [ocorrencia(V1), ocorrencia(V2)] });
+    // Outra aba apaga a v1 sem a sessão saber.
+    const v1 = await db.transactions.get(V1);
+    if (v1 === undefined) throw new Error("sem v1");
+    const hlc = v1.updatedAt.replace(/^\d/, "9");
+    await db.transactions.put({ ...v1, deletedAt: hlc, updatedAt: hlc });
+
+    await store.repairDuplicates();
+
+    expect((await db.transactions.get(V2))?.deletedAt).toBeNull();
+    expect(session.error.value).toBeNull();
+  });
+});
+
+describe("materializeDue com o lugar v1 disputado", () => {
+  const A = "01JC0000000000000000000001";
+  const C = collidingId("01JC0000000000000000000", A, (id) => occurrenceKey(id, "2026-08"));
+
+  async function serie(id: string, book?: "business") {
+    const row = buildRow<Recurrence>(
+      session.clock(),
+      { ...mensalDraft(), startOn: "2026-08-05", userId: "AUTOR-1" },
+      id,
+      book,
+    );
+    await session.putRows({ recurrences: [row] });
+  }
+
+  it("séries de contas diferentes no mesmo lugar: as duas nascem no mesmo lote", async () => {
+    await serie(A);
+    await serie(C, "business");
+
+    await store.materializeDue("2026-08-10");
+
+    const ka = occurrenceKey(A, "2026-08");
+    const kc = occurrenceKey(C, "2026-08");
+    const [first, second] = [ka, kc].sort();
+    expect(await db.transactions.get(stableEntityIdV1(first ?? ""))).toMatchObject({
+      occurrenceKey: first,
+    });
+    expect(await db.transactions.get(stableEntityIdV2(second ?? ""))).toMatchObject({
+      occurrenceKey: second,
+    });
+    expect(await db.transactions.count()).toBe(2);
+    expect(session.error.value).toBeNull();
+  });
+});
+
+describe("recoverOccurrences (folha de recuperação)", () => {
+  const A = "01JC0000000000000000000001";
+  const B = "01JC0000000000000000000002";
+  // Par verificado da spec: A em 2027-02 e B em 2027-01 caem no mesmo v1.
+  const KA = occurrenceKey(A, "2027-02");
+  const SLOT = stableEntityIdV1(KA);
+
+  async function cenario() {
+    const clock = session.clock();
+    const serie = buildRow<Recurrence>(
+      clock,
+      { ...mensalDraft(), startOn: "2027-01-05", endOn: "2027-03-05", userId: "AUTOR-1" },
+      A,
+    );
+    const reajuste = buildRow<RecurrenceAdjustment>(
+      clock,
+      { recurrenceId: A, fromPeriod: "2027-02", amountMinor: 610_000 },
+      adjustmentId(A, "2027-02"),
+    );
+    // A ocorrência de B ocupou o lugar de fevereiro de A antes da correção.
+    const deB = buildRow<Transaction>(
+      clock,
+      {
+        ...DRAFT,
+        occurredOn: "2027-01-05",
+        recurrenceId: B,
+        occurrenceKey: occurrenceKey(B, "2027-01"),
+        userId: null,
+      },
+      SLOT,
+    );
+    await session.putRows({
+      recurrences: [serie],
+      recurrenceAdjustments: [reajuste],
+      transactions: [deB],
+    });
+    // O boot de março: janeiro e março nascem em v1; fevereiro fica para a folha.
+    await store.materializeDue("2027-03-10");
+  }
+
+  it("candidatas: só a competência passada com o lugar de outro fato, com o valor da competência", async () => {
+    await cenario();
+    const lost = recoveryCandidates(session.fullState.value, "personal", "2027-03-10");
+    expect(
+      lost.map((item) => [item.draft.occurrenceKey, item.entityId, item.draft.amountMinor]),
+    ).toEqual([[KA, stableEntityIdV2(KA), 610_000]]);
+  });
+
+  it("Recriar grava em v2 com o autor da série; depois disso não há candidatas", async () => {
+    await cenario();
+    const lost = recoveryCandidates(session.fullState.value, "personal", "2027-03-10");
+
+    await store.recoverOccurrences(lost, []);
+
+    expect(await db.transactions.get(stableEntityIdV2(KA))).toMatchObject({
+      deletedAt: null,
+      recurrenceId: A,
+      occurrenceKey: KA,
+      amountMinor: 610_000,
+      occurredOn: "2027-02-05",
+      userId: "AUTOR-1",
+    });
+    expect(recoveryCandidates(session.fullState.value, "personal", "2027-03-10")).toEqual([]);
+    // O lugar de B segue intacto.
+    expect((await db.transactions.get(SLOT))?.recurrenceId).toBe(B);
+  });
+
+  it("Não recriar grava um tombstone v2 com a chave; nada volta no próximo boot", async () => {
+    await cenario();
+    const lost = recoveryCandidates(session.fullState.value, "personal", "2027-03-10");
+
+    await store.recoverOccurrences([], lost);
+    await store.materializeDue("2027-03-11");
+
+    const row = await db.transactions.get(stableEntityIdV2(KA));
+    expect(row?.deletedAt).not.toBeNull();
+    expect(row).toMatchObject({ recurrenceId: A, occurrenceKey: KA });
+    expect(recoveryCandidates(session.fullState.value, "personal", "2027-03-10")).toEqual([]);
+    expect(
+      alive()
+        .filter((t) => t.recurrenceId === A)
+        .map((t) => t.occurredOn)
+        .sort(),
+    ).toEqual(["2027-01-05", "2027-03-05"]);
   });
 });
