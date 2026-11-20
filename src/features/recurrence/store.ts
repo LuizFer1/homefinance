@@ -18,6 +18,7 @@ import {
   installmentRule,
   splitInstallments,
 } from "../../domain/recurrence/installments";
+import { occurrenceIndex } from "../../domain/recurrence/occurrence-index";
 import { planOccurrences } from "../../domain/recurrence/plan";
 import {
   describeError,
@@ -199,8 +200,14 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
       // Uma conta por vez, incluindo a inativa: o aluguel do comércio vence
       // mesmo com a pessoa na conta pessoal. Cada ocorrência herda a conta da
       // série (`plan.book`), nunca a ativa.
+      //
+      // Um índice só, da tabela inteira, para as duas contas: o lugar v1 de uma
+      // chave pode ser de uma linha da outra conta (que a visão esconde), e o id
+      // reservado por uma conta tem de valer para a outra no mesmo lote.
+      const full = session.fullState.value;
+      const index = occurrenceIndex(full.transactions);
       const plans = BOOKS.flatMap((book) =>
-        planOccurrences(stateForBook(session.fullState.value, book), today),
+        planOccurrences(stateForBook(full, book), today, index),
       );
       if (plans.length === 0) return;
 

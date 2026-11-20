@@ -942,3 +942,37 @@ describe("repairDuplicates", () => {
     expect(session.error.value).toBeNull();
   });
 });
+
+describe("materializeDue com o lugar v1 disputado", () => {
+  const A = "01JC0000000000000000000001";
+  const C = collidingId("01JC0000000000000000000", A, (id) => occurrenceKey(id, "2026-08"));
+
+  async function serie(id: string, book?: "business") {
+    const row = buildRow<Recurrence>(
+      session.clock(),
+      { ...mensalDraft(), startOn: "2026-08-05", userId: "AUTOR-1" },
+      id,
+      book,
+    );
+    await session.putRows({ recurrences: [row] });
+  }
+
+  it("séries de contas diferentes no mesmo lugar: as duas nascem no mesmo lote", async () => {
+    await serie(A);
+    await serie(C, "business");
+
+    await store.materializeDue("2026-08-10");
+
+    const ka = occurrenceKey(A, "2026-08");
+    const kc = occurrenceKey(C, "2026-08");
+    const [first, second] = [ka, kc].sort();
+    expect(await db.transactions.get(stableEntityIdV1(first ?? ""))).toMatchObject({
+      occurrenceKey: first,
+    });
+    expect(await db.transactions.get(stableEntityIdV2(second ?? ""))).toMatchObject({
+      occurrenceKey: second,
+    });
+    expect(await db.transactions.count()).toBe(2);
+    expect(session.error.value).toBeNull();
+  });
+});

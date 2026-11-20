@@ -1,10 +1,11 @@
-import { stableEntityIdV1 } from "../ids/stable-id";
 import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { isAlive } from "../model/base";
+import { bookOf } from "../model/book";
 import type { Recurrence } from "../model/recurrence";
 import type { Transaction } from "../model/transaction";
 import { type AdjustmentLike, adjustmentsOf, adjustmentTargetId, amountFor } from "./adjustments";
+import { occurrenceIndex } from "./occurrence-index";
 import {
   isKnownFrequency,
   occurrenceKey,
@@ -140,10 +141,14 @@ export function periodChoices(state: AppState, series: Recurrence): PeriodChoice
   const all: string[] = [];
   let initialIndex = -1;
   let cursor = periodOf(series.frequency, series.startOn);
+  // Pela chave, não pelo id: com a colisão da v1, o id da competência pode ser
+  // de outro fato, e a padrão pularia um mês que não tem linha.
+  const index = occurrenceIndex(state.transactions);
+  const book = bookOf(series);
 
   while (lastMonth === null || cursor <= lastMonth) {
-    const exists = state.transactions[stableEntityIdV1(occurrenceKey(series.id, cursor))];
-    if (initialIndex === -1 && exists === undefined) initialIndex = all.length;
+    const exists = index.knows(series.id, occurrenceKey(series.id, cursor), book);
+    if (initialIndex === -1 && !exists) initialIndex = all.length;
     all.push(cursor);
     // Sem `endOn` o laço só termina aqui; a padrão sempre aparece, porque o
     // banco tem um número finito de ocorrências.
