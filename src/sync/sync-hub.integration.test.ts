@@ -17,6 +17,8 @@ import {
 import { collidingId } from "../domain/ids/collision.fake";
 import { stableEntityIdV1, stableEntityIdV2 } from "../domain/ids/stable-id";
 import type { RandomChunk } from "../domain/ids/ulid";
+import { parseStatement } from "../domain/import/parse";
+import { classifyImport, type ImportContext, importSeeds, planImport } from "../domain/import/plan";
 import { bookOf } from "../domain/model/book";
 import { BUSINESS_BOOK_ID } from "../domain/model/book-account";
 import type { Budget } from "../domain/model/budget";
@@ -32,12 +34,16 @@ import {
   adjustmentsOf,
   amountFor,
 } from "../domain/recurrence/adjustments";
+import { recoveryCandidates } from "../domain/recurrence/recovery";
 import { occurrenceKey } from "../domain/recurrence/schedule";
+import { depositId, depositSeed } from "../domain/reserves/deposits";
 import { movement, reserve } from "../domain/reserves/fixtures.fake";
 import { createBudgetsStore } from "../features/budgets/store";
 import { createCardsStore } from "../features/cards/store";
+import { createImportStore } from "../features/import/store";
 import { createRecurrenceStore } from "../features/recurrence/store";
 import { createRegistryStore, type RegistryStore } from "../features/registry/store";
+import { createReservesStore } from "../features/reserves/store";
 import { createSession, type Session } from "../features/session/session";
 import { createSyncStore, type SyncStore } from "../features/sync/store";
 import { createFakeHub, type FakeHub } from "./fake-hub.fake";
@@ -1017,5 +1023,414 @@ describe("reparo de duplicatas entre dois aparelhos", () => {
 
     expect(vivas(a)).toEqual([V1]);
     expect(vivas(b)).toEqual([V1]);
+  });
+});
+
+describe("versões misturadas: ocorrência, depósito e importação", () => {
+  // Par verificado da spec (§2): A em 2027-02 e B em 2027-01 caem no mesmo v1.
+  const A = "01JC0000000000000000000001";
+  const B = "01JC0000000000000000000002";
+  const KA = occurrenceKey(A, "2027-02");
+  const KB = occurrenceKey(B, "2027-01");
+  const SLOT = stableEntityIdV1(KA);
+  const HOJE = "2027-02-10";
+
+  function serie(d: Device, id: string, startOn: string): Recurrence {
+    return buildRow<Recurrence>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: id,
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        frequency: "monthly",
+        scheduleType: "dayOfMonth",
+        scheduleN: 5,
+        startOn,
+        endOn: null,
+        active: true,
+      },
+      id,
+    );
+  }
+
+  /** Uma ocorrência como o app (velho ou novo) a grava, no id pedido. */
+  function ocorrencia(d: Device, id: string, series: string, key: string, occurredOn: string) {
+    return buildRow<Transaction>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: series,
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        occurredOn,
+        userId: null,
+        recurrenceId: series,
+        occurrenceKey: key,
+      },
+      id,
+    );
+  }
+
+  /** O `planOccurrences` do app velho para uma chave: id v1, pula se o id existe. */
+  async function velhoMaterializa(d: Device, series: string, period: string) {
+    const key = occurrenceKey(series, period);
+    const id = stableEntityIdV1(key);
+    if (d.session.state.value.transactions[id] !== undefined) return;
+    await d.session.putRows({ transactions: [ocorrencia(d, id, series, key, `${period}-05`)] });
+  }
+
+  const novoMaterializa = (d: Device, today = HOJE) =>
+    createRecurrenceStore(d.session).materializeDue(today);
+
+  const vivasDa = (d: Device, key: string) =>
+    Object.values(d.session.state.value.transactions)
+      .filter((row) => row.deletedAt === null && row.occurrenceKey === key)
+      .map((row) => row.id)
+      .sort();
+
+  async function dois() {
+    const hub = createFakeHub();
+    const novo = await device(hub, "novo", 0);
+    const velho = await device(hub, "velho", 60_000);
+    return { novo, velho };
+  }
+
+  async function sincroniza(novo: Device, velho: Device) {
+    await novo.sync.sync();
+    await velho.sync.sync();
+    await novo.sync.sync();
+  }
+
+  describe("ocorrência", () => {
+    it("(1) lugar livre: o novo grava em v1, o velho grava a mesma chave depois: uma linha", async () => {
+      const { novo, velho } = await dois();
+      await novo.session.putRows({ recurrences: [serie(novo, A, "2027-02-05")] });
+      await sincroniza(novo, velho);
+
+      await novoMaterializa(novo);
+      // O velho, offline, gera a mesma competência antes de receber a do novo.
+      await velhoMaterializa(velho, A, "2027-02");
+      await sincroniza(novo, velho);
+
+      expect(vivasDa(novo, KA)).toEqual([SLOT]);
+      expect(vivasDa(velho, KA)).toEqual([SLOT]);
+    });
+
+    it("(2) lugar de outro fato: o novo grava em v2; o velho pula (o bug dele) e a v2 fica", async () => {
+      const { novo, velho } = await dois();
+      await novo.session.putRows({
+        recurrences: [serie(novo, A, "2027-02-05")],
+        transactions: [ocorrencia(novo, SLOT, B, KB, "2027-01-05")],
+      });
+      await sincroniza(novo, velho);
+
+      await novoMaterializa(novo);
+      await velhoMaterializa(velho, A, "2027-02");
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(vivasDa(d, KA)).toEqual([stableEntityIdV2(KA)]);
+        expect(vivasDa(d, KB)).toEqual([SLOT]);
+      }
+    });
+
+    it("(3) corrida: a mesma chave em v1 (velho) e v2 (novo): o reparo deixa uma, a v1", async () => {
+      const { novo, velho } = await dois();
+      await novo.session.putRows({ recurrences: [serie(novo, A, "2027-02-05")] });
+      await sincroniza(novo, velho);
+      // Só o novo tem a ocorrência de B no lugar (o velho ainda não a recebeu).
+      await novo.session.putRows({ transactions: [ocorrencia(novo, SLOT, B, KB, "2027-01-05")] });
+
+      await novoMaterializa(novo);
+      await velhoMaterializa(velho, A, "2027-02");
+      await sincroniza(novo, velho);
+      // O cenário C: as duas cópias vivas (o A do velho venceu o lugar de B).
+      expect(vivasDa(novo, KA)).toEqual([SLOT, stableEntityIdV2(KA)].sort());
+      // O pull roda o reparo (como o `afterPull` do app novo).
+      await createRecurrenceStore(novo.session).repairDuplicates();
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) expect(vivasDa(d, KA)).toEqual([SLOT]);
+    });
+
+    it("B: fatos diferentes no mesmo lugar livre, offline: os dois existem depois do boot novo", async () => {
+      const { novo, velho } = await dois();
+      const C = collidingId("01JC0000000000000000000", A, (id) => occurrenceKey(id, "2027-02"));
+      const KC = occurrenceKey(C, "2027-02");
+      // Cada aparelho só conhece uma das séries quando materializa, offline.
+      await novo.session.putRows({ recurrences: [serie(novo, A, "2027-02-05")] });
+      await velho.session.putRows({ recurrences: [serie(velho, C, "2027-02-05")] });
+      await novoMaterializa(novo);
+      await velhoMaterializa(velho, C, "2027-02");
+
+      // O velho grava depois (relógio à frente): o LWW do lugar fica com C.
+      await sincroniza(novo, velho);
+      expect(vivasDa(novo, KA)).toEqual([]);
+
+      // O boot (ou o pull) seguinte do novo grava A em v2: o mês é o corrente.
+      await novoMaterializa(novo);
+      await sincroniza(novo, velho);
+      for (const d of [novo, velho]) {
+        expect(vivasDa(d, KA)).toEqual([stableEntityIdV2(KA)]);
+        expect(vivasDa(d, KC)).toEqual([SLOT]);
+      }
+    });
+
+    it("E: apagada no velho não volta no novo", async () => {
+      const { novo, velho } = await dois();
+      await novo.session.putRows({ recurrences: [serie(novo, A, "2027-02-05")] });
+      await novoMaterializa(novo);
+      await sincroniza(novo, velho);
+
+      const row = velho.session.state.value.transactions[SLOT];
+      if (row === undefined) throw new Error("não chegou");
+      const { hlc } = velho.session.clock().stamp();
+      await velho.session.putRows({
+        transactions: [{ ...row, deletedAt: hlc, updatedAt: hlc, dirty: 1 }],
+      });
+      await sincroniza(novo, velho);
+      await novoMaterializa(novo);
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(vivasDa(d, KA)).toEqual([]);
+        expect(Object.keys(d.session.state.value.transactions)).toEqual([SLOT]);
+      }
+    });
+
+    it("folha de recuperação: a resposta de um aparelho tira a pergunta do outro", async () => {
+      const { novo, velho } = await dois();
+      // Fevereiro de A perdido: o lugar é de B, e hoje já é março.
+      const marco = "2027-03-10";
+      await novo.session.putRows({
+        recurrences: [serie(novo, A, "2027-02-05")],
+        transactions: [ocorrencia(novo, SLOT, B, KB, "2027-01-05")],
+      });
+      await novoMaterializa(novo, marco);
+      await sincroniza(novo, velho);
+
+      const lost = recoveryCandidates(novo.session.fullState.value, "personal", marco);
+      expect(lost.map((item) => item.draft.occurrenceKey)).toEqual([KA]);
+      // O outro aparelho, com o mesmo estado, acha a mesma candidata.
+      expect(
+        recoveryCandidates(velho.session.fullState.value, "personal", marco).map(
+          (item) => item.entityId,
+        ),
+      ).toEqual(lost.map((item) => item.entityId));
+
+      await createRecurrenceStore(novo.session).recoverOccurrences([], lost);
+      await sincroniza(novo, velho);
+
+      expect(recoveryCandidates(velho.session.fullState.value, "personal", marco)).toEqual([]);
+      const resposta = velho.session.state.value.transactions[stableEntityIdV2(KA)];
+      expect(resposta?.deletedAt).not.toBeNull();
+      expect(resposta?.occurrenceKey).toBe(KA);
+    });
+  });
+
+  describe("depósito mensal", () => {
+    const R1 = "01JC0000000000000000000001";
+    const R2 = collidingId("01JC0000000000000000000", R1, (id) => depositSeed(id, "2027-02"));
+    const [FIRST = "", SECOND = ""] = [R1, R2].sort();
+    const regra = { amountMinor: 1_000, day: 1, since: "2027-01" };
+
+    async function comSaldo(d: Device, reservas: string[]) {
+      await d.session.putRows({
+        reserves: reservas.map((id) =>
+          reserve(id, { recurring: regra, updatedAt: d.session.clock().stamp().hlc, dirty: 1 }),
+        ),
+        transactions: [
+          buildRow<Transaction>(d.session.clock(), {
+            kind: "income",
+            description: "Salário",
+            amountMinor: 900_000,
+            currency: "BRL",
+            categoryId: null,
+            paymentMethodId: null,
+            cashbackMinor: null,
+            occurredOn: "2027-02-01",
+            userId: null,
+            recurrenceId: null,
+            occurrenceKey: null,
+          }),
+        ],
+      });
+    }
+
+    /** O `planDeposits` do app velho: id v1, pula se o id existe. */
+    async function velhoDeposita(d: Device, reserveId: string) {
+      const id = depositId(reserveId, "2027-02");
+      if (d.session.state.value.reserveMovements[id] !== undefined) return;
+      await d.session.putRows({
+        reserveMovements: [
+          movement(id, reserveId, 1_000, HOJE, {
+            recurring: true,
+            updatedAt: d.session.clock().stamp().hlc,
+            dirty: 1,
+          }),
+        ],
+      });
+    }
+
+    const novoDeposita = (d: Device) => createReservesStore(d.session).materializeDue(HOJE);
+
+    const depositosDe = (d: Device, reserveId: string) =>
+      Object.values(d.session.state.value.reserveMovements)
+        .filter(
+          (row) => row.deletedAt === null && row.reserveId === reserveId && row.recurring === true,
+        )
+        .map((row) => row.id)
+        .sort();
+
+    it("o par colide na v1", () => {
+      expect(depositId(R2, "2027-02")).toBe(depositId(R1, "2027-02"));
+    });
+
+    it("(1) lugar livre: o novo grava em v1, o velho grava o mesmo depois: uma linha", async () => {
+      const { novo, velho } = await dois();
+      await comSaldo(novo, [R1]);
+      await sincroniza(novo, velho);
+      await novoDeposita(novo);
+      await velhoDeposita(velho, R1);
+      await sincroniza(novo, velho);
+      for (const d of [novo, velho]) expect(depositosDe(d, R1)).toEqual([depositId(R1, "2027-02")]);
+    });
+
+    it("(2) lugar de outra reserva: o novo grava em v2; o velho pula e a v2 fica", async () => {
+      const { novo, velho } = await dois();
+      await comSaldo(novo, [FIRST, SECOND]);
+      await sincroniza(novo, velho);
+      // O velho deposita a primeira reserva antes, e o novo recebe.
+      await velhoDeposita(velho, FIRST);
+      await sincroniza(novo, velho);
+
+      await novoDeposita(novo);
+      await velhoDeposita(velho, SECOND);
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(depositosDe(d, FIRST)).toEqual([depositId(FIRST, "2027-02")]);
+        expect(depositosDe(d, SECOND)).toEqual([stableEntityIdV2(depositSeed(SECOND, "2027-02"))]);
+      }
+    });
+
+    it("(3) corrida: o mesmo depósito em v1 (velho) e v2 (novo): o reparo deixa uma, a v1", async () => {
+      const { novo, velho } = await dois();
+      await comSaldo(novo, [SECOND]);
+      await sincroniza(novo, velho);
+      // Só o novo tem o depósito da outra reserva no lugar.
+      await novo.session.putRows({
+        reserveMovements: [
+          movement(depositId(FIRST, "2027-02"), FIRST, 1_000, HOJE, {
+            recurring: true,
+            period: "2027-02",
+            updatedAt: novo.session.clock().stamp().hlc,
+            dirty: 1,
+          }),
+        ],
+      });
+
+      await novoDeposita(novo);
+      await velhoDeposita(velho, SECOND);
+      await sincroniza(novo, velho);
+      expect(depositosDe(novo, SECOND)).toEqual(
+        [depositId(SECOND, "2027-02"), stableEntityIdV2(depositSeed(SECOND, "2027-02"))].sort(),
+      );
+      await createRecurrenceStore(novo.session).repairDuplicates();
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(depositosDe(d, SECOND)).toEqual([depositId(SECOND, "2027-02")]);
+      }
+    });
+  });
+
+  describe("importação", () => {
+    const ctx: ImportContext = { paymentMethodId: null, referenceMonth: "2027-02" };
+    const linhas = () =>
+      parseStatement(["12/02 IFOOD 45,90"], "account", "2027-02").entries.map((e) => ({
+        ...e,
+        selected: true,
+        categoryId: null,
+      }));
+    const [SEED = ""] = importSeeds(linhas(), ctx);
+    const I1 = stableEntityIdV1(SEED);
+    const I2 = stableEntityIdV2(SEED);
+
+    const slotsDe = (d: Device) => ({
+      transactions: d.session.fullState.value.transactions,
+      recurrences: d.session.fullState.value.recurrences,
+    });
+
+    const novoImporta = (d: Device) =>
+      createImportStore(d.session, createRecurrenceStore(d.session)).commit(
+        planImport(linhas(), ctx, slotsDe(d)),
+        HOJE,
+      );
+
+    /** A revisão do app velho: "Já importado" se o id v1 existe; senão grava em v1. */
+    async function velhoImporta(d: Device) {
+      if (d.session.state.value.transactions[I1] !== undefined) return;
+      const [plan] = planImport(linhas(), ctx).transactions;
+      if (plan === undefined) throw new Error("sem linha");
+      const { importKey: _novo, ...antigo } = plan.draft;
+      await d.session.putRows({
+        transactions: [buildRow<Transaction>(d.session.clock(), { ...antigo, userId: null }, I1)],
+      });
+    }
+
+    const ifood = (d: Device) =>
+      Object.values(d.session.state.value.transactions)
+        .filter((row) => row.deletedAt === null && row.description === "IFOOD")
+        .map((row) => row.id)
+        .sort();
+
+    it("(1) lugar livre: o novo grava em v1, o velho reimporta depois: uma linha", async () => {
+      const { novo, velho } = await dois();
+      await novoImporta(novo);
+      await sincroniza(novo, velho);
+      await velhoImporta(velho);
+      await sincroniza(novo, velho);
+      for (const d of [novo, velho]) expect(ifood(d)).toEqual([I1]);
+      expect(classifyImport(linhas(), ctx, slotsDe(novo))[0]?.status).toBe("imported");
+    });
+
+    it("(2) lugar de outro fato: o novo grava em v2; o velho vê 'Já importado' e a v2 fica", async () => {
+      const { novo, velho } = await dois();
+      await novo.session.putRows({ transactions: [ocorrencia(novo, I1, B, KB, "2027-01-05")] });
+      await sincroniza(novo, velho);
+      expect(classifyImport(linhas(), ctx, slotsDe(novo))[0]?.status).toBe("maybe");
+
+      await novoImporta(novo);
+      await velhoImporta(velho);
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(ifood(d)).toEqual([I2]);
+        expect(d.session.state.value.transactions[I1]?.recurrenceId).toBe(B);
+      }
+    });
+
+    it("(3) corrida: o velho em v1 (livre para ele) e o novo em v2: as duas ficam (documentado)", async () => {
+      // Sem reparo automático: a avulsa do velho não tem chave gravada que prove
+      // ser o mesmo fato. O LWW do lugar v1 fica com ela (gravou depois), a
+      // ocorrência que estava lá some (cenário B) e a compra aparece duas vezes.
+      // A reimportação a reconhece; a duplicata se apaga à mão.
+      const { novo, velho } = await dois();
+      await novo.session.putRows({ transactions: [ocorrencia(novo, I1, B, KB, "2027-01-05")] });
+      await novoImporta(novo);
+      await velhoImporta(velho);
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) expect(ifood(d)).toEqual([I1, I2].sort());
+      expect(classifyImport(linhas(), ctx, slotsDe(novo))[0]?.status).toBe("imported");
+    });
   });
 });
