@@ -56,6 +56,19 @@ describe("stableEntityIdV1", () => {
     expect(stableEntityIdV1("R2:2026-09")).toBe(stableEntityIdV1("22:2026-09"));
   });
 
+  it("teto documentado: sementes de qualquer comprimento caem em no maximo 1024 ids", () => {
+    const ids = new Set<string>();
+    for (const [n, series] of fakeUlids(200, 4).entries()) {
+      for (const month of months(24)) {
+        const tail = "x".repeat(n % 40);
+        ids.add(stableEntityIdV1(`${series}:${month}${tail}`));
+        ids.add(stableEntityIdV1(`${n}:${month}`));
+      }
+    }
+    expect(ids.size).toBeGreaterThan(256);
+    expect(ids.size).toBeLessThanOrEqual(1024);
+  });
+
   /**
    * Padrões e conta comercial ficam na v1 para sempre (mudar duplicaria todo
    * padrão em todo aparelho). Lista fechada: só não pode colidir dentro dela.
