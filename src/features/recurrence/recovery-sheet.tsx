@@ -49,13 +49,18 @@ function When({ item }: { item: LostOccurrence }) {
  * séries recorrentes que a colisão do id engoliu. Nada passado é recriado sem
  * esta pergunta — quem lançou à mão ficaria com dois.
  *
- * Duas etapas: marcar o que recriar (tudo vem marcado) e conferir a prévia, que
+ * Duas etapas: marcar o que recriar (tudo vem marcado, menos o que foi apagado
+ * junto com uma duplicata — ver `mergedOrphans`) e conferir a prévia, que
  * lista as duas escolhas. Desmarcada é "Não recriar": vira um tombstone, e
  * nenhum aparelho pergunta de novo. Fechar sem confirmar não grava nada.
  */
 export function RecoverySheet({ lost, onApply, onClose }: RecoverySheetProps) {
-  const groups = useMemo(() => groupBySeries(lost), [lost]);
-  const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
+  const groups = useMemo(() => groupBySeries(lost.filter((item) => !item.merged)), [lost]);
+  // Apagadas junto com a duplicata (`mergedOrphans`): alguém apagou a v1 de
+  // propósito, talvez o próprio lançamento. Vêm à parte e **desmarcadas** — só
+  // voltam se a pessoa marcar.
+  const merged = useMemo(() => lost.filter((item) => item.merged), [lost]);
+  const [skipped, setSkipped] = useState<ReadonlySet<string>>(() => new Set(merged.map(keyOf)));
 
   const recreate = lost.filter((item) => !skipped.has(keyOf(item)));
   const dismiss = lost.filter((item) => skipped.has(keyOf(item)));
@@ -71,6 +76,28 @@ export function RecoverySheet({ lost, onApply, onClose }: RecoverySheetProps) {
   }
 
   const allOn = skipped.size === 0;
+
+  // Função, não componente: um componente definido aqui dentro seria outro a cada
+  // render, e o Preact remontaria as linhas.
+  function row(item: LostOccurrence, label: string) {
+    return (
+      <li key={keyOf(item)} class="border-b border-divider last:border-b-0">
+        <label class="flex min-h-12 cursor-pointer items-center gap-3 px-3.5 py-2">
+          <input
+            type="checkbox"
+            checked={!skipped.has(keyOf(item))}
+            onChange={() => toggle(item)}
+            aria-label={`Recriar ${label} de ${periodLabel(item.draft.occurredOn)}`}
+            class="size-5 shrink-0 accent-[var(--color-accent)]"
+          />
+          <span class="min-w-0 flex-1">
+            <When item={item} />
+          </span>
+          <Amount item={item} />
+        </label>
+      </li>
+    );
+  }
 
   function renderStep(step: string) {
     if (step === "Lançamentos") {
@@ -93,26 +120,22 @@ export function RecoverySheet({ lost, onApply, onClose }: RecoverySheetProps) {
             <section key={group.seriesId} class="mt-3">
               <h4 class="text-sm font-medium">{group.description}</h4>
               <ul class="mt-1.5 overflow-hidden rounded-lg bg-bg">
-                {group.items.map((item) => (
-                  <li key={keyOf(item)} class="border-b border-divider last:border-b-0">
-                    <label class="flex min-h-12 cursor-pointer items-center gap-3 px-3.5 py-2">
-                      <input
-                        type="checkbox"
-                        checked={!skipped.has(keyOf(item))}
-                        onChange={() => toggle(item)}
-                        aria-label={`Recriar ${group.description} de ${periodLabel(item.draft.occurredOn)}`}
-                        class="size-5 shrink-0 accent-[var(--color-accent)]"
-                      />
-                      <span class="min-w-0 flex-1">
-                        <When item={item} />
-                      </span>
-                      <Amount item={item} />
-                    </label>
-                  </li>
-                ))}
+                {group.items.map((item) => row(item, group.description))}
               </ul>
             </section>
           ))}
+          {merged.length > 0 && (
+            <section class="mt-4">
+              <h4 class="text-sm font-medium">Apagados junto com uma cópia</h4>
+              <p class={HINT}>
+                Estes tinham uma cópia duplicada, removida automaticamente, e foram apagados em
+                outro aparelho ao mesmo tempo. Marque só o que deve voltar.
+              </p>
+              <ul class="mt-1.5 overflow-hidden rounded-lg bg-bg">
+                {merged.map((item) => row(item, item.draft.description))}
+              </ul>
+            </section>
+          )}
         </>
       );
     }

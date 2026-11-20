@@ -59,10 +59,17 @@ const LOST = [
   perdida(ALUGUEL, "2026-05", 180_000),
 ];
 
-function renderSheet(onApply = vi.fn().mockResolvedValue(undefined)) {
+function renderSheet(onApply = vi.fn().mockResolvedValue(undefined), lost = LOST) {
   const onClose = vi.fn();
-  render(<RecoverySheet lost={LOST} onApply={onApply} onClose={onClose} />);
+  render(<RecoverySheet lost={lost} onApply={onApply} onClose={onClose} />);
   return { onApply, onClose };
+}
+
+/** A chave que o reparo de duplicatas e a exclusão da v1 deixaram sem linha viva. */
+function doReparo(series: Recurrence, period: string): LostOccurrence {
+  const item = perdida(series, period, 500_000);
+  const row = { ...ALIVE, ...item.draft, id: item.entityId, userId: null };
+  return { ...item, merged: { tombstone: row, keeper: { ...row, id: "V1" } } };
 }
 
 describe("recoveryLabel", () => {
@@ -122,6 +129,22 @@ describe("RecoverySheet", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain("quota");
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("apagada junto com a duplicata: aparte, com o próprio aviso, e desmarcada", async () => {
+    const reparada = doReparo(SALARIO, "2026-06");
+    const { onApply } = renderSheet(undefined, [...LOST, reparada]);
+
+    expect(screen.getByText(/apagados em outro aparelho/)).toBeDefined();
+    const box = screen.getByLabelText("Recriar Salário de 05 jun/2026") as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Recriar 3 lançamentos" }));
+
+    await waitFor(() => expect(onApply).toHaveBeenCalled());
+    const [recreate, dismiss] = onApply.mock.calls[0] ?? [];
+    expect(recreate).toHaveLength(3);
+    expect(dismiss).toEqual([reparada]);
   });
 
   it("fechar sem confirmar não grava nada", () => {
