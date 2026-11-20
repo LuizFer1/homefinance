@@ -1185,6 +1185,61 @@ describe("reparo de duplicatas entre dois aparelhos", () => {
     }
   });
 
+  it("resposta atrasada à pergunta do reparo não revive o que o outro recriou e apagou", async () => {
+    const { novo, velho } = await reparoEApagaV1();
+    const lostNovo = recoveryCandidates(novo.session.fullState.value, "personal", "2027-03-10");
+    const lostVelho = recoveryCandidates(velho.session.fullState.value, "personal", "2027-03-10");
+
+    await createRecurrenceStore(novo.session).recoverOccurrences(lostNovo, []);
+    const revivida = novo.session.state.value.transactions[V2];
+    if (revivida === undefined) throw new Error("não reviveu");
+    const { hlc } = novo.session.clock().stamp();
+    await novo.session.putRows({
+      transactions: [{ ...revivida, deletedAt: hlc, updatedAt: hlc, dirty: 1 }],
+    });
+    await novo.sync.sync();
+
+    // O velho (relógio à frente), ainda sem nada disso, responde Recriar também.
+    await createRecurrenceStore(velho.session).recoverOccurrences(lostVelho, []);
+    await velho.sync.sync();
+    await novo.sync.sync();
+    await velho.sync.sync();
+
+    for (const d of [novo, velho]) expect(vivas(d)).toEqual([]);
+  });
+
+  it("Não recriar atrasado à pergunta do reparo não apaga o que o outro recriou e confirmou", async () => {
+    const { novo, velho } = await reparoEApagaV1();
+    const lostNovo = recoveryCandidates(novo.session.fullState.value, "personal", "2027-03-10");
+    const lostVelho = recoveryCandidates(velho.session.fullState.value, "personal", "2027-03-10");
+
+    await createRecurrenceStore(novo.session).recoverOccurrences(lostNovo, []);
+    const revivida = novo.session.state.value.transactions[V2];
+    if (revivida === undefined) throw new Error("não reviveu");
+    await novo.session.putRows({
+      transactions: [
+        {
+          ...revivida,
+          estimated: false,
+          amountMinor: 12_345,
+          updatedAt: novo.session.clock().stamp().hlc,
+          dirty: 1,
+        },
+      ],
+    });
+    await novo.sync.sync();
+
+    await createRecurrenceStore(velho.session).recoverOccurrences([], lostVelho);
+    await velho.sync.sync();
+    await novo.sync.sync();
+    await velho.sync.sync();
+
+    for (const d of [novo, velho]) {
+      expect(vivas(d)).toEqual([V2]);
+      expect(d.session.state.value.transactions[V2]?.amountMinor).toBe(12_345);
+    }
+  });
+
   it("os dois reparam o mesmo par sem divergência: ainda uma viva, a v1", async () => {
     const hub = createFakeHub();
     const a = await device(hub, "A", 0);

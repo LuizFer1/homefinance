@@ -83,8 +83,11 @@ export interface RecurrenceStore {
    * Folha de recuperação (spec do id estável, §6): grava em v2 as competências
    * perdidas que a pessoa quis recriar, e um tombstone v2 das que ela não quis —
    * a escolha sincroniza, e nenhum outro aparelho pergunta de novo. É o único
-   * caminho que cria competência passada em v2. Um lote só; nunca sobrescreve
-   * (o outro aparelho pode ter respondido antes, no mesmo id).
+   * caminho que cria competência passada em v2. As respostas nunca sobrescrevem
+   * localmente (`insertMissing`: o outro aparelho pode ter respondido antes, no
+   * mesmo id) e nascem ancoradas abaixo de qualquer escrita real na linha
+   * (`recoveryHlc`). A chave que o reparo e a exclusão da v1 deixaram sem linha
+   * viva (`LostOccurrence.merged`) regrava a v2 apagada pelo reparo, em outro lote.
    */
   recoverOccurrences: (
     recreate: readonly LostOccurrence[],
@@ -236,15 +239,17 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
     dismiss: readonly LostOccurrence[],
   ): Promise<void> {
     try {
-      const clock = session.clock();
-      const { deviceId } = clock;
+      const { deviceId } = session.clock();
       // A chave que o reparo e uma exclusão da v1 deixaram sem linha viva
       // (`mergedOrphans`): as linhas existem, então a resposta regrava a v2 em vez
       // de criar. Recriar a revive; Não recriar só limpa `mergedInto` (vira uma
-      // exclusão comum, e nenhum aparelho pergunta de novo). Carimbo do relógio: é
-      // a decisão da pessoa agora, sobre linhas que ninguém edita (as duas estão
-      // apagadas). As duas entram nas versões esperadas: se o sync reviveu uma
-      // delas, a pergunta já não vale e nada é gravado (`StaleRowsError`).
+      // exclusão comum, e nenhum aparelho pergunta de novo). Carimbo ancorado no
+      // tombstone lido, como as outras respostas da folha: o outro aparelho pode já
+      // ter respondido e depois editado ou apagado a v2, e uma resposta atrasada
+      // com o relógio passaria por cima. Não recriar logo acima do tombstone,
+      // Recriar um contador acima (vence a outra resposta); no `ANCHOR_DEVICE_ID`,
+      // perdem para qualquer escrita real. As duas linhas entram nas versões
+      // esperadas: se o sync reviveu uma delas, nada é gravado (`StaleRowsError`).
       const merged = [
         ...recreate.flatMap((lost) => (lost.merged ? [{ pair: lost.merged, revive: true }] : [])),
         ...dismiss.flatMap((lost) => (lost.merged ? [{ pair: lost.merged, revive: false }] : [])),
@@ -253,7 +258,8 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         await session.putRowsIfCurrent(
           {
             transactions: merged.map(({ pair, revive }) => {
-              const { hlc } = clock.stamp();
+              const dismissed = bumpHlc(pair.tombstone.updatedAt, ANCHOR_DEVICE_ID);
+              const hlc = revive ? bumpHlc(dismissed, ANCHOR_DEVICE_ID) : dismissed;
               return {
                 ...pair.tombstone,
                 mergedInto: null,
