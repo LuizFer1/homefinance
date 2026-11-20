@@ -156,8 +156,10 @@ const NO_SLOTS: ImportSlots = { transactions: {}, recurrences: {} };
  * - lugar v1 livre → `new` em v1;
  * - lugar v1 com série de mesma forma de pagamento, valor, `startOn` na âncora e
  *   mesmo `endOn` da regra → `imported` (é a série desta compra);
- * - senão → `new` em v2: a série do lugar é de outra compra, e a desta precisa
- *   nascer para as parcelas seguintes.
+ * - lugar v1 com série que leva outra `importKey` → `new` em v2: é de outra
+ *   compra, e a desta precisa nascer para as parcelas seguintes;
+ * - senão (série sem chave que não casa) → `maybe`, em v2: pode ser esta mesma,
+ *   editada depois, e nova seria uma segunda série com as parcelas em dobro.
  *
  * Duas linhas do mesmo PDF que caem no mesmo lugar livre: a primeira fica com o
  * v1, a seguinte vai para v2 — ids repetidos derrubariam o `insertMissing`.
@@ -234,7 +236,17 @@ export function classifyImport(
         slot.endOn === installmentRule(anchor, entry.installment.n).endOn
       ) {
         target = at("imported", v1);
-      } else target = at("new", v2);
+      } else if (typeof slot.importKey === "string") {
+        // Série importada por esta versão leva a própria chave, que não é a
+        // desta linha: é outra compra, e a desta precisa nascer.
+        target = at("new", v2);
+      } else {
+        // Sem chave (app de antes, ou série do formulário), só os campos provam a
+        // compra — e a edição da série ("este e os próximos", o formulário dela)
+        // muda forma, valor e datas. Nova aqui seria uma segunda série, com as
+        // parcelas em dobro desde a âncora: na dúvida, desmarcada.
+        target = at("maybe", v2);
+      }
       if (target.status !== "imported") claimedSeries.add(target.id);
     }
 

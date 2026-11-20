@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { stableEntityIdV1, stableEntityIdV2 } from "../ids/stable-id";
-import type { Recurrence } from "../model/recurrence";
 import { EMPTY_APP_STATE } from "../model/app-state";
+import type { Recurrence } from "../model/recurrence";
 import { ALIVE, DELETED_AT } from "../model/row.fake";
 import type { Transaction } from "../model/transaction";
 import { confirmedImportKeys } from "./link";
@@ -211,8 +211,18 @@ describe("classifyImport — parcela", () => {
     expect(classifyImport([OUT], ctx, slots([], [serie(P1)]))[0]?.status).toBe("imported");
   });
 
-  it("lugar v1 com a série de outra compra: a desta nasce em v2, e a fatura seguinte a acha", () => {
-    const outra = serie(P1, { amountMinor: 9_999, description: "OUTRA (3x)" });
+  it("lugar v1 com a série de outra compra (importKey dela): a desta nasce em v2, e a fatura seguinte a acha", () => {
+    // A série importada por esta versão leva a própria chave: é prova de outra compra.
+    const outra = serie(P1, {
+      amountMinor: 9_999,
+      description: "OUTRA (3x)",
+      importKey: "OUTRACHAVE0000000000000000",
+    });
+    expect(classifyImport([OUT], ctx, slots([], [outra]))[0]).toEqual({
+      status: "new",
+      id: P2,
+      importKey: P2,
+    });
     const plan = planImport([OUT], ctx, slots([], [outra]));
     expect(plan.series.map(({ id, draft }) => [id, draft.importKey])).toEqual([[P2, P2]]);
 
@@ -221,6 +231,27 @@ describe("classifyImport — parcela", () => {
       classifyImport([NOV], { ...ctx, referenceMonth: "2026-11" }, slots([], [outra, gravada]))[0]
         ?.status,
     ).toBe("imported");
+  });
+
+  it("série antiga desta compra editada depois (forma, valor, fim): talvez, desmarcada — não uma segunda série", () => {
+    // Sem `importKey` (app de antes), a série do lugar só prova esta compra pelos
+    // campos; "este e os próximos" e a edição da série mudam esses campos.
+    for (const extra of [
+      { paymentMethodId: "OUTRO-CARTAO" },
+      { amountMinor: 14_000 },
+      { endOn: "2027-01-15" },
+      { startOn: "2026-07-16" },
+    ]) {
+      const editada = serie(P1, extra);
+      expect(classifyImport([OUT], ctx, slots([], [editada]))[0]).toEqual({
+        status: "maybe",
+        id: P2,
+        importKey: P2,
+      });
+      // Como a revisão a monta: só a `new` vem marcada.
+      const plan = planImport([{ ...OUT, selected: false }], ctx, slots([], [editada]));
+      expect(plan.series).toEqual([]);
+    }
   });
 
   it("o lugar é procurado na tabela de séries, não na de transações", () => {
