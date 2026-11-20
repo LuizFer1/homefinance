@@ -1,5 +1,11 @@
 import { buildRow } from "../../data/repository";
-import { bumpHlc, compareHlc, floorHlc, recoveryHlc } from "../../domain/clock/hlc";
+import {
+  ANCHOR_DEVICE_ID,
+  bumpHlc,
+  compareHlc,
+  floorHlc,
+  recoveryHlc,
+} from "../../domain/clock/hlc";
 import { planDuplicateRepair } from "../../domain/ids/duplicate-repair";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { Draft } from "../../domain/model/base";
@@ -467,12 +473,13 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
       const plan = planDuplicateRepair(session.fullState.value);
       if (plan.transactions.length === 0 && plan.reserveMovements.length === 0) return;
 
-      const { deviceId } = session.clock();
       // Carimbos logo acima da versão lida (`bumpHlc`), não do relógio: o reparo
       // só precisa vencer o que ele leu. Uma edição feita noutro aparelho que ainda
       // não sabia do reparo — confirmar a v2, confirmar a v1 — nasce depois e vence:
       // a v2 confirmada revive (o próximo reparo leva a confirmação para a v1), e a
-      // confirmação feita na própria v1 não é coberta pela cópia da v2.
+      // confirmação feita na própria v1 não é coberta pela cópia da v2. Com o
+      // `ANCHOR_DEVICE_ID`, nem a escrita no mesmo milissegundo e contador + 1
+      // (aparelho atrasado que observou a versão) perde no desempate.
       // `mergedInto` marca a exclusão como do reparo: se a v1 também for apagada
       // (aparelho velho que ainda via as duas), a folha de recuperação pergunta em
       // vez de deixar a chave sem linha viva em silêncio (`mergedOrphans`).
@@ -480,7 +487,7 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         row: T,
         keeperId: Ulid,
       ): T => {
-        const hlc = bumpHlc(row.updatedAt, deviceId);
+        const hlc = bumpHlc(row.updatedAt, ANCHOR_DEVICE_ID);
         return { ...row, deletedAt: hlc, updatedAt: hlc, mergedInto: keeperId, dirty: 1 };
       };
       const transactions: Transaction[] = plan.transactions.flatMap(
@@ -497,7 +504,7 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
                     compareHlc(keeper.updatedAt, loser.updatedAt) >= 0
                       ? keeper.updatedAt
                       : loser.updatedAt,
-                    deviceId,
+                    ANCHOR_DEVICE_ID,
                   ),
                   dirty: 1 as const,
                 },

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ANCHOR_DEVICE_ID,
   bumpHlc,
   compareHlc,
   createHlcClock,
@@ -212,6 +213,18 @@ describe("bumpHlc", () => {
     expect(bumpHlc(base, DEVICE_A)).toBe(
       formatHlc({ millis: WALL + 1, counter: 0, deviceId: DEVICE_A }),
     );
+  });
+
+  it("com ANCHOR_DEVICE_ID, perde para quem observou a versão e grava no mesmo milissegundo", () => {
+    const base = formatHlc({ millis: WALL, counter: 3, deviceId: DEVICE_B });
+    for (const device of [DEVICE_A, DEVICE_B]) {
+      const clock = createHlcClock(device);
+      clock.observe(base);
+      // Relógio de parede atrasado: o tick fica no milissegundo observado.
+      const later = clock.tick(WALL - 60_000);
+      expect(later.startsWith(`${WALL}-0004-`)).toBe(true);
+      expect(compareHlc(bumpHlc(base, ANCHOR_DEVICE_ID), later)).toBeLessThan(0);
+    }
   });
 
   it("rejeita HLC fora do formato", () => {

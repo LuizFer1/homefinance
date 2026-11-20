@@ -1007,89 +1007,97 @@ describe("reparo de duplicatas entre dois aparelhos", () => {
     }
   });
 
-  it("confirmação na v2 feita noutro aparelho depois do reparo: revive a v2 e o próximo reparo a leva para a v1", async () => {
-    const hub = createFakeHub();
-    // `a` com o relógio à frente: com o tombstone no relógio, ele venceria a
-    // confirmação de `b`, feita depois das cópias e ainda sem saber do reparo.
-    const a = await device(hub, "A", 60_000);
-    const b = await device(hub, "B", 0);
-    await b.session.putRows({ transactions: [ocorrencia(b, V1), ocorrencia(b, V2)] });
-    await b.sync.sync();
-    await a.sync.sync();
+  /**
+   * Relógios e quem grava as cópias, nas combinações que importam ao reparo
+   * ancorado: `a` repara, `b` confirma sem saber do reparo. Com `a` à frente e
+   * gravando as cópias, `b` observa a versão delas e confirma no **mesmo**
+   * milissegundo, contador + 1 — o mesmo HLC do carimbo do reparo, menos o
+   * `deviceId`. Nas duas ordens de `deviceId`, a confirmação tem de vencer.
+   */
+  const CASOS = [
+    { a: 60_000, b: 0, copias: "b" },
+    { a: 60_000, b: 0, copias: "a" },
+    { a: 0, b: 60_000, copias: "a" },
+    { a: 0, b: 60_000, copias: "b" },
+  ] as const;
 
-    await createRecurrenceStore(a.session).repairDuplicates();
-    const v2 = b.session.state.value.transactions[V2];
-    if (v2 === undefined) throw new Error("v2 não chegou");
-    await b.session.putRows({
+  async function caso(c: (typeof CASOS)[number], copias: (d: Device) => Transaction[]) {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", c.a);
+    const b = await device(hub, "B", c.b);
+    const w = c.copias === "a" ? a : b;
+    await w.session.putRows({ transactions: copias(w) });
+    await w.sync.sync();
+    await a.sync.sync();
+    await b.sync.sync();
+    return { a, b };
+  }
+
+  async function confirma(d: Device, id: string, amountMinor: number) {
+    const row = d.session.state.value.transactions[id];
+    if (row === undefined) throw new Error(`${id} não chegou`);
+    await d.session.putRows({
       transactions: [
         {
-          ...v2,
+          ...row,
           estimated: false,
-          amountMinor: 12_345,
-          updatedAt: b.session.clock().stamp().hlc,
+          amountMinor,
+          updatedAt: d.session.clock().stamp().hlc,
           dirty: 1,
         },
       ],
     });
-    await a.sync.sync();
-    await b.sync.sync();
-    await a.sync.sync();
-    // A confirmação venceu o tombstone do reparo: a v2 voltou.
-    expect(vivas(a).sort()).toEqual([V1, V2].sort());
+  }
 
-    await createRecurrenceStore(a.session).repairDuplicates();
-    await a.sync.sync();
-    await b.sync.sync();
+  it("confirmação na v2 feita noutro aparelho depois do reparo: revive a v2 e o próximo reparo a leva para a v1", async () => {
+    for (const c of CASOS) {
+      const { a, b } = await caso(c, (d) => [ocorrencia(d, V1), ocorrencia(d, V2)]);
 
-    for (const d of [a, b]) {
-      expect(vivas(d)).toEqual([V1]);
-      expect(d.session.state.value.transactions[V1]).toMatchObject({
-        estimated: false,
-        amountMinor: 12_345,
-      });
+      await createRecurrenceStore(a.session).repairDuplicates();
+      await confirma(b, V2, 12_345);
+      await a.sync.sync();
+      await b.sync.sync();
+      await a.sync.sync();
+      // A confirmação venceu o tombstone do reparo: a v2 voltou.
+      expect(vivas(a).sort(), JSON.stringify(c)).toEqual([V1, V2].sort());
+
+      await createRecurrenceStore(a.session).repairDuplicates();
+      await a.sync.sync();
+      await b.sync.sync();
+
+      for (const d of [a, b]) {
+        expect(vivas(d)).toEqual([V1]);
+        expect(d.session.state.value.transactions[V1], JSON.stringify(c)).toMatchObject({
+          estimated: false,
+          amountMinor: 12_345,
+        });
+      }
     }
   });
 
   it("a cópia da confirmação para a v1 não passa por cima da confirmação feita na própria v1", async () => {
-    const hub = createFakeHub();
-    const a = await device(hub, "A", 60_000);
-    const b = await device(hub, "B", 0);
-    // Cenário C com a v2 já confirmada e a v1 ainda estimada.
-    await b.session.putRows({
-      transactions: [
-        ocorrencia(b, V1),
-        ocorrencia(b, V2, { estimated: false, amountMinor: 11_111 }),
-      ],
-    });
-    await b.sync.sync();
-    await a.sync.sync();
+    for (const c of CASOS) {
+      // Cenário C com a v2 já confirmada e a v1 ainda estimada.
+      const { a, b } = await caso(c, (d) => [
+        ocorrencia(d, V1),
+        ocorrencia(d, V2, { estimated: false, amountMinor: 11_111 }),
+      ]);
 
-    // `b` confirma a v1 (a que a tela dele mostra) com outro valor; `a`, ainda
-    // sem isso e com o relógio à frente, repara copiando a confirmação da v2.
-    const v1 = b.session.state.value.transactions[V1];
-    if (v1 === undefined) throw new Error("v1 não chegou");
-    await b.session.putRows({
-      transactions: [
-        {
-          ...v1,
+      // `b` confirma a v1 (a que a tela dele mostra) com outro valor; `a`, ainda
+      // sem isso, repara copiando a confirmação da v2.
+      await confirma(b, V1, 22_222);
+      await createRecurrenceStore(a.session).repairDuplicates();
+      await a.sync.sync();
+      await b.sync.sync();
+      await a.sync.sync();
+
+      for (const d of [a, b]) {
+        expect(vivas(d)).toEqual([V1]);
+        expect(d.session.state.value.transactions[V1], JSON.stringify(c)).toMatchObject({
           estimated: false,
           amountMinor: 22_222,
-          updatedAt: b.session.clock().stamp().hlc,
-          dirty: 1,
-        },
-      ],
-    });
-    await createRecurrenceStore(a.session).repairDuplicates();
-    await a.sync.sync();
-    await b.sync.sync();
-    await a.sync.sync();
-
-    for (const d of [a, b]) {
-      expect(vivas(d)).toEqual([V1]);
-      expect(d.session.state.value.transactions[V1]).toMatchObject({
-        estimated: false,
-        amountMinor: 22_222,
-      });
+        });
+      }
     }
   });
 

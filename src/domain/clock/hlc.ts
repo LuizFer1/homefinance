@@ -89,8 +89,18 @@ export function recoveryHlc(date: string, deviceId: Ulid, recreate: boolean): st
 }
 
 /**
+ * `deviceId` abaixo de qualquer aparelho real (o mesmo do `GENESIS_HLC` dos
+ * padrões). Para os carimbos ancorados numa versão lida (`bumpHlc`): um aparelho
+ * que observou essa versão e grava em seguida, com o relógio atrasado, cai no
+ * **mesmo** milissegundo e contador + 1 — com um `deviceId` real o desempate
+ * seria um sorteio; com este, a escrita real sempre vence. E dois aparelhos que
+ * ancoram na mesma versão gravam o mesmo carimbo.
+ */
+export const ANCHOR_DEVICE_ID: Ulid = "00000000000000000000000000";
+
+/**
  * O HLC logo acima de `value`: mesmo milissegundo, contador + 1, com o
- * `deviceId` de quem grava. Para a escrita que só precisa vencer **aquela**
+ * `deviceId` pedido (para carimbo ancorado, `ANCHOR_DEVICE_ID`). Para a escrita que só precisa vencer **aquela**
  * versão da linha e perder para qualquer edição feita depois dela noutro
  * aparelho (que já nasce num milissegundo seguinte) — o reparo de duplicatas.
  *
