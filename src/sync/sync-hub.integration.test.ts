@@ -1,9 +1,10 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import type { HomeFinanceDb } from "../data/db";
+import { buildRow } from "../data/repository";
 import { openTestDb } from "../data/test-db.fake";
-import { budgetIdFor } from "../domain/budgets/budget-id";
-import { listBudgets } from "../domain/budgets/list";
+import { budgetIdFor, budgetSeed } from "../domain/budgets/budget-id";
+import { budgetOf, listBudgets } from "../domain/budgets/list";
 import { pendingCardGroups } from "../domain/cards/migration";
 import { compareHlc } from "../domain/clock/hlc";
 import {
@@ -13,10 +14,23 @@ import {
   GENESIS_HLC,
   LEGACY_CREDIT_METHOD_ID,
 } from "../domain/defaults/defaults";
+import { collidingId } from "../domain/ids/collision.fake";
+import { stableEntityIdV1, stableEntityIdV2 } from "../domain/ids/stable-id";
 import type { RandomChunk } from "../domain/ids/ulid";
 import { bookOf } from "../domain/model/book";
 import { BUSINESS_BOOK_ID } from "../domain/model/book-account";
+import type { Budget } from "../domain/model/budget";
+import type { Category } from "../domain/model/category";
 import type { PaymentMethod } from "../domain/model/payment-method";
+import type { Recurrence } from "../domain/model/recurrence";
+import type { RecurrenceAdjustment } from "../domain/model/recurrence-adjustment";
+import {
+  adjustmentForKey,
+  adjustmentId,
+  adjustmentSeed,
+  adjustmentsOf,
+  amountFor,
+} from "../domain/recurrence/adjustments";
 import { movement, reserve } from "../domain/reserves/fixtures.fake";
 import { createBudgetsStore } from "../features/budgets/store";
 import { createCardsStore } from "../features/cards/store";
@@ -611,5 +625,300 @@ describe("duas contas, dois aparelhos, um hub", () => {
     // Nenhuma linha comercial vazou para a visão pessoal de A.
     await a.session.setActiveBook("personal");
     expect(a.session.state.value.categories[cat.id]).toBeUndefined();
+  });
+});
+
+/**
+ * Spec do id estável, §8 e §10 (Fase 1): um aparelho na versão nova e outro na
+ * velha, o velho sempre gravando **depois** (relógio 60 s à frente, vence o LWW).
+ * Não há como injetar a função de id, então o velho é simulado gravando direto no
+ * Dexie dele o que o app velho gravaria: id v1 da chave e, se o lugar já tem
+ * linha, `...existing` por cima dela — reajuste mantém `recurrenceId`/`fromPeriod`
+ * de quem estava lá, meta troca o `categoryId`.
+ */
+describe("versões misturadas: reajuste e meta", () => {
+  const SERIE_A = "01JZ0000000000000000000SRA";
+  const adjSeed = (series: string) => adjustmentSeed(series, "2027-01");
+  const SERIE_B = collidingId("01JZ0000000000000000000", SERIE_A, adjSeed);
+  const ADJ_SLOT = stableEntityIdV1(adjSeed(SERIE_A));
+  const ADJ_V2_B = stableEntityIdV2(adjSeed(SERIE_B));
+
+  const CAT_A = "01JZ0000000000000000000CTA";
+  const CAT_B = collidingId("01JZ0000000000000000000", CAT_A, budgetSeed);
+  const BGT_SLOT = stableEntityIdV1(budgetSeed(CAT_A));
+  const BGT_V2_B = stableEntityIdV2(budgetSeed(CAT_B));
+
+  /** O `adjustmentRow` do app velho: lugar pelo id v1, espalhando quem estiver lá. */
+  async function velhoReajusta(d: Device, recurrenceId: string, amountMinor: number) {
+    const id = adjustmentId(recurrenceId, "2027-01");
+    const existing = d.session.state.value.recurrenceAdjustments[id];
+    const clock = d.session.clock();
+    const row: RecurrenceAdjustment =
+      existing === undefined
+        ? buildRow<RecurrenceAdjustment>(
+            clock,
+            { recurrenceId, fromPeriod: "2027-01", amountMinor },
+            id,
+          )
+        : { ...existing, amountMinor, deletedAt: null, updatedAt: clock.stamp().hlc, dirty: 1 };
+    await d.session.putRows({ recurrenceAdjustments: [row] });
+  }
+
+  /** O `budgets.set` do app velho: lugar pelo id v1, troca o `categoryId` de quem estiver lá. */
+  async function velhoDefineMeta(d: Device, categoryId: string, limitMinor: number) {
+    const id = budgetIdFor(categoryId);
+    const existing = d.session.state.value.budgets[id];
+    const clock = d.session.clock();
+    const row: Budget =
+      existing === undefined
+        ? buildRow<Budget>(clock, { categoryId, limitMinor }, id)
+        : {
+            ...existing,
+            categoryId,
+            limitMinor,
+            deletedAt: null,
+            updatedAt: clock.stamp().hlc,
+            dirty: 1,
+          };
+    await d.session.putRows({ budgets: [row] });
+  }
+
+  const novoReajusta = (d: Device, recurrenceId: string, amountMinor: number) =>
+    createRecurrenceStore(d.session).adjustSeries({
+      recurrenceId,
+      fromPeriod: "2027-01",
+      amountMinor,
+    });
+
+  /** Novo (A, relógio atrás) e velho (B, 60 s à frente), com as séries e categorias do par. */
+  async function cenario() {
+    const hub = createFakeHub();
+    const novo = await device(hub, "novo", 0);
+    const velho = await device(hub, "velho", 60_000);
+    const clock = novo.session.clock();
+    const serie = (id: string) =>
+      buildRow<Recurrence>(
+        clock,
+        {
+          kind: "income",
+          description: id,
+          amountMinor: 300_000,
+          currency: "BRL",
+          categoryId: null,
+          paymentMethodId: null,
+          cashbackMinor: null,
+          frequency: "monthly",
+          scheduleType: "dayOfMonth",
+          scheduleN: 5,
+          // Longe no futuro: nada materializa e nenhuma ocorrência disputa lugar.
+          startOn: "2030-01-05",
+          endOn: null,
+          active: true,
+        },
+        id,
+      );
+    const categoria = (id: string) =>
+      buildRow<Category>(clock, { name: id, icon: "tag", color: "sky", kind: "expense" }, id);
+    await novo.session.putRows({
+      recurrences: [serie(SERIE_A), serie(SERIE_B)],
+      categories: [categoria(CAT_A), categoria(CAT_B)],
+    });
+    await novo.sync.sync();
+    await velho.sync.sync();
+    return { novo, velho };
+  }
+
+  /** Novo empurra, velho empurra e puxa, novo puxa: os dois com o mesmo estado. */
+  async function sincroniza(novo: Device, velho: Device) {
+    await novo.sync.sync();
+    await velho.sync.sync();
+    await novo.sync.sync();
+  }
+
+  const reajustes = (d: Device) =>
+    Object.values(d.session.state.value.recurrenceAdjustments)
+      .map(({ id, recurrenceId, amountMinor, deletedAt, updatedAt }) => ({
+        id,
+        recurrenceId,
+        amountMinor,
+        deleted: deletedAt !== null,
+        updatedAt,
+      }))
+      .sort((x, y) => (x.id < y.id ? -1 : 1));
+
+  const metas = (d: Device) =>
+    Object.values(d.session.state.value.budgets)
+      .map(({ id, categoryId, limitMinor, deletedAt, updatedAt }) => ({
+        id,
+        categoryId,
+        limitMinor,
+        deleted: deletedAt !== null,
+        updatedAt,
+      }))
+      .sort((x, y) => (x.id < y.id ? -1 : 1));
+
+  /** O valor que cada aparelho mostra para a série em 2027-03 (regra R no `amountFor`). */
+  const vale = (d: Device, series: string) => {
+    const state = d.session.state.value;
+    const row = state.recurrences[series];
+    if (row === undefined) throw new Error("série sumiu");
+    return amountFor(row, adjustmentsOf(state, series), "2027-03");
+  };
+
+  describe("reajuste", () => {
+    it("(1) lugar livre: o novo grava em v1, o velho regrava a chave: uma linha, LWW", async () => {
+      const { novo, velho } = await cenario();
+      await novoReajusta(novo, SERIE_B, 350_000);
+      expect(novo.session.state.value.recurrenceAdjustments[ADJ_SLOT]).toBeDefined();
+      await sincroniza(novo, velho);
+
+      await velhoReajusta(velho, SERIE_B, 360_000);
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(reajustes(d)).toHaveLength(1);
+        expect(reajustes(d)[0]).toMatchObject({ id: ADJ_SLOT, recurrenceId: SERIE_B });
+        expect(vale(d, SERIE_B)).toBe(360_000);
+      }
+      expect(reajustes(novo)).toEqual(reajustes(velho));
+    });
+
+    it("(2) lugar de outra série: o v2 de B segue intacto; o velho reescreve A (bug dele)", async () => {
+      const { novo, velho } = await cenario();
+      await novoReajusta(novo, SERIE_A, 350_000);
+      await novoReajusta(novo, SERIE_B, 450_000);
+      const v2DeB = novo.session.state.value.recurrenceAdjustments[ADJ_V2_B];
+      expect(v2DeB).toMatchObject({ recurrenceId: SERIE_B, amountMinor: 450_000 });
+      await sincroniza(novo, velho);
+
+      // O velho "reajusta B": acha o reajuste de A no lugar v1 e troca o valor dele.
+      await velhoReajusta(velho, SERIE_B, 460_000);
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(d.session.state.value.recurrenceAdjustments[ADJ_V2_B]).toMatchObject({
+          id: ADJ_V2_B,
+          recurrenceId: SERIE_B,
+          amountMinor: 450_000,
+          updatedAt: v2DeB?.updatedAt,
+          deletedAt: null,
+        });
+        expect(vale(d, SERIE_B)).toBe(450_000);
+        // Documentado: o velho continua com o bug até atualizar — o valor de A
+        // virou o que a pessoa digitou para B. Só a atualização corrige.
+        expect(d.session.state.value.recurrenceAdjustments[ADJ_SLOT]).toMatchObject({
+          recurrenceId: SERIE_A,
+          amountMinor: 460_000,
+        });
+      }
+      expect(reajustes(novo)).toEqual(reajustes(velho));
+    });
+
+    it("(3) corrida: a mesma chave em v1 (velho) e v2 (novo): a regra R escolhe a mesma", async () => {
+      const { novo, velho } = await cenario();
+      // Offline nos dois. O novo tem A no lugar v1 e por isso grava B em v2; o
+      // velho não conhece A e grava B no v1.
+      await novoReajusta(novo, SERIE_A, 350_000);
+      await novoReajusta(novo, SERIE_B, 450_000);
+      await velhoReajusta(velho, SERIE_B, 460_000);
+      await sincroniza(novo, velho);
+      await velho.sync.sync();
+
+      for (const d of [novo, velho]) {
+        const deB = reajustes(d).filter((row) => row.recurrenceId === SERIE_B);
+        expect(deB.map((row) => row.id).sort()).toEqual([ADJ_SLOT, ADJ_V2_B].sort());
+        // O velho gravou depois (relógio à frente): vence pela regra R.
+        expect(vale(d, SERIE_B)).toBe(460_000);
+        expect(adjustmentsOf(d.session.state.value, SERIE_B)).toHaveLength(1);
+        expect(adjustmentForKey(d.session.state.value, SERIE_B, "2027-01")?.id).toBe(ADJ_SLOT);
+      }
+      expect(reajustes(novo)).toEqual(reajustes(velho));
+      // Cenário B da spec (§5): o lugar v1 disputado ficou com o velho, e o reajuste
+      // de A, nunca sincronizado antes, se perdeu. Raro; recuperável à mão.
+      expect(reajustes(novo).some((row) => row.recurrenceId === SERIE_A)).toBe(false);
+
+      // Editar no novo cai na vencedora (a que a tela mostra) e passa a valer nos dois.
+      await novoReajusta(novo, SERIE_B, 470_000);
+      await sincroniza(novo, velho);
+      for (const d of [novo, velho]) expect(vale(d, SERIE_B)).toBe(470_000);
+    });
+  });
+
+  describe("meta", () => {
+    it("(1) lugar livre: o novo grava em v1, o velho regrava a categoria: uma linha, LWW", async () => {
+      const { novo, velho } = await cenario();
+      await createBudgetsStore(novo.session).set(CAT_B, 20_000);
+      expect(novo.session.state.value.budgets[BGT_SLOT]).toBeDefined();
+      await sincroniza(novo, velho);
+
+      await velhoDefineMeta(velho, CAT_B, 25_000);
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        expect(metas(d)).toHaveLength(1);
+        expect(budgetOf(d.session.state.value, CAT_B)).toMatchObject({
+          id: BGT_SLOT,
+          limitMinor: 25_000,
+        });
+      }
+      expect(metas(novo)).toEqual(metas(velho));
+    });
+
+    it("(2) lugar de outra categoria: o v2 de B segue intacto; o velho toma a meta de A", async () => {
+      const { novo, velho } = await cenario();
+      await createBudgetsStore(novo.session).set(CAT_A, 20_000);
+      await createBudgetsStore(novo.session).set(CAT_B, 30_000);
+      const v2DeB = novo.session.state.value.budgets[BGT_V2_B];
+      expect(v2DeB).toMatchObject({ categoryId: CAT_B, limitMinor: 30_000 });
+      await sincroniza(novo, velho);
+
+      // O velho "define a meta de B": acha a de A no lugar v1 e troca a categoria.
+      await velhoDefineMeta(velho, CAT_B, 35_000);
+      await sincroniza(novo, velho);
+
+      for (const d of [novo, velho]) {
+        const state = d.session.state.value;
+        expect(state.budgets[BGT_V2_B]).toMatchObject({
+          categoryId: CAT_B,
+          limitMinor: 30_000,
+          updatedAt: v2DeB?.updatedAt,
+          deletedAt: null,
+        });
+        // Documentado: o bug do velho. A ficou sem meta, e B tem duas vivas (v1 do
+        // velho, v2 do novo); a regra R mostra a última edição, a do velho.
+        expect(budgetOf(state, CAT_A)).toBeNull();
+        expect(state.budgets[BGT_SLOT]).toMatchObject({ categoryId: CAT_B, limitMinor: 35_000 });
+        expect(budgetOf(state, CAT_B)).toMatchObject({ id: BGT_SLOT, limitMinor: 35_000 });
+      }
+      expect(metas(novo)).toEqual(metas(velho));
+    });
+
+    it("(3) corrida: a mesma categoria em v1 (velho) e v2 (novo): a regra R escolhe a mesma", async () => {
+      const { novo, velho } = await cenario();
+      await createBudgetsStore(novo.session).set(CAT_A, 20_000);
+      await createBudgetsStore(novo.session).set(CAT_B, 30_000);
+      await velhoDefineMeta(velho, CAT_B, 35_000);
+      await sincroniza(novo, velho);
+      await velho.sync.sync();
+
+      for (const d of [novo, velho]) {
+        const state = d.session.state.value;
+        const deB = metas(d).filter((row) => row.categoryId === CAT_B);
+        expect(deB.map((row) => row.id).sort()).toEqual([BGT_SLOT, BGT_V2_B].sort());
+        expect(budgetOf(state, CAT_B)).toMatchObject({ id: BGT_SLOT, limitMinor: 35_000 });
+        expect(listBudgets(state).filter((row) => row.categoryId === CAT_B)).toHaveLength(1);
+      }
+      expect(metas(novo)).toEqual(metas(velho));
+
+      // Editar no novo cai na vencedora e passa a valer nos dois.
+      await createBudgetsStore(novo.session).set(CAT_B, 40_000);
+      await sincroniza(novo, velho);
+      for (const d of [novo, velho]) {
+        expect(budgetOf(d.session.state.value, CAT_B)).toMatchObject({
+          id: BGT_SLOT,
+          limitMinor: 40_000,
+        });
+      }
+    });
   });
 });
