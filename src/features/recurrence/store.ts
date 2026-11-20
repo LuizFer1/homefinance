@@ -230,7 +230,43 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
     dismiss: readonly LostOccurrence[],
   ): Promise<void> {
     try {
-      const { deviceId } = session.clock();
+      const clock = session.clock();
+      const { deviceId } = clock;
+      // A chave que o reparo e uma exclusão da v1 deixaram sem linha viva
+      // (`mergedOrphans`): as linhas existem, então a resposta regrava a v2 em vez
+      // de criar. Recriar a revive; Não recriar só limpa `mergedInto` (vira uma
+      // exclusão comum, e nenhum aparelho pergunta de novo). Carimbo do relógio: é
+      // a decisão da pessoa agora, sobre linhas que ninguém edita (as duas estão
+      // apagadas). As duas entram nas versões esperadas: se o sync reviveu uma
+      // delas, a pergunta já não vale e nada é gravado (`StaleRowsError`).
+      const merged = [
+        ...recreate.flatMap((lost) => (lost.merged ? [{ pair: lost.merged, revive: true }] : [])),
+        ...dismiss.flatMap((lost) => (lost.merged ? [{ pair: lost.merged, revive: false }] : [])),
+      ];
+      if (merged.length > 0) {
+        await session.putRowsIfCurrent(
+          {
+            transactions: merged.map(({ pair, revive }) => {
+              const { hlc } = clock.stamp();
+              return {
+                ...pair.tombstone,
+                mergedInto: null,
+                deletedAt: revive ? null : pair.tombstone.deletedAt,
+                updatedAt: hlc,
+                dirty: 1 as const,
+              };
+            }),
+          },
+          {
+            transactions: Object.fromEntries(
+              merged.flatMap(({ pair }) => [
+                [pair.tombstone.id, pair.tombstone.updatedAt],
+                [pair.keeper.id, pair.keeper.updatedAt],
+              ]),
+            ),
+          },
+        );
+      }
       // As duas respostas nascem abaixo de qualquer escrita real na linha v2
       // (`recoveryHlc`): este aparelho pode não ter recebido ainda o que o outro
       // gravou nela — a recriação apagada ou confirmada depois, ou a ocorrência
@@ -249,8 +285,8 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
         };
       };
       const rows = [
-        ...recreate.map((lost) => answer(lost, true)),
-        ...dismiss.map((lost) => answer(lost, false)),
+        ...recreate.filter((lost) => !lost.merged).map((lost) => answer(lost, true)),
+        ...dismiss.filter((lost) => !lost.merged).map((lost) => answer(lost, false)),
       ];
       if (rows.length === 0) return;
       // `insertMissing`: o id é a v2 da chave, o mesmo em qualquer aparelho. Se o
@@ -437,13 +473,19 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
       // não sabia do reparo — confirmar a v2, confirmar a v1 — nasce depois e vence:
       // a v2 confirmada revive (o próximo reparo leva a confirmação para a v1), e a
       // confirmação feita na própria v1 não é coberta pela cópia da v2.
-      const tombstone = <T extends { deletedAt: string | null; updatedAt: string }>(row: T): T => {
+      // `mergedInto` marca a exclusão como do reparo: se a v1 também for apagada
+      // (aparelho velho que ainda via as duas), a folha de recuperação pergunta em
+      // vez de deixar a chave sem linha viva em silêncio (`mergedOrphans`).
+      const tombstone = <T extends { deletedAt: string | null; updatedAt: string }>(
+        row: T,
+        keeperId: Ulid,
+      ): T => {
         const hlc = bumpHlc(row.updatedAt, deviceId);
-        return { ...row, deletedAt: hlc, updatedAt: hlc, dirty: 1 };
+        return { ...row, deletedAt: hlc, updatedAt: hlc, mergedInto: keeperId, dirty: 1 };
       };
       const transactions: Transaction[] = plan.transactions.flatMap(
         ({ loser, keeper, survivor }) => [
-          tombstone(loser),
+          tombstone(loser, keeper.id),
           ...(survivor === null
             ? []
             : [
@@ -462,7 +504,9 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
               ]),
         ],
       );
-      const reserveMovements = plan.reserveMovements.map(({ loser }) => tombstone(loser));
+      const reserveMovements = plan.reserveMovements.map(({ loser, keeper }) =>
+        tombstone(loser, keeper.id),
+      );
       // As duas linhas de cada par entram com a versão lida, a v1 inclusive mesmo
       // sem ser regravada: se o sync ou outra aba a apagou, apagar a v2 deixaria o
       // fato sem nenhuma linha viva. Divergiu: espera o próximo boot ou pull.

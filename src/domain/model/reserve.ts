@@ -100,6 +100,12 @@ export interface ReserveMovement extends BaseRow, BookScoped {
    * anteriores ao campo e nos movimentos manuais: ver `isDepositFor`.
    */
   period?: string | null;
+  /**
+   * Só em tombstone do reparo de duplicatas: o id do depósito v1 que ficou no
+   * lugar deste. Marca a exclusão como do reparo, não da pessoa (ver o campo de
+   * mesmo nome em `Transaction`). Ausente nas linhas de antes do campo.
+   */
+  mergedInto?: Ulid | null;
 }
 
 export type ReserveMovementDraft = Draft<ReserveMovement>;

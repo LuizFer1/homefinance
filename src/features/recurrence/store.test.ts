@@ -913,8 +913,11 @@ describe("repairDuplicates", () => {
       dirty: 1,
     });
     expect((await db.transactions.get(V2))?.deletedAt).not.toBeNull();
+    // A exclusão é marcada como do reparo (achado 4): a folha distingue da exclusão da pessoa.
+    expect((await db.transactions.get(V2))?.mergedInto).toBe(V1);
     expect((await db.reserveMovements.get(D1))?.deletedAt).toBeNull();
     expect((await db.reserveMovements.get(D2))?.deletedAt).not.toBeNull();
+    expect((await db.reserveMovements.get(D2))?.mergedInto).toBe(D1);
     expect(session.fullState.value.transactions[V2]?.deletedAt).not.toBeNull();
   });
 

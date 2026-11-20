@@ -42,6 +42,14 @@ export interface Transaction extends BaseRow, BookScoped {
    * entra em relatório algum. Ausente e `null` valem "conta normalmente".
    */
   reportState?: ReportState | null;
+  /**
+   * Só em tombstone do reparo de duplicatas (`planDuplicateRepair`): o id da
+   * cópia v1 que ficou no lugar desta. Distingue "apagada pelo reparo" de
+   * "apagada pela pessoa": se a v1 também for apagada depois (num aparelho velho
+   * que ainda via as duas cópias), a chave fica sem linha viva e a folha de
+   * recuperação pergunta (`mergedOrphans`). Ausente nas linhas de antes do campo.
+   */
+  mergedInto?: Ulid | null;
 }
 
 /**

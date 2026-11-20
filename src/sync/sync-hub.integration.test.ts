@@ -1093,6 +1093,90 @@ describe("reparo de duplicatas entre dois aparelhos", () => {
     }
   });
 
+  function serieS(d: Device): Recurrence {
+    return buildRow<Recurrence>(
+      d.session.clock(),
+      {
+        kind: "expense",
+        description: "Luz",
+        amountMinor: 10_000,
+        currency: "BRL",
+        categoryId: null,
+        paymentMethodId: null,
+        cashbackMinor: null,
+        frequency: "monthly",
+        scheduleType: "dayOfMonth",
+        scheduleN: 5,
+        startOn: "2027-02-05",
+        endOn: "2027-02-05",
+        active: true,
+      },
+      S,
+    );
+  }
+
+  /**
+   * O cenário do achado 4: o novo repara (apaga a v2) enquanto o velho, que ainda
+   * vê as duas cópias, apaga a v1 como "a duplicata". Depois do sync, zero vivas.
+   */
+  async function reparoEApagaV1() {
+    const hub = createFakeHub();
+    const novo = await device(hub, "novo", 0);
+    const velho = await device(hub, "velho", 60_000);
+    await novo.session.putRows({
+      recurrences: [serieS(novo)],
+      transactions: [ocorrencia(novo, V1), ocorrencia(novo, V2)],
+    });
+    await novo.sync.sync();
+    await velho.sync.sync();
+
+    await createRecurrenceStore(novo.session).repairDuplicates();
+    const v1 = velho.session.state.value.transactions[V1];
+    if (v1 === undefined) throw new Error("v1 não chegou");
+    const { hlc } = velho.session.clock().stamp();
+    await velho.session.putRows({
+      transactions: [{ ...v1, deletedAt: hlc, updatedAt: hlc, dirty: 1 }],
+    });
+    await novo.sync.sync();
+    await velho.sync.sync();
+    await novo.sync.sync();
+    for (const d of [novo, velho]) expect(vivas(d)).toEqual([]);
+    return { novo, velho };
+  }
+
+  it("reparo e exclusão da v1 no velho ao mesmo tempo: a folha pergunta, e Recriar revive a v2", async () => {
+    const { novo, velho } = await reparoEApagaV1();
+    const lost = recoveryCandidates(novo.session.fullState.value, "personal", "2027-03-10");
+    expect(lost.map((item) => item.entityId)).toEqual([V2]);
+
+    await createRecurrenceStore(novo.session).recoverOccurrences(lost, []);
+    await novo.sync.sync();
+    await velho.sync.sync();
+
+    for (const d of [novo, velho]) {
+      expect(vivas(d)).toEqual([V2]);
+      expect(recoveryCandidates(d.session.fullState.value, "personal", "2027-03-10")).toEqual([]);
+    }
+    // A v2 revivida não é mais par de ninguém: a v1 está apagada.
+    await createRecurrenceStore(novo.session).repairDuplicates();
+    expect(vivas(novo)).toEqual([V2]);
+  });
+
+  it("reparo e exclusão da v1 no velho: Não recriar tira a pergunta dos dois aparelhos", async () => {
+    const { novo, velho } = await reparoEApagaV1();
+    const lost = recoveryCandidates(velho.session.fullState.value, "personal", "2027-03-10");
+    expect(lost.map((item) => item.entityId)).toEqual([V2]);
+
+    await createRecurrenceStore(velho.session).recoverOccurrences([], lost);
+    await velho.sync.sync();
+    await novo.sync.sync();
+
+    for (const d of [novo, velho]) {
+      expect(vivas(d)).toEqual([]);
+      expect(recoveryCandidates(d.session.fullState.value, "personal", "2027-03-10")).toEqual([]);
+    }
+  });
+
   it("os dois reparam o mesmo par sem divergência: ainda uma viva, a v1", async () => {
     const hub = createFakeHub();
     const a = await device(hub, "A", 0);

@@ -3,7 +3,7 @@ import type { Ulid } from "../ids/ulid";
 import type { AppState } from "../model/app-state";
 import { type Book, bookOf } from "../model/book";
 import type { Recurrence } from "../model/recurrence";
-import type { TransactionDraft } from "../model/transaction";
+import type { Transaction, TransactionDraft } from "../model/transaction";
 import { monthOf } from "../projections/periods";
 import { amountFor } from "./adjustments";
 import { earliestOccurrenceAuthors, seriesAuthor } from "./author";
@@ -40,6 +40,19 @@ export interface OccurrencePlan {
 export interface LostOccurrence extends OccurrencePlan {
   series: Recurrence;
   period: string;
+  /**
+   * Só na chave que o reparo de duplicatas e uma exclusão da v1 deixaram sem
+   * linha viva (`mergedOrphans`): a v2 que o reparo apagou e a v1 apagada depois.
+   * A resposta regrava essa v2 (as linhas existem), em vez de criar.
+   */
+  merged?: MergedPair | null;
+}
+
+export interface MergedPair {
+  /** A v2, tombstone do reparo (`mergedInto` = id da v1), como foi lida. */
+  tombstone: Transaction;
+  /** A v1, apagada, como foi lida. */
+  keeper: Transaction;
 }
 
 /**
