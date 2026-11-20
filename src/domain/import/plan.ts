@@ -124,7 +124,10 @@ export interface ImportTarget {
   status: ImportStatus;
   /** Onde a linha grava se for marcada. */
   id: Ulid;
-  /** A v2 da semente: vai em `importKey` de tudo o que a linha gravar. */
+  /**
+   * A v2 da semente: vai em `importKey` da avulsa e da série que a linha criar.
+   * A confirmação de estimativa leva o lugar (`id`) — ver `ImportConfirmation`.
+   */
   importKey: Ulid;
 }
 
