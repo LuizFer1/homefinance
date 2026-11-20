@@ -1007,6 +1007,92 @@ describe("reparo de duplicatas entre dois aparelhos", () => {
     }
   });
 
+  it("confirmação na v2 feita noutro aparelho depois do reparo: revive a v2 e o próximo reparo a leva para a v1", async () => {
+    const hub = createFakeHub();
+    // `a` com o relógio à frente: com o tombstone no relógio, ele venceria a
+    // confirmação de `b`, feita depois das cópias e ainda sem saber do reparo.
+    const a = await device(hub, "A", 60_000);
+    const b = await device(hub, "B", 0);
+    await b.session.putRows({ transactions: [ocorrencia(b, V1), ocorrencia(b, V2)] });
+    await b.sync.sync();
+    await a.sync.sync();
+
+    await createRecurrenceStore(a.session).repairDuplicates();
+    const v2 = b.session.state.value.transactions[V2];
+    if (v2 === undefined) throw new Error("v2 não chegou");
+    await b.session.putRows({
+      transactions: [
+        {
+          ...v2,
+          estimated: false,
+          amountMinor: 12_345,
+          updatedAt: b.session.clock().stamp().hlc,
+          dirty: 1,
+        },
+      ],
+    });
+    await a.sync.sync();
+    await b.sync.sync();
+    await a.sync.sync();
+    // A confirmação venceu o tombstone do reparo: a v2 voltou.
+    expect(vivas(a).sort()).toEqual([V1, V2].sort());
+
+    await createRecurrenceStore(a.session).repairDuplicates();
+    await a.sync.sync();
+    await b.sync.sync();
+
+    for (const d of [a, b]) {
+      expect(vivas(d)).toEqual([V1]);
+      expect(d.session.state.value.transactions[V1]).toMatchObject({
+        estimated: false,
+        amountMinor: 12_345,
+      });
+    }
+  });
+
+  it("a cópia da confirmação para a v1 não passa por cima da confirmação feita na própria v1", async () => {
+    const hub = createFakeHub();
+    const a = await device(hub, "A", 60_000);
+    const b = await device(hub, "B", 0);
+    // Cenário C com a v2 já confirmada e a v1 ainda estimada.
+    await b.session.putRows({
+      transactions: [
+        ocorrencia(b, V1),
+        ocorrencia(b, V2, { estimated: false, amountMinor: 11_111 }),
+      ],
+    });
+    await b.sync.sync();
+    await a.sync.sync();
+
+    // `b` confirma a v1 (a que a tela dele mostra) com outro valor; `a`, ainda
+    // sem isso e com o relógio à frente, repara copiando a confirmação da v2.
+    const v1 = b.session.state.value.transactions[V1];
+    if (v1 === undefined) throw new Error("v1 não chegou");
+    await b.session.putRows({
+      transactions: [
+        {
+          ...v1,
+          estimated: false,
+          amountMinor: 22_222,
+          updatedAt: b.session.clock().stamp().hlc,
+          dirty: 1,
+        },
+      ],
+    });
+    await createRecurrenceStore(a.session).repairDuplicates();
+    await a.sync.sync();
+    await b.sync.sync();
+    await a.sync.sync();
+
+    for (const d of [a, b]) {
+      expect(vivas(d)).toEqual([V1]);
+      expect(d.session.state.value.transactions[V1]).toMatchObject({
+        estimated: false,
+        amountMinor: 22_222,
+      });
+    }
+  });
+
   it("os dois reparam o mesmo par sem divergência: ainda uma viva, a v1", async () => {
     const hub = createFakeHub();
     const a = await device(hub, "A", 0);

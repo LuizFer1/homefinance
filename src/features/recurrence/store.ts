@@ -1,5 +1,5 @@
 import { buildRow } from "../../data/repository";
-import { floorHlc, recoveryHlc } from "../../domain/clock/hlc";
+import { bumpHlc, compareHlc, floorHlc, recoveryHlc } from "../../domain/clock/hlc";
 import { planDuplicateRepair } from "../../domain/ids/duplicate-repair";
 import type { Ulid } from "../../domain/ids/ulid";
 import type { Draft } from "../../domain/model/base";
@@ -431,17 +431,37 @@ export function createRecurrenceStore(session: Session): RecurrenceStore {
       const plan = planDuplicateRepair(session.fullState.value);
       if (plan.transactions.length === 0 && plan.reserveMovements.length === 0) return;
 
-      const clock = session.clock();
+      const { deviceId } = session.clock();
+      // Carimbos logo acima da versão lida (`bumpHlc`), não do relógio: o reparo
+      // só precisa vencer o que ele leu. Uma edição feita noutro aparelho que ainda
+      // não sabia do reparo — confirmar a v2, confirmar a v1 — nasce depois e vence:
+      // a v2 confirmada revive (o próximo reparo leva a confirmação para a v1), e a
+      // confirmação feita na própria v1 não é coberta pela cópia da v2.
       const tombstone = <T extends { deletedAt: string | null; updatedAt: string }>(row: T): T => {
-        const { hlc } = clock.stamp();
+        const hlc = bumpHlc(row.updatedAt, deviceId);
         return { ...row, deletedAt: hlc, updatedAt: hlc, dirty: 1 };
       };
-      const transactions: Transaction[] = plan.transactions.flatMap(({ loser, survivor }) => [
-        tombstone(loser),
-        ...(survivor === null
-          ? []
-          : [{ ...survivor, updatedAt: clock.stamp().hlc, dirty: 1 as const }]),
-      ]);
+      const transactions: Transaction[] = plan.transactions.flatMap(
+        ({ loser, keeper, survivor }) => [
+          tombstone(loser),
+          ...(survivor === null
+            ? []
+            : [
+                {
+                  ...survivor,
+                  // Acima das duas versões lidas: vence a v1 lida (senão o hub e
+                  // os outros aparelhos ficariam com ela) e a confirmação copiada.
+                  updatedAt: bumpHlc(
+                    compareHlc(keeper.updatedAt, loser.updatedAt) >= 0
+                      ? keeper.updatedAt
+                      : loser.updatedAt,
+                    deviceId,
+                  ),
+                  dirty: 1 as const,
+                },
+              ]),
+        ],
+      );
       const reserveMovements = plan.reserveMovements.map(({ loser }) => tombstone(loser));
       // As duas linhas de cada par entram com a versão lida, a v1 inclusive mesmo
       // sem ser regravada: se o sync ou outra aba a apagou, apagar a v2 deixaria o
