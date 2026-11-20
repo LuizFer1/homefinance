@@ -2,7 +2,7 @@ import { useMemo, useState } from "preact/hooks";
 import { cardDetail, listCreditCards } from "../../domain/cards/card";
 import type { Ulid } from "../../domain/ids/ulid";
 import { groupLines } from "../../domain/import/lines";
-import { confirmedImportKeys, suggestLinks } from "../../domain/import/link";
+import { suggestLinks } from "../../domain/import/link";
 import {
   type DocumentKind,
   detectReferenceMonth,
@@ -11,8 +11,9 @@ import {
   type SkippedLine,
 } from "../../domain/import/parse";
 import {
+  classifyImport,
   type ImportContext,
-  identify,
+  type ImportSlots,
   planImport,
   type ReviewedEntry,
 } from "../../domain/import/plan";
@@ -36,6 +37,12 @@ import type { ImportResult } from "./store";
 
 export interface ImportSheetProps {
   state: AppState;
+  /**
+   * As tabelas inteiras (as duas contas), onde o lugar de id de cada linha é
+   * procurado: o v1 pode ser de uma linha da outra conta, que `state` esconde.
+   * Ausente vale `state`.
+   */
+  fullState?: AppState;
   /** Conta de destino da importação; ausente vale a pessoal. */
   book?: Book;
   /** 'YYYY-MM-DD', injetado como no resto do app. */
@@ -48,8 +55,14 @@ export interface ImportSheetProps {
 }
 
 interface Row extends ReviewedEntry {
-  /** Id já está no banco (importado antes, ou apagado depois): não entra de novo. */
+  /** Já está no banco (importada antes, ou apagada depois): não entra de novo. */
   existing: boolean;
+  /**
+   * "Talvez já importado": o lugar do id é de uma linha que não casa — esta
+   * mesma editada depois, ou outra que a colisão do id engoliu. Desmarcada, mas
+   * a pessoa pode marcar.
+   */
+  maybe: boolean;
 }
 
 type Step =
@@ -85,6 +98,10 @@ function SummaryCount({ label, value }: { label: string; value: number }) {
   );
 }
 
+function slotsOf(state: AppState): ImportSlots {
+  return { transactions: state.transactions, recurrences: state.recurrences };
+}
+
 /** O pdf.js desce sob demanda, e o `import()` falha por dois motivos distintos. */
 function readError(cause: unknown): string {
   if (cause instanceof PdfReaderUnavailableError) {
@@ -104,6 +121,7 @@ function readError(cause: unknown): string {
  */
 export function ImportSheet({
   state,
+  fullState = state,
   book,
   today,
   readPdf,
@@ -135,22 +153,21 @@ export function ImportSheet({
   function buildRows(source: string[], month: string): { rows: Row[]; skipped: SkippedLine[] } {
     const { entries, skipped: dropped } = parseStatement(source, doc, month);
     const ctx: ImportContext = { paymentMethodId: methodId, referenceMonth: month, book };
-    const ids = identify(entries, ctx);
-    // Uma linha que confirmou uma estimativa não criou transação com o próprio
-    // id: sem olhar `importKey`, ela voltaria aqui como nova.
-    const confirmed = confirmedImportKeys(state);
+    // Pela semente e pelos campos, não só pelo id: uma linha que confirmou uma
+    // estimativa não criou transação com o próprio id, e o id v1 pode ser de
+    // outro fato (`classifyImport`).
+    const targets = classifyImport(entries, ctx, slotsOf(fullState));
     const built = entries.map((entry, index) => {
-      const id = ids[index] ?? "";
-      const existing =
-        state.transactions[id] !== undefined ||
-        state.recurrences[id] !== undefined ||
-        confirmed.has(id);
+      const status = targets[index]?.status ?? "new";
+      const existing = status === "imported";
+      const maybe = status === "maybe";
       return {
         ...entry,
         categoryId: suggestCategory(categoryIndex, entry.rawDescription, entry.kind),
-        selected: entry.selected && !existing,
-        note: existing ? "Já importado" : entry.note,
+        selected: entry.selected && status === "new",
+        note: existing ? "Já importado" : maybe ? "Talvez já importado" : entry.note,
         existing,
+        maybe,
         linkTo: null,
       };
     });
@@ -239,7 +256,11 @@ export function ImportSheet({
     setSaving(true);
     setError(null);
     try {
-      const plan = planImport(rows, { paymentMethodId: methodId, referenceMonth, book });
+      const plan = planImport(
+        rows,
+        { paymentMethodId: methodId, referenceMonth, book },
+        slotsOf(fullState),
+      );
       const result = await onImport(plan);
       setPhase({
         step: "done",

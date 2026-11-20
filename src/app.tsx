@@ -849,6 +849,7 @@ export function App({
         {importing && (
           <ImportSheet
             state={state}
+            fullState={session.fullState.value}
             book={session.activeBook.value}
             today={today}
             readPdf={readPdf}

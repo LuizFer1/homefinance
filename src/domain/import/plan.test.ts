@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { stableEntityIdV2 } from "../ids/stable-id";
 import { parseStatement } from "./parse";
-import { identify, installmentAnchor, planImport, type ReviewedEntry } from "./plan";
+import { identify, importSeeds, installmentAnchor, planImport, type ReviewedEntry } from "./plan";
 
 const CARD = "CARTAO-1";
 
@@ -100,6 +101,7 @@ describe("planImport", () => {
     const [entry] = reviewed(["12/09 IFOOD 45,90"], "2026-10");
     if (entry === undefined) throw new Error("sem linha");
     const plan = planImport([{ ...entry, categoryId: "ALIM", description: "Jantar" }], ctx);
+    const [seed] = importSeeds([entry], ctx);
     expect(plan.series).toEqual([]);
     expect(plan.transactions[0]?.draft).toEqual({
       kind: "expense",
@@ -112,19 +114,26 @@ describe("planImport", () => {
       occurredOn: "2026-09-12",
       recurrenceId: null,
       occurrenceKey: null,
+      // A v2 da semente, também na linha criada: é por ela que a reimportação a acha.
+      importKey: stableEntityIdV2(seed ?? ""),
     });
   });
 
   it("linha vinculada vira confirmação da estimativa, não transação nova", () => {
     const [entry] = reviewed(["12/09 ENEL 320,00"], "2026-10");
     if (entry === undefined) throw new Error("sem linha");
-    const [id] = identify([entry], ctx);
+    const [seed] = importSeeds([entry], ctx);
 
     const plan = planImport([{ ...entry, linkTo: "OCORRENCIA" }], ctx);
 
     expect(plan.transactions).toEqual([]);
     expect(plan.confirmations).toEqual([
-      { transactionId: "OCORRENCIA", amountMinor: 32_000, occurredOn: "2026-09-12", importKey: id },
+      {
+        transactionId: "OCORRENCIA",
+        amountMinor: 32_000,
+        occurredOn: "2026-09-12",
+        importKey: stableEntityIdV2(seed ?? ""),
+      },
     ]);
   });
 

@@ -68,6 +68,13 @@ export interface Recurrence extends BaseRow, BookScoped {
    * reescreve. Ausente nas séries anteriores à coluna (ver `planAuthorRepair`).
    */
   userId?: Ulid | null;
+  /**
+   * Série nascida de uma parcela de PDF: a v2 da semente da linha. É por ela que
+   * a fatura seguinte acha a série mesmo quando o id dela é v2 (o lugar v1 era
+   * de outra série; spec do id estável, §4.3). Ausente nas séries de antes do
+   * campo e nas criadas à mão.
+   */
+  importKey?: string | null;
 }
 
 /**

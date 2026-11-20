@@ -1,11 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { stableEntityIdV2 } from "../../domain/ids/stable-id";
 import type { TextItem } from "../../domain/import/lines";
 import { parseStatement } from "../../domain/import/parse";
-import { identify } from "../../domain/import/plan";
+import { identify, importSeeds, planImport } from "../../domain/import/plan";
 import { type AppState, EMPTY_APP_STATE } from "../../domain/model/app-state";
 import type { Category } from "../../domain/model/category";
 import type { PaymentMethod } from "../../domain/model/payment-method";
+import type { Recurrence } from "../../domain/model/recurrence";
 import { ALIVE } from "../../domain/model/row.fake";
 import type { Transaction } from "../../domain/model/transaction";
 import { ImportSheet } from "./import-sheet";
@@ -67,6 +69,31 @@ function stateWith(extra: Partial<AppState> = {}): AppState {
     transactions: { [PAST.id]: PAST },
     ...extra,
   };
+}
+
+/**
+ * O que o app de antes gravou ao importar `lines` (todas marcadas): as mesmas
+ * linhas, nos ids v1 e sem `importKey`. O lugar v1 casa nos campos, e a revisão
+ * reconhece a linha como já importada.
+ */
+function importedBefore(lines: string[]): Pick<AppState, "transactions" | "recurrences"> {
+  const entries = parseStatement(lines, "card", "2026-10").entries.map((entry) => ({
+    ...entry,
+    selected: true,
+    categoryId: null,
+  }));
+  const plan = planImport(entries, { paymentMethodId: CARD.id, referenceMonth: "2026-10" });
+  const transactions: Record<string, Transaction> = { [PAST.id]: PAST };
+  for (const { id, draft } of plan.transactions) {
+    const { importKey: _novo, ...antigo } = draft;
+    transactions[id] = { ...ALIVE, ...antigo, id, userId: null };
+  }
+  const recurrences: Record<string, Recurrence> = {};
+  for (const { id, draft } of plan.series) {
+    const { importKey: _novo, ...antigo } = draft;
+    recurrences[id] = { ...ALIVE, ...antigo, id };
+  }
+  return { transactions, recurrences };
 }
 
 function pickFile() {
@@ -156,12 +183,7 @@ describe("ImportSheet", () => {
   });
 
   it("linha já importada vem travada e desmarcada", async () => {
-    const entries = parseStatement(LINES, "card", "2026-10").entries;
-    const [firstId] = identify(entries, { paymentMethodId: CARD.id, referenceMonth: "2026-10" });
-    if (firstId === undefined) throw new Error("sem id");
-    const state = stateWith({
-      transactions: { [PAST.id]: PAST, [firstId]: { ...PAST, id: firstId } },
-    });
+    const state = stateWith(importedBefore([LINES[0] ?? "", LINES[1] ?? ""]));
     renderSheet(() => Promise.resolve(itemsOf(LINES)), state);
     pickFile();
 
@@ -203,6 +225,41 @@ describe("ImportSheet", () => {
     ]);
   });
 
+  it("lugar do id com outro fato: 'Talvez já importado', desmarcada e marcável; marcada vai para v2", async () => {
+    const entries = parseStatement(LINES, "card", "2026-10").entries;
+    const ctx = { paymentMethodId: CARD.id, referenceMonth: "2026-10" };
+    const [firstId] = identify(entries, ctx);
+    const [seed] = importSeeds(entries, ctx);
+    if (firstId === undefined || seed === undefined) throw new Error("sem id");
+    // Uma ocorrência de série que caiu no mesmo lugar v1 da linha do iFood.
+    const ocorrencia: Transaction = {
+      ...PAST,
+      id: firstId,
+      recurrenceId: "SERIE",
+      occurrenceKey: "SERIE:2026-09",
+    };
+    const { onImport } = renderSheet(
+      () => Promise.resolve(itemsOf(LINES)),
+      stateWith({ transactions: { [PAST.id]: PAST, [firstId]: ocorrencia } }),
+    );
+    pickFile();
+
+    const box = (await screen.findByLabelText("Importar IFOOD *RESTAURANTE")) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    expect(box.disabled).toBe(false);
+    expect(screen.getByText("Talvez já importado")).toBeDefined();
+
+    fireEvent.click(box);
+    fireEvent.click(screen.getByRole("button", { name: /^Importar/ }));
+
+    await waitFor(() => expect(onImport).toHaveBeenCalled());
+    const plan = onImport.mock.calls[0]?.[0];
+    const v2 = stableEntityIdV2(seed);
+    expect(plan.transactions).toContainEqual(
+      expect.objectContaining({ id: v2, draft: expect.objectContaining({ importKey: v2 }) }),
+    );
+  });
+
   it("linha que já confirmou uma estimativa conta como importada", async () => {
     const entries = parseStatement(LINES, "card", "2026-10").entries;
     const [firstId] = identify(entries, { paymentMethodId: CARD.id, referenceMonth: "2026-10" });
@@ -218,12 +275,7 @@ describe("ImportSheet", () => {
 
   it("resumo final conta importadas, já existentes e não interpretadas com o motivo", async () => {
     const lines = [...LINES, "99/99 LOJA QUEBRADA 10,00", "12/09 SEM VALOR AQUI"];
-    const entries = parseStatement(lines, "card", "2026-10").entries;
-    const [firstId] = identify(entries, { paymentMethodId: CARD.id, referenceMonth: "2026-10" });
-    if (firstId === undefined) throw new Error("sem id");
-    const state = stateWith({
-      transactions: { [PAST.id]: PAST, [firstId]: { ...PAST, id: firstId } },
-    });
+    const state = stateWith(importedBefore([LINES[0] ?? "", LINES[1] ?? ""]));
     const { onImport } = renderSheet(() => Promise.resolve(itemsOf(lines)), state);
     onImport.mockResolvedValue({ transactions: 1, series: 0, confirmed: 0 });
     pickFile();
@@ -243,14 +295,7 @@ describe("ImportSheet", () => {
   });
 
   it("reimportar o mesmo arquivo mostra tudo como já existia", async () => {
-    const entries = parseStatement(LINES, "card", "2026-10").entries;
-    const ids = identify(entries, { paymentMethodId: CARD.id, referenceMonth: "2026-10" });
-    const state = stateWith({
-      transactions: {
-        [PAST.id]: PAST,
-        ...Object.fromEntries(ids.map((id) => [id, { ...PAST, id }])),
-      },
-    });
+    const state = stateWith(importedBefore(LINES));
     const { onImport } = renderSheet(() => Promise.resolve(itemsOf(LINES)), state);
     onImport.mockResolvedValue({ transactions: 0, series: 0, confirmed: 0 });
     pickFile();
